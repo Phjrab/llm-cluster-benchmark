@@ -52,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-p", type=float, default=0.9)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--warmup", action="store_true")
-    parser.add_argument("--output-csv", default="outputs/comparison_results.csv")
+    parser.add_argument("--output-csv", default="outputs/general_benchmark/comparison_results.csv")
     parser.add_argument("--fail-fast", action="store_true")
     return parser.parse_args()
 

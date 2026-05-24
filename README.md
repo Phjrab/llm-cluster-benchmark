@@ -315,12 +315,6 @@ python bench/compare_medical_models.py \
 - `outputs/medical_benchmark/compare/medical_compare_summary.csv`
 - `outputs/medical_benchmark/compare/medical_compare_details.json`
 - `outputs/medical_benchmark/compare/medical_compare_ranked.csv`
-  --w-gpu-temp 0.00 \
-  --w-cpu-temp 0.00
-```
-
-생성 파일:
-- `outputs/general_benchmark/comparison_ranked.csv`
 
 ## 10) GitHub 리포지토리 연결
 
