@@ -20,36 +20,24 @@ AUTO_MAX_POWER="${AUTO_MAX_POWER:-1}"
 RESTORE_POWER_ON_EXIT="${RESTORE_POWER_ON_EXIT:-1}"
 MAX_POWER_MODE="${MAX_POWER_MODE:-auto}"
 
-NUM_PROMPTS="${NUM_PROMPTS:-1}"
-MAX_TOKENS="${MAX_TOKENS:-128}"
-# If not set, probe uses each model's effective max_tokens.
-PROBE_MAX_TOKENS="${PROBE_MAX_TOKENS:-}"
-N_CTX="${N_CTX:-1024}"
-N_THREADS="${N_THREADS:-6}"
-TEMPERATURE="${TEMPERATURE:-0.7}"
-TOP_P="${TOP_P:-0.9}"
-SEED="${SEED:-42}"
-PROBE_LAYERS="${PROBE_LAYERS:-35,32,30,28,26,24,22,20,18,16,14,12,10,8,6,4,2,0}"
-PROBE_CTXS="${PROBE_CTXS:-}"
-GPU_LAYER_MARGIN="${GPU_LAYER_MARGIN:-2}"
 MODEL_CSV_PATH="${MODEL_CSV_PATH:-$PROJECT_ROOT/models.example.csv}"
 LIST_MODELS_ONLY="${LIST_MODELS_ONLY:-0}"
 SKIP_UNLOADABLE_MODELS="${SKIP_UNLOADABLE_MODELS:-1}"
 
-GENERAL_OUTPUT_DIR="${GENERAL_OUTPUT_DIR:-outputs/general_benchmark}"
-OUTPUT_CSV="${OUTPUT_CSV:-$GENERAL_OUTPUT_DIR/comparison_results.csv}"
-RANKED_CSV="${RANKED_CSV:-$GENERAL_OUTPUT_DIR/comparison_ranked.csv}"
-PLOT_PNG="${PLOT_PNG:-$GENERAL_OUTPUT_DIR/comparison_results.png}"
-PLOT_SORT_BY="${PLOT_SORT_BY:-avg_tps}"
+N_CTX="${N_CTX:-1024}"
+N_THREADS="${N_THREADS:-6}"
+MAX_TOKENS="${MAX_TOKENS:-128}"
+PROBE_MAX_TOKENS="${PROBE_MAX_TOKENS:-}"
+PROBE_LAYERS="${PROBE_LAYERS:-35,32,30,28,26,24,22,20,18,16,14,12,10,8,6,4,2,0}"
+PROBE_CTXS="${PROBE_CTXS:-}"
+GPU_LAYER_MARGIN="${GPU_LAYER_MARGIN:-2}"
+SEED="${SEED:-42}"
 
-RANK_W_TPS="${RANK_W_TPS:-0.50}"
-RANK_W_RSS="${RANK_W_RSS:-0.30}"
-RANK_W_TTFT="${RANK_W_TTFT:-0.20}"
-RANK_W_GPU_UTIL="${RANK_W_GPU_UTIL:-0.00}"
-RANK_W_POWER="${RANK_W_POWER:-0.00}"
-RANK_W_JETSON_RAM="${RANK_W_JETSON_RAM:-0.00}"
-RANK_W_GPU_TEMP="${RANK_W_GPU_TEMP:-0.00}"
-RANK_W_CPU_TEMP="${RANK_W_CPU_TEMP:-0.00}"
+MEDICAL_OUTPUT_DIR="${MEDICAL_OUTPUT_DIR:-outputs/medical_benchmark}"
+MEDICAL_SUMMARY_CSV="${MEDICAL_SUMMARY_CSV:-$MEDICAL_OUTPUT_DIR/medical_compare_summary.csv}"
+MEDICAL_DETAILS_JSON="${MEDICAL_DETAILS_JSON:-$MEDICAL_OUTPUT_DIR/medical_compare_details.json}"
+MEDICAL_RANKED_CSV="${MEDICAL_RANKED_CSV:-$MEDICAL_OUTPUT_DIR/medical_compare_ranked.csv}"
+MEDICAL_LIMIT="${MEDICAL_LIMIT:-0}"
 
 TMP_CSV=""
 PREV_NVP_MODE_ID=""
@@ -369,8 +357,8 @@ find_safe_config() {
   echo "-1,-1"
 }
 
-TMP_CSV="$(mktemp "${TMPDIR:-/tmp}/models_autotuned.XXXXXX.csv")"
-mkdir -p "$GENERAL_OUTPUT_DIR" "$(dirname "$OUTPUT_CSV")" "$(dirname "$RANKED_CSV")" "$(dirname "$PLOT_PNG")"
+TMP_CSV="$(mktemp "${TMPDIR:-/tmp}/medical_models_autotuned.XXXXXX.csv")"
+mkdir -p "$MEDICAL_OUTPUT_DIR" "$(dirname "$MEDICAL_SUMMARY_CSV")" "$(dirname "$MEDICAL_DETAILS_JSON")" "$(dirname "$MEDICAL_RANKED_CSV")"
 
 echo "name,path,n_gpu_layers,n_ctx,max_tokens" > "$TMP_CSV"
 
@@ -412,72 +400,50 @@ if (( skipped_count > 0 )); then
   warn "Skipped $skipped_count unloadable model(s); continuing with $selected_count model(s)"
 fi
 
-echo "[INFO] Running compare_models.py"
-python "$PROJECT_ROOT/bench/compare_models.py" \
+echo "[INFO] Running compare_medical_models.py"
+python "$PROJECT_ROOT/bench/compare_medical_models.py" \
   --models-file "$TMP_CSV" \
-  --num-prompts "$NUM_PROMPTS" \
-  --max-tokens "$MAX_TOKENS" \
-  --n-ctx "$N_CTX" \
-  --n-threads "$N_THREADS" \
-  --temperature "$TEMPERATURE" \
-  --top-p "$TOP_P" \
-  --seed "$SEED" \
-  --warmup \
-  --output-csv "$OUTPUT_CSV"
+  --limit "$MEDICAL_LIMIT" \
+  --output-dir "$MEDICAL_OUTPUT_DIR" \
+  --output-csv "$MEDICAL_SUMMARY_CSV" \
+  --details-json "$MEDICAL_DETAILS_JSON"
 
-echo "[INFO] Running plot_results.py"
-if python - <<'PY'
-import importlib.util
-raise SystemExit(0 if importlib.util.find_spec("matplotlib") else 1)
-PY
-then
-  python "$PROJECT_ROOT/bench/plot_results.py" \
-    --input-csv "$OUTPUT_CSV" \
-    --output-png "$PLOT_PNG" \
-    --sort-by "$PLOT_SORT_BY"
-else
-  echo "[WARN] matplotlib is not installed; skipping PNG plot generation"
-fi
-
-echo "[INFO] Running rank_models.py"
-if python - "$OUTPUT_CSV" <<'PY'
+echo "[INFO] Building ranked summary"
+python - "$MEDICAL_SUMMARY_CSV" "$MEDICAL_RANKED_CSV" <<'PY'
 import csv
 import sys
 
-ok_count = 0
-with open(sys.argv[1], "r", encoding="utf-8", newline="") as handle:
-    for row in csv.DictReader(handle):
-        if row.get("status") == "ok":
-            ok_count += 1
+input_path = sys.argv[1]
+output_path = sys.argv[2]
 
-raise SystemExit(0 if ok_count > 0 else 1)
+rows = []
+with open(input_path, 'r', encoding='utf-8', newline='') as handle:
+    reader = csv.DictReader(handle)
+    for row in reader:
+        row['accuracy'] = float(row.get('accuracy') or 0.0)
+        row['correct_answers'] = int(row.get('correct_answers') or 0)
+        row['total_questions'] = int(row.get('total_questions') or 0)
+        rows.append(row)
+
+rows.sort(key=lambda item: (-item['accuracy'], -item['correct_answers'], item['model_name']))
+
+with open(output_path, 'w', encoding='utf-8', newline='') as handle:
+    writer = csv.DictWriter(handle, fieldnames=['rank', 'model_name', 'model_path', 'total_questions', 'correct_answers', 'accuracy'])
+    writer.writeheader()
+    for index, row in enumerate(rows, start=1):
+        writer.writerow(
+            {
+                'rank': index,
+                'model_name': row['model_name'],
+                'model_path': row['model_path'],
+                'total_questions': row['total_questions'],
+                'correct_answers': row['correct_answers'],
+                'accuracy': f"{row['accuracy']:.2f}",
+            }
+        )
 PY
-then
-  python "$PROJECT_ROOT/bench/rank_models.py" \
-    --input-csv "$OUTPUT_CSV" \
-    --output-csv "$RANKED_CSV" \
-    --w-tps "$RANK_W_TPS" \
-    --w-rss "$RANK_W_RSS" \
-    --w-ttft "$RANK_W_TTFT" \
-    --w-gpu-util "$RANK_W_GPU_UTIL" \
-    --w-power "$RANK_W_POWER" \
-    --w-jetson-ram "$RANK_W_JETSON_RAM" \
-    --w-gpu-temp "$RANK_W_GPU_TEMP" \
-    --w-cpu-temp "$RANK_W_CPU_TEMP"
-else
-  echo "[WARN] No successful rows in $OUTPUT_CSV; skipping ranking"
-fi
 
-echo "[DONE] All steps completed"
-echo "[DONE] Output dir   : $GENERAL_OUTPUT_DIR"
-echo "[DONE] Results CSV  : $OUTPUT_CSV"
-if [[ -f "$RANKED_CSV" ]]; then
-  echo "[DONE] Ranked CSV   : $RANKED_CSV"
-else
-  echo "[DONE] Ranked CSV   : skipped"
-fi
-if [[ -f "$PLOT_PNG" ]]; then
-  echo "[DONE] Plot PNG     : $PLOT_PNG"
-else
-  echo "[DONE] Plot PNG     : skipped"
-fi
+echo "[DONE] Medical run-all completed"
+echo "[DONE] Summary CSV : $MEDICAL_SUMMARY_CSV"
+echo "[DONE] Details JSON : $MEDICAL_DETAILS_JSON"
+echo "[DONE] Ranked CSV   : $MEDICAL_RANKED_CSV"

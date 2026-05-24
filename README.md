@@ -161,12 +161,12 @@ python bench/compare_models.py \
   --n-ctx 1024 \
   --n-gpu-layers 35 \
   --warmup \
-  --output-csv outputs/comparison_results.csv
+  --output-csv outputs/general_benchmark/comparison_results.csv
 ```
 
 결과:
 - 콘솔에 모델별 TTFT/TPS/Peak RSS 요약
-- `outputs/comparison_results.csv`에 전체 비교 결과 저장
+- `outputs/general_benchmark/comparison_results.csv`에 전체 비교 결과 저장
 
 ### 원클릭 실행 스크립트(권장)
 
@@ -215,9 +215,9 @@ MAX_TOKENS=128 PROBE_MAX_TOKENS=128 ./run_all_bench.sh
 `matplotlib`가 설치되어 있지 않으면 CSV/랭킹은 생성하고 PNG 그래프 단계는 자동으로 건너뜁니다.
 
 생성 파일:
-- `outputs/comparison_results.csv`
-- `outputs/comparison_ranked.csv`
-- `outputs/comparison_results.png`
+- `outputs/general_benchmark/comparison_results.csv`
+- `outputs/general_benchmark/comparison_ranked.csv`
+- `outputs/general_benchmark/comparison_results.png`
 
 하드웨어 중심 정렬/랭킹 예시:
 
@@ -228,17 +228,29 @@ RANK_W_POWER=0.15 RANK_W_GPU_TEMP=0.10 RANK_W_CPU_TEMP=0.05 \
 ./run_all_bench.sh
 ```
 
+의학 전용 비교는 별도 스크립트로 실행합니다:
+
+```bash
+chmod +x run_all_medical_bench.sh
+./run_all_medical_bench.sh
+```
+
+생성 파일:
+- `outputs/medical_benchmark/medical_compare_summary.csv`
+- `outputs/medical_benchmark/medical_compare_details.json`
+- `outputs/medical_benchmark/medical_compare_ranked.csv`
+
 ## 7) 결과 그래프 자동 생성
 
 ```bash
 python bench/plot_results.py \
-  --input-csv outputs/comparison_results.csv \
-  --output-png outputs/comparison_results.png \
+  --input-csv outputs/general_benchmark/comparison_results.csv \
+  --output-png outputs/general_benchmark/comparison_results.png \
   --sort-by avg_tps
 ```
 
 생성 파일:
-- `outputs/comparison_results.png` (기본 성능 지표 + CSV에 값이 있는 Jetson 하드웨어 지표 자동 포함)
+- `outputs/general_benchmark/comparison_results.png` (기본 성능 지표 + CSV에 값이 있는 Jetson 하드웨어 지표 자동 포함)
 
 정렬 가능한 컬럼 예시:
 - `avg_tps`, `avg_ttft_s`, `peak_process_rss_mb`, `model_load_time_s`
@@ -266,20 +278,51 @@ pip install matplotlib
 
 ```bash
 python bench/rank_models.py \
-  --input-csv outputs/comparison_results.csv \
-  --output-csv outputs/comparison_ranked.csv \
+  --input-csv outputs/general_benchmark/comparison_results.csv \
+  --output-csv outputs/general_benchmark/comparison_ranked.csv \
   --w-tps 0.50 \
   --w-rss 0.30 \
-  --w-ttft 0.20 \
-  --w-power 0.00 \
+  --w-ttft 0.20
+```
+
+## 9) 의료 전용 벤치마크
+
+의학 객관식 문제를 대상으로 하는 전용 실행 스크립트와 다중 모델 비교 스크립트를 제공합니다.
+
+단일 의료 벤치:
+
+```bash
+python bench/benchmark_medical_llm.py --output-dir outputs/medical_benchmark
+```
+
+의료 전용 run-all:
+
+```bash
+./run_all_medical_bench.sh
+```
+
+모델 목록 CSV 예시 파일:
+
+```bash
+python bench/compare_medical_models.py \
+  --models-file models.example.csv \
+  --output-dir outputs/medical_benchmark/compare
+```
+
+생성 파일:
+- `outputs/medical_benchmark/medical_benchmark_summary.json`
+- `outputs/medical_benchmark/medical_benchmark_details.json`
+- `outputs/medical_benchmark/compare/medical_compare_summary.csv`
+- `outputs/medical_benchmark/compare/medical_compare_details.json`
+- `outputs/medical_benchmark/compare/medical_compare_ranked.csv`
   --w-gpu-temp 0.00 \
   --w-cpu-temp 0.00
 ```
 
 생성 파일:
-- `outputs/comparison_ranked.csv`
+- `outputs/general_benchmark/comparison_ranked.csv`
 
-## 9) GitHub 리포지토리 연결
+## 10) GitHub 리포지토리 연결
 
 아직 로컬에 Git 초기화가 안 되어 있다면:
 

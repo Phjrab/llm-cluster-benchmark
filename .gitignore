@@ -13,6 +13,8 @@ models/
 outputs/comparison_results.csv
 outputs/comparison_results.png
 outputs/comparison_ranked.csv
+outputs/general_benchmark/
+outputs/medical_benchmark/
 
 # OS/editor artifacts
 .DS_Store
