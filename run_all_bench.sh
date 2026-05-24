@@ -415,6 +415,7 @@ fi
 echo "[INFO] Running compare_models.py"
 python "$PROJECT_ROOT/bench/compare_models.py" \
   --models-file "$TMP_CSV" \
+  --output-dir "$GENERAL_OUTPUT_DIR" \
   --num-prompts "$NUM_PROMPTS" \
   --max-tokens "$MAX_TOKENS" \
   --n-ctx "$N_CTX" \
@@ -432,8 +433,7 @@ raise SystemExit(0 if importlib.util.find_spec("matplotlib") else 1)
 PY
 then
   python "$PROJECT_ROOT/bench/plot_results.py" \
-    --input-csv "$OUTPUT_CSV" \
-    --output-png "$PLOT_PNG" \
+    --output-dir "$GENERAL_OUTPUT_DIR" \
     --sort-by "$PLOT_SORT_BY"
 else
   echo "[WARN] matplotlib is not installed; skipping PNG plot generation"
@@ -454,8 +454,7 @@ raise SystemExit(0 if ok_count > 0 else 1)
 PY
 then
   python "$PROJECT_ROOT/bench/rank_models.py" \
-    --input-csv "$OUTPUT_CSV" \
-    --output-csv "$RANKED_CSV" \
+    --output-dir "$GENERAL_OUTPUT_DIR" \
     --w-tps "$RANK_W_TPS" \
     --w-rss "$RANK_W_RSS" \
     --w-ttft "$RANK_W_TTFT" \

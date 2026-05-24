@@ -52,7 +52,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-p", type=float, default=0.9)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--warmup", action="store_true")
-    parser.add_argument("--output-csv", default="outputs/general_benchmark/comparison_results.csv")
+    parser.add_argument("--output-dir", default="outputs/general_benchmark")
+    parser.add_argument("--output-csv", default=None)
     parser.add_argument("--fail-fast", action="store_true")
     return parser.parse_args()
 
@@ -182,6 +183,9 @@ def main() -> int:
     args = parse_args()
     specs = load_model_specs(args.models_file)
     benchmark_script = os.path.join(os.path.dirname(__file__), "benchmark.py")
+    output_csv = args.output_csv or os.path.join(args.output_dir, "comparison_results.csv")
+
+    os.makedirs(os.path.dirname(output_csv), exist_ok=True)
 
     results = []
 
@@ -351,7 +355,7 @@ def main() -> int:
         "elapsed_wall_s",
     ]
 
-    with open(args.output_csv, "w", encoding="utf-8", newline="") as handle:
+    with open(output_csv, "w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=out_fields)
         writer.writeheader()
         writer.writerows(results)
@@ -368,7 +372,7 @@ def main() -> int:
                 f"{i}. {row['name']}: TPS={row['avg_tps']} | TTFT={row['avg_ttft_s']}s | PeakRSS={row['peak_process_rss_mb']}MB"
             )
 
-    print(f"\nSaved comparison CSV: {args.output_csv}")
+    print(f"\nSaved comparison CSV: {output_csv}")
     return 0
 
 

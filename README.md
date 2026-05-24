@@ -156,6 +156,7 @@ python bench/benchmark.py \
 ```bash
 python bench/compare_models.py \
   --models-file models.example.csv \
+  --output-dir outputs/general_benchmark \
   --num-prompts 3 \
   --max-tokens 128 \
   --n-ctx 1024 \
@@ -244,8 +245,7 @@ chmod +x run_all_medical_bench.sh
 
 ```bash
 python bench/plot_results.py \
-  --input-csv outputs/general_benchmark/comparison_results.csv \
-  --output-png outputs/general_benchmark/comparison_results.png \
+  --output-dir outputs/general_benchmark \
   --sort-by avg_tps
 ```
 
@@ -278,8 +278,7 @@ pip install matplotlib
 
 ```bash
 python bench/rank_models.py \
-  --input-csv outputs/general_benchmark/comparison_results.csv \
-  --output-csv outputs/general_benchmark/comparison_ranked.csv \
+  --output-dir outputs/general_benchmark \
   --w-tps 0.50 \
   --w-rss 0.30 \
   --w-ttft 0.20
