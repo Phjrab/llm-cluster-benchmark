@@ -56,10 +56,16 @@
       .topbar {
         padding: 12px 14px;
         border-bottom: 1px solid #e8f0ee;
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 10px;
-        align-items: center;
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+
+      .topbar > div:first-child {
+        flex: 1 1 280px;
+        min-width: 260px;
       }
 
       .title {
@@ -75,6 +81,7 @@
       }
 
       .controls {
+        flex: 2 1 620px;
         display: flex;
         align-items: center;
         gap: 6px;
@@ -328,10 +335,11 @@
 
       @media (max-width: 900px) {
         .topbar {
-          grid-template-columns: 1fr;
+          align-items: stretch;
         }
 
         .controls {
+          flex: 1 1 100%;
           justify-content: flex-start;
         }
 
