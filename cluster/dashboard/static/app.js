@@ -10,6 +10,9 @@ const state = {
   activeExperiment: null,
   onboarding: {},
   settings: { worker_api_auth: false, dashboard_token_auth: false },
+  environment: [],
+  environmentBusy: false,
+  environmentActionIds: new Set(),
   onboardingProbe: null,
   devices: [],
   eventSource: null,
@@ -174,6 +177,78 @@ function statusFor(nodeName) {
   return state.status.find(item => item.name === nodeName) || {};
 }
 
+function environmentFor(nodeName) {
+  return state.environment.find(item => item.node === nodeName || item.name === nodeName) || {
+    node: nodeName,
+    status: "unknown",
+    checks: [],
+    missing_system_packages: [],
+    manual_commands: [],
+  };
+}
+
+const READINESS = {
+  ready: { label: "READY", detail: "LLM 런타임 구성 정상" },
+  repairable: { label: "AUTO FIX", detail: "자동 구성 가능" },
+  manual: { label: "MANUAL", detail: "수동 작업 필요" },
+  blocked: { label: "BLOCKED", detail: "환경 구성 차단" },
+  checking: { label: "CHECKING", detail: "환경 확인 중" },
+  unknown: { label: "UNCHECKED", detail: "점검하지 않음" },
+};
+
+function readinessMeta(status) {
+  const aliases = { needs_setup: "repairable", unavailable: "blocked", failed: "blocked", not_checked: "unknown" };
+  const source = String(status || "unknown").toLowerCase();
+  const normalized = aliases[source] || source;
+  return { status: READINESS[normalized] ? normalized : "unknown", ...(READINESS[normalized] || READINESS.unknown) };
+}
+
+function checkMeta(status) {
+  const normalized = String(status || "unknown").toLowerCase();
+  if (["ok", "pass", "passed", "ready", "installed"].includes(normalized)) return { status: "pass", icon: "✓", label: "정상" };
+  if (["warning", "warn", "repairable", "missing"].includes(normalized)) return { status: "warning", icon: "!", label: "구성 필요" };
+  if (["manual"].includes(normalized)) return { status: "manual", icon: "↗", label: "수동 작업" };
+  if (["failed", "fail", "error", "blocked"].includes(normalized)) return { status: "failed", icon: "×", label: "실패" };
+  if (["checking", "running", "pending"].includes(normalized)) return { status: "checking", icon: "…", label: "확인 중" };
+  return { status: "unknown", icon: "·", label: "미확인" };
+}
+
+function checkedAtLabel(value) {
+  if (!value) return "아직 점검하지 않음";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : `${date.toLocaleDateString("ko-KR")} ${date.toLocaleTimeString("ko-KR")}`;
+}
+
+function normalizedEnvironmentItems(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload?.report) return [payload.report];
+  if (payload?.node && payload?.status) return [payload];
+  return payload?.environment || payload?.node_readiness || payload?.reports || [];
+}
+
+function setEnvironmentReports(payload) {
+  const reports = normalizedEnvironmentItems(payload);
+  if (!Array.isArray(reports)) return;
+  const normalized = reports.map(report => ({
+    ...report,
+    node: report.node || report.name || "",
+    status: readinessMeta(report.status).status,
+    checks: Array.isArray(report.checks) ? report.checks : [],
+    missing_system_packages: Array.isArray(report.missing_system_packages) ? report.missing_system_packages : [],
+    manual_commands: Array.isArray(report.manual_commands) ? report.manual_commands : [],
+  })).filter(report => report.node);
+  const partial = Boolean(payload?.report || (payload?.node && payload?.status));
+  if (partial) {
+    const merged = new Map(state.environment.map(report => [report.node, report]));
+    normalized.forEach(report => merged.set(report.node, report));
+    state.environment = [...merged.values()];
+  } else {
+    state.environment = normalized;
+  }
+  renderNodes();
+  renderNodeDetail();
+}
+
 function actualPlatform(node) {
   return statusFor(node.name).profile?.platform_kind || statusFor(node.name).node_info?.platform_kind || node.platform || "auto";
 }
@@ -224,6 +299,8 @@ function renderNodes() {
     const kind = actualPlatform(node);
     const roleLabel = node.role === "head" ? "HEAD · CONTROL + INFERENCE" : `WORKER · ${platformName(kind).toUpperCase()}`;
     const error = live.error && live.error !== "disabled" ? live.error : "";
+    const environment = environmentFor(node.name);
+    const readiness = readinessMeta(environment.status);
     return `
       <article class="node-card ${selected ? "selected" : ""} ${node.enabled ? "" : "disabled"}" data-node-card="${escapeHtml(node.name)}">
         <div class="node-card-head">
@@ -232,7 +309,10 @@ function renderNodes() {
             <span></span>
           </label>
           <div class="node-title"><strong>${escapeHtml(node.name)}</strong><small>${escapeHtml(roleLabel)}<br>${escapeHtml(node.host)}:${node.api_port}</small></div>
-          <span class="status-pill ${online ? "online" : ""}"><i></i>${online ? "ONLINE" : node.enabled ? "OFFLINE" : "DISABLED"}</span>
+          <div class="node-status-stack">
+            <span class="status-pill ${online ? "online" : ""}"><i></i>${online ? "ONLINE" : node.enabled ? "OFFLINE" : "DISABLED"}</span>
+            <span class="readiness-pill ${readiness.status}" title="${escapeHtml(readiness.detail)}"><i></i>${readiness.label}</span>
+          </div>
         </div>
         <div class="node-model"><span>ACTIVE MODEL · ${live.model_count || 0} AVAILABLE</span><strong title="${escapeHtml(model)}">${escapeHtml(model)}</strong></div>
         <div class="node-metrics">
@@ -268,6 +348,27 @@ function renderNodes() {
   updateSummary();
 }
 
+function renderEnvironmentSummary() {
+  const selected = [...state.selectedNodes];
+  const reports = selected.map(environmentFor);
+  const counts = reports.reduce((acc, report) => {
+    const status = readinessMeta(report.status).status;
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+  const ready = counts.ready || 0;
+  const actionNeeded = reports.length - ready;
+  const summary = $("#environmentSummary");
+  if (summary) {
+    summary.innerHTML = `<span><strong>${ready}</strong> READY</span><span><strong>${actionNeeded}</strong> ACTION NEEDED</span>`;
+  }
+  const hasSelection = selected.length > 0;
+  ["#checkEnvironmentButton", "#installEnvironmentButton", "#environmentCheckAllButton", "#environmentInstallAllButton"].forEach(selector => {
+    const button = $(selector);
+    if (button) button.disabled = !hasSelection || state.environmentBusy;
+  });
+}
+
 function updateSummary() {
   const enabled = state.nodes.filter(node => node.enabled);
   const online = enabled.filter(node => statusFor(node.name).api);
@@ -291,6 +392,7 @@ function updateSummary() {
   updateStrategyGuidance();
   updatePlatformGuidance();
   updateModelAvailability();
+  renderEnvironmentSummary();
 }
 
 function updatePlatformGuidance() {
@@ -1203,6 +1305,45 @@ function metricBar(label, value, detail = "") {
   return `<div class="telemetry-bar"><div><span>${escapeHtml(label)}</span><strong>${finite(value) ? pct(value) : "N/A"}</strong></div><i><b style="width:${safe}%"></b></i>${detail ? `<small>${escapeHtml(detail)}</small>` : ""}</div>`;
 }
 
+function renderEnvironmentDetail(report) {
+  const readiness = readinessMeta(report.status);
+  const checks = Array.isArray(report.checks) ? report.checks : [];
+  const missingPackages = Array.isArray(report.missing_system_packages) ? report.missing_system_packages : [];
+  const manualCommands = Array.isArray(report.manual_commands) ? report.manual_commands : [];
+  const backend = typeof report.backend === "object" ? report.backend?.kind : report.backend;
+  const canInstall = !state.environmentBusy && !["ready", "checking", "blocked"].includes(readiness.status);
+  return `
+    <section class="readiness-detail" aria-labelledby="readinessDetailTitle">
+      <div class="readiness-detail-head">
+        <div>
+          <span>LLM EXECUTION ENVIRONMENT</span>
+          <h3 id="readinessDetailTitle">LLM 런타임 준비도</h3>
+          <p>${escapeHtml(readiness.detail)} · 마지막 점검 ${escapeHtml(checkedAtLabel(report.checked_at))}</p>
+        </div>
+        <span class="readiness-hero-status ${readiness.status}"><i></i>${readiness.label}</span>
+      </div>
+      <div class="readiness-path-grid">
+        <div><span>PLATFORM</span><strong>${escapeHtml(platformName(report.platform))}</strong><small>${escapeHtml([report.architecture, backend || "backend 미확인"].filter(Boolean).join(" · "))}</small></div>
+        <div><span>PROJECT</span><strong title="${escapeHtml(report.project_dir || "")}">${escapeHtml(report.project_dir || "미확인")}</strong><small>프로젝트 전용 작업 경로</small></div>
+        <div><span>VIRTUAL ENV</span><strong title="${escapeHtml(report.venv_path || "")}">${escapeHtml(report.venv_path || "미구성")}</strong><small>Python 패키지 격리 설치</small></div>
+        <div><span>MODELS</span><strong>${finite(report.model_count) ? Number(report.model_count) : "—"}</strong><small>${finite(report.disk_free_gb) ? `disk ${fmt(report.disk_free_gb, 1)} GB free` : "발견한 로컬 GGUF"}</small></div>
+      </div>
+      <div class="readiness-checks">
+        <div class="readiness-subhead"><strong>환경 체크리스트</strong><span>${checks.length}개 항목</span></div>
+        <ul>${checks.length ? checks.map(check => {
+          const meta = checkMeta(check.status);
+          return `<li class="${meta.status}"><i aria-hidden="true">${meta.icon}</i><div><strong>${escapeHtml(check.label || check.id || "환경 항목")}</strong><small>${escapeHtml(check.detail || meta.label)}${check.auto_fixable ? " · 자동 구성 가능" : ""}</small></div><span>${meta.label}</span></li>`;
+        }).join("") : `<li class="unknown"><i aria-hidden="true">·</i><div><strong>점검 결과 없음</strong><small>다시 점검을 실행하면 항목별 상태가 표시됩니다.</small></div><span>미확인</span></li>`}</ul>
+      </div>
+      ${missingPackages.length ? `<div class="readiness-guidance warning"><strong>시스템 패키지 필요</strong><p>${missingPackages.map(item => `<code>${escapeHtml(item)}</code>`).join(" ")}</p><small>passwordless sudo가 가능하면 고정 허용 목록만 설치하고, 불가하면 정확한 수동 명령을 안내합니다.</small></div>` : ""}
+      ${manualCommands.length ? `<div class="readiness-guidance manual"><strong>해당 노드에서 직접 실행</strong>${manualCommands.map(command => `<code>${escapeHtml(command)}</code>`).join("")}</div>` : ""}
+      <div class="readiness-detail-actions">
+        <button class="button ghost compact" type="button" data-environment-node-action="environment-check" ${state.environmentBusy ? "disabled" : ""}>다시 점검</button>
+        <button class="button secondary compact" type="button" data-environment-node-action="environment-install" ${canInstall ? "" : "disabled"}>자동 구성</button>
+      </div>
+    </section>`;
+}
+
 function renderNodeDetail() {
   if (!state.detailNode || !$("#nodeDetailDialog").open) return;
   const node = state.nodes.find(item => item.name === state.detailNode);
@@ -1217,6 +1358,7 @@ function renderNodeDetail() {
   const rails = metrics.power?.rails_w || {};
   const engines = metrics.accelerator?.engines || {};
   const fans = metrics.fans || {};
+  const environment = environmentFor(node.name);
   $("#nodeDetailContent").innerHTML = `
     <div class="detail-identity">
       <div><span>PLATFORM</span><strong>${escapeHtml(platformName(kind))}</strong><small>${escapeHtml(profile.board_model || "미확인")}</small></div>
@@ -1244,7 +1386,11 @@ function renderNodeDetail() {
       </section>
     </div>
     <section class="telemetry-history"><div><span>LIVE HISTORY</span><strong>최근 ${state.metricHistory.get(node.name)?.length || 0}개 표본 · CPU / GPU / RAM</strong></div><canvas id="telemetryChart" height="230" aria-label="노드 CPU GPU RAM 실시간 사용률 그래프"></canvas></section>
+    ${renderEnvironmentDetail(environment)}
     ${metrics.sampler_error ? `<div class="telemetry-warning">${escapeHtml(metrics.sampler_error)}</div>` : ""}`;
+  $$('[data-environment-node-action]', $("#nodeDetailContent")).forEach(button => button.addEventListener("click", () => {
+    runEnvironmentAction(button.dataset.environmentNodeAction, [node.name]);
+  }));
   requestAnimationFrame(drawTelemetryChart);
 }
 
@@ -1319,6 +1465,83 @@ function logLine(label, message) {
   log.scrollTop = log.scrollHeight;
 }
 
+function environmentLogLine(label, message) {
+  const log = $("#environmentLog");
+  if (!log) return;
+  const line = document.createElement("p");
+  line.innerHTML = `<time>${escapeHtml(label)}</time>${escapeHtml(message)}`;
+  log.append(line);
+  while (log.children.length > 80) log.firstElementChild.remove();
+  log.scrollTop = log.scrollHeight;
+}
+
+function actionName(value) {
+  if (typeof value === "string") return value;
+  return value?.action || value?.name || value?.action_name || "";
+}
+
+function actionId(value) {
+  if (!value || typeof value === "string") return "";
+  return String(value.id || value.action_id || value.task_id || "");
+}
+
+function environmentActionFromMessage(message) {
+  const name = actionName(message.action) || message.action_name || message.name || "";
+  const id = actionId(message.action) || String(message.action_id || message.task_id || "");
+  return {
+    name,
+    id,
+    matches: name.startsWith("environment-") || Boolean(id && state.environmentActionIds.has(id)),
+  };
+}
+
+function setEnvironmentBusy(busy, phase = "환경 점검 대기") {
+  state.environmentBusy = busy;
+  const dot = $("#environmentStateDot");
+  if (dot) dot.classList.toggle("running", busy);
+  const label = $("#environmentPhase");
+  if (label) label.textContent = phase;
+  renderEnvironmentSummary();
+  renderNodeDetail();
+}
+
+async function refreshEnvironmentReports() {
+  const data = await api("/api/environment");
+  setEnvironmentReports(data);
+  return normalizedEnvironmentItems(data);
+}
+
+async function runEnvironmentAction(action, nodeNames = [...state.selectedNodes]) {
+  const nodes = [...new Set(nodeNames)].filter(name => state.nodes.some(node => node.name === name && node.enabled));
+  if (!nodes.length) return toast("노드 선택 필요", "환경을 점검할 노드를 한 대 이상 선택하세요.", "error");
+  if (state.environmentBusy) return toast("환경 작업 진행 중", "현재 작업이 끝난 뒤 다시 시도하세요.", "error");
+  const installing = action === "environment-install";
+  if (installing && !confirm(`선택한 ${nodes.length}대의 LLM 실행 환경을 자동 구성합니다. Python 패키지는 각 프로젝트의 가상환경에 설치합니다. passwordless sudo가 가능하면 고정된 시스템 패키지만 설치하고, 불가하면 수동 명령만 안내합니다. 계속할까요?`)) return null;
+  const previous = state.environment.map(report => ({ ...report }));
+  const known = new Map(state.environment.map(report => [report.node, report]));
+  nodes.forEach(node => known.set(node, { ...environmentFor(node), node, status: "checking" }));
+  state.environment = [...known.values()];
+  renderNodes();
+  setEnvironmentBusy(true, installing ? "선택 노드 자동 구성 중" : "선택 노드 환경 점검 중");
+  environmentLogLine(installing ? "INSTALL" : "CHECK", `${nodes.join(", ")} · 작업 요청`);
+  try {
+    const options = installing ? { confirmed: true, models: selectedModelIds() } : {};
+    const result = await api("/api/actions", { method: "POST", body: { action, node_names: nodes, options } });
+    const created = result.action || result;
+    const id = actionId(created);
+    if (id && state.environmentBusy) state.environmentActionIds.add(id);
+    toast(installing ? "환경 자동 구성 시작" : "환경 점검 시작", nodes.join(", "));
+    return result;
+  } catch (error) {
+    state.environment = previous;
+    setEnvironmentBusy(false, "환경 작업 시작 실패");
+    renderNodes();
+    environmentLogLine("ERROR", error.message);
+    toast("환경 작업 시작 실패", error.message, "error");
+    return null;
+  }
+}
+
 async function bootstrap() {
   try {
     const data = await api("/api/bootstrap");
@@ -1329,6 +1552,8 @@ async function bootstrap() {
     state.suites = data.suites || [];
     state.experimentGroups = data.experiment_groups || [];
     state.actions = data.actions || [];
+    state.environment = [];
+    setEnvironmentReports(data.environment || data.node_readiness || []);
     state.onboarding = data.onboarding || {};
     state.settings = data.settings || { worker_api_auth: false, dashboard_token_auth: false };
     if (!state.settings.dashboard_token_auth && state.token) {
@@ -1343,6 +1568,10 @@ async function bootstrap() {
     setRunState(data.active_experiment);
     $("#publicKey").textContent = state.onboarding.public_key || "키가 아직 생성되지 않았습니다.";
     renderSettings();
+    state.environmentActionIds.clear();
+    const runningEnvironmentActions = state.actions.filter(action => actionName(action).startsWith("environment-") && ["queued", "running"].includes(action.status));
+    runningEnvironmentActions.forEach(action => { const id = actionId(action); if (id) state.environmentActionIds.add(id); });
+    setEnvironmentBusy(Boolean(runningEnvironmentActions.length), runningEnvironmentActions.length ? "노드 환경 작업 진행 중" : "환경 점검 대기");
     connectEvents();
     if (!location.hash) requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
   } catch (error) {
@@ -1386,6 +1615,10 @@ function connectEvents() {
     } else if (message.type === "inventory_changed") {
       state.nodes = message.nodes || state.nodes;
       renderNodes();
+    } else if (message.type === "environment_changed") {
+      setEnvironmentReports(message.environment || message.reports || message.node_readiness || message.report || message);
+      const changed = normalizedEnvironmentItems(message.environment || message.reports || message.node_readiness || message.report || message);
+      if (changed.length) environmentLogLine("STATUS", `${changed.map(report => report.node || report.name).filter(Boolean).join(", ")} · 환경 상태 갱신`);
     } else if (message.type === "settings_changed") {
       state.settings = message.settings || state.settings;
       renderSettings();
@@ -1400,11 +1633,37 @@ function connectEvents() {
     } else if (message.type === "auth_required") {
       state.eventSource?.close();
       if (!$("#authDialog").open) $("#authDialog").showModal();
+    } else if (message.type === "action_started") {
+      const environmentAction = environmentActionFromMessage(message);
+      if (environmentAction.matches) {
+        if (environmentAction.id) state.environmentActionIds.add(environmentAction.id);
+        setEnvironmentBusy(true, environmentAction.name === "environment-install" ? "선택 노드 자동 구성 중" : "선택 노드 환경 점검 중");
+        environmentLogLine("START", `${environmentAction.name || "environment"} 작업 시작`);
+      }
     } else if (message.type === "action_log") {
-      logLine("TASK", message.line);
+      const environmentAction = environmentActionFromMessage(message);
+      if (environmentAction.matches) {
+        const line = message.line || message.message || "환경 작업 진행 중";
+        if (!String(line).startsWith("CLUSTER_ENVIRONMENT_JSON=")) environmentLogLine("TASK", line);
+      }
+      else logLine("TASK", message.line);
     } else if (message.type === "action_finished") {
       const action = message.action;
-      toast(action.status === "completed" ? "작업 완료" : "작업 실패", `${action.action} · ${action.nodes.join(", ")}`, action.status === "completed" ? "success" : "error");
+      const environmentAction = environmentActionFromMessage(message);
+      if (environmentAction.matches) {
+        const id = environmentAction.id || actionId(action);
+        if (id) state.environmentActionIds.delete(id);
+        const status = action?.status || message.status || "completed";
+        const nodes = Array.isArray(action?.nodes) ? action.nodes : Array.isArray(message.nodes) ? message.nodes : [];
+        environmentLogLine(status === "completed" ? "DONE" : "ERROR", `${environmentAction.name || "환경 작업"} · ${nodes.join(", ") || "선택 노드"} · ${status}`);
+        setEnvironmentBusy(state.environmentActionIds.size > 0, state.environmentActionIds.size ? "노드 환경 작업 진행 중" : "환경 작업 완료");
+        refreshEnvironmentReports().catch(error => environmentLogLine("WARN", `최신 상태 조회 실패 · ${error.message}`));
+        toast(status === "completed" ? "환경 작업 완료" : "환경 작업 실패", nodes.join(", ") || environmentAction.name, status === "completed" ? "success" : "error");
+      } else {
+        const status = action?.status || message.status;
+        const nodes = Array.isArray(action?.nodes) ? action.nodes : [];
+        toast(status === "completed" ? "작업 완료" : "작업 실패", `${actionName(action)} · ${nodes.join(", ")}`, status === "completed" ? "success" : "error");
+      }
     } else if (message.type === "experiment_event") {
       const inner = message.event || {};
       setRunState(message.active);
@@ -1727,13 +1986,11 @@ function bindEvents() {
     }
   });
   $("#refreshButton").addEventListener("click", () => api("/api/status/refresh", { method: "POST" }).catch(error => toast("새로고침 실패", error.message, "error")));
-  $("#quickHealthButton").addEventListener("click", () => runAction("doctor"));
-  $("#prepareButton").addEventListener("click", () => {
-    const workers = [...state.selectedNodes].filter(name => state.nodes.find(node => node.name === name)?.role === "worker");
-    if (!workers.length) return toast("워커 선택 필요", "준비할 worker 노드를 선택하세요.", "error");
-    if (confirm("선택한 워커의 플랫폼을 감지하고 의존성, 코드, 선택 모델과 API를 준비합니다. 계속할까요?")) {
-      runActionOnNodes("prepare", workers, { confirmed: true, models: selectedModelIds() });
-    }
+  ["#quickHealthButton", "#checkEnvironmentButton", "#environmentCheckAllButton"].forEach(selector => {
+    $(selector).addEventListener("click", () => runEnvironmentAction("environment-check"));
+  });
+  ["#installEnvironmentButton", "#environmentInstallAllButton"].forEach(selector => {
+    $(selector).addEventListener("click", () => runEnvironmentAction("environment-install"));
   });
   $("#prepareRpcButton").addEventListener("click", () => {
     const nodes = [...state.selectedNodes];
