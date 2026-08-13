@@ -123,6 +123,12 @@ class ExperimentConfig:
     rpc_split_policy: str = "auto"
     rpc_tensor_split: List[float] = field(default_factory=list)
     acknowledge_experimental_rpc: bool = False
+    # The dashboard fills these fields when one user action expands into a
+    # sequence of independent per-model runs.  CLI configs that omit them keep
+    # the original single-run behaviour.
+    suite_id: str = ""
+    model_index: int = 1
+    model_count: int = 1
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "ExperimentConfig":
@@ -136,8 +142,11 @@ class ExperimentConfig:
             raise ValueError("experiment_id contains unsupported characters")
         if not self.node_names:
             raise ValueError("Select at least one node")
-        if not self.model_id.endswith(".gguf") or self.model_id.startswith("/") or ".." in Path(self.model_id).parts:
-            raise ValueError("model_id must be a safe relative GGUF path")
+        validate_model_id(self.model_id)
+        if self.suite_id and not self.suite_id.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("suite_id contains unsupported characters")
+        if self.model_count < 1 or not 1 <= self.model_index <= self.model_count:
+            raise ValueError("model_index must be between 1 and model_count")
         if not 128 <= self.n_ctx <= 4096:
             raise ValueError("n_ctx must be between 128 and 4096")
         if not 0 <= self.n_gpu_layers <= 120:
@@ -168,6 +177,30 @@ class ExperimentConfig:
             raise ValueError("rpc_tensor_split values must be positive finite numbers")
 
 
+def validate_model_id(model_id: str) -> str:
+    """Validate and return a repository-relative GGUF model identifier."""
+    if (
+        not isinstance(model_id, str)
+        or not model_id.endswith(".gguf")
+        or model_id.startswith("/")
+        or ".." in Path(model_id).parts
+    ):
+        raise ValueError("model_id must be a safe relative GGUF path")
+    return model_id
+
+
+def normalize_model_ids(model_id: str, model_ids: Sequence[str]) -> List[str]:
+    """Normalize legacy single-model and suite payloads without ambiguity."""
+    normalized = list(model_ids) if model_ids else ([model_id] if model_id else [])
+    if not normalized:
+        raise ValueError("Select at least one model")
+    for item in normalized:
+        validate_model_id(item)
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("model_ids must not contain duplicates")
+    return normalized
+
+
 @dataclass(frozen=True)
 class RequestTask:
     request_id: int
@@ -193,6 +226,29 @@ def strategy_work_units(config: ExperimentConfig, node_count: int) -> int:
         # changes only which node subset shares those requests.
         return config.requests * node_count
     return config.requests
+
+
+def benchmark_parameters(config: ExperimentConfig) -> Dict[str, Any]:
+    """Return report-safe workload metadata without persisting prompt text."""
+    return {
+        "model_id": config.model_id,
+        "n_ctx": config.n_ctx,
+        # Retained for schema-v2 readers; requested/effective fields below are
+        # authoritative for new report generators.
+        "n_gpu_layers": config.n_gpu_layers,
+        "requested_n_gpu_layers": config.n_gpu_layers,
+        "effective_n_gpu_layers": "all" if config.execution_strategy == "model_parallel_rpc" else None,
+        "requests_per_scenario": config.requests,
+        "concurrency": config.concurrency,
+        "max_tokens": config.max_tokens,
+        "temperature": config.temperature,
+        "top_p": config.top_p,
+        "seed": config.seed,
+        "warmup_requests": config.warmup_requests,
+        "require_uniform_config": config.require_uniform_config,
+        "prompt_sha256": hashlib.sha256(config.prompt.encode("utf-8")).hexdigest(),
+        "prompt_chars": len(config.prompt),
+    }
 
 
 def validate_strategy(nodes: Sequence[Node], config: ExperimentConfig) -> None:
@@ -805,22 +861,35 @@ def _measure_scenario(
         physical_concurrency = min(len(scenario.tasks), config.concurrency)
     max_workers = max(1, physical_concurrency)
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures: Dict[concurrent.futures.Future[Dict[str, Any]], tuple[RequestTask, Node]] = {}
+        futures: Dict[concurrent.futures.Future[Dict[str, Any]], tuple[RequestTask, Node, int]] = {}
+        batches: List[List[RequestTask]] = []
+        if config.execution_strategy == "broadcast_compare":
+            by_logical_id: Dict[int, List[RequestTask]] = {}
+            for task in scenario.tasks:
+                by_logical_id.setdefault(task.logical_request_id, []).append(task)
+            batches = list(by_logical_id.values())
+            batch_slots = min(config.concurrency, len(batches))
+        else:
+            batches = [[task] for task in scenario.tasks]
+            batch_slots = min(max_workers, len(batches))
+        batch_iterator = iter(enumerate(batches))
+        pending_by_batch: Dict[int, int] = {}
 
-        def submit(task: RequestTask) -> None:
-            target = nodes_by_name[task.target_node]
-            if rpc_coordinator is not None:
-                future = executor.submit(_stream_rpc_request, rpc_coordinator, rpc_url, config, task)
-            else:
-                future = executor.submit(_stream_request, target, config, task)
-            futures[future] = (task, target)
+        def submit_batch(batch_id: int, tasks: Sequence[RequestTask]) -> None:
+            pending_by_batch[batch_id] = len(tasks)
+            for task in tasks:
+                target = nodes_by_name[task.target_node]
+                if rpc_coordinator is not None:
+                    future = executor.submit(_stream_rpc_request, rpc_coordinator, rpc_url, config, task)
+                else:
+                    future = executor.submit(_stream_request, target, config, task)
+                futures[future] = (task, target, batch_id)
 
-        task_iterator = iter(scenario.tasks)
-        for _ in range(max_workers):
+        for _ in range(batch_slots):
             if cancel_event.is_set():
                 break
             try:
-                submit(next(task_iterator))
+                submit_batch(*next(batch_iterator))
             except StopIteration:
                 break
 
@@ -829,8 +898,9 @@ def _measure_scenario(
                 futures,
                 return_when=concurrent.futures.FIRST_COMPLETED,
             )
+            completed_batches: List[int] = []
             for future in done:
-                task, target = futures.pop(future)
+                task, target, batch_id = futures.pop(future)
                 try:
                     result = future.result()
                 except Exception as exc:
@@ -842,11 +912,16 @@ def _measure_scenario(
                     total=total_work_units,
                     result=result,
                 )
-                if not cancel_event.is_set():
+                pending_by_batch[batch_id] -= 1
+                if pending_by_batch[batch_id] == 0:
+                    del pending_by_batch[batch_id]
+                    completed_batches.append(batch_id)
+            if not cancel_event.is_set():
+                for _ in completed_batches:
                     try:
-                        submit(next(task_iterator))
+                        submit_batch(*next(batch_iterator))
                     except StopIteration:
-                        pass
+                        break
     return records, time.perf_counter() - started
 
 
@@ -881,7 +956,16 @@ def run_experiment(
     events_lock = threading.Lock()
 
     def emit(event_type: str, **payload: Any) -> None:
-        event = {"type": event_type, "at": utc_now(), "run_id": run_id, **payload}
+        event = {
+            "type": event_type,
+            "at": utc_now(),
+            "run_id": run_id,
+            "suite_id": config.suite_id,
+            "model_id": config.model_id,
+            "model_index": config.model_index,
+            "model_count": config.model_count,
+            **payload,
+        }
         with events_lock:
             with events_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(event, ensure_ascii=False) + "\n")
@@ -938,31 +1022,55 @@ def run_experiment(
         for warning in warnings:
             emit("warning", message=warning)
 
+        if cancel_event.is_set():
+            raise RuntimeError("Experiment cancelled before warmup")
+
         if config.warmup_requests:
             emit("phase", phase="warmup", message="측정 전 워밍업 실행 중")
             if rpc_coordinator is not None:
                 for warmup_index in range(config.warmup_requests):
+                    if cancel_event.is_set():
+                        break
                     task = RequestTask(-(warmup_index + 1), warmup_index + 1, "warmup", rpc_coordinator.name)
                     result = _stream_rpc_request(rpc_coordinator, rpc_url, config, task)
                     if not result["ok"]:
                         raise RuntimeError(f"RPC warmup failed: {result['error']}")
             else:
-                warmup_jobs = []
                 with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
+                    # Keep at most one warmup in flight per node. This avoids
+                    # queuing node_count * warmup_requests calls that would all
+                    # survive a cancellation request.
+                    warmup_jobs: Dict[concurrent.futures.Future[Dict[str, Any]], tuple[int, Node, int]] = {}
+
+                    def submit_warmup(node_index: int, node: Node, warmup_index: int) -> None:
+                        task = RequestTask(
+                            -(node_index * config.warmup_requests + warmup_index + 1),
+                            warmup_index + 1,
+                            "warmup",
+                            node.name,
+                            node_index,
+                        )
+                        future = executor.submit(_stream_request, node, config, task, True)
+                        warmup_jobs[future] = (node_index, node, warmup_index)
+
                     for node_index, node in enumerate(nodes):
-                        for warmup_index in range(config.warmup_requests):
-                            task = RequestTask(
-                                -(node_index * config.warmup_requests + warmup_index + 1),
-                                warmup_index + 1,
-                                "warmup",
-                                node.name,
-                                node_index,
-                            )
-                            warmup_jobs.append(executor.submit(_stream_request, node, config, task, True))
-                    for future in concurrent.futures.as_completed(warmup_jobs):
-                        result = future.result()
-                        if not result["ok"]:
-                            raise RuntimeError(f"Warmup failed on {result['node']}: {result['error']}")
+                        if cancel_event.is_set():
+                            break
+                        submit_warmup(node_index, node, 0)
+
+                    while warmup_jobs:
+                        done, _ = concurrent.futures.wait(
+                            warmup_jobs,
+                            return_when=concurrent.futures.FIRST_COMPLETED,
+                        )
+                        for future in done:
+                            node_index, node, warmup_index = warmup_jobs.pop(future)
+                            result = future.result()
+                            if not result["ok"]:
+                                raise RuntimeError(f"Warmup failed on {result['node']}: {result['error']}")
+                            next_index = warmup_index + 1
+                            if not cancel_event.is_set() and next_index < config.warmup_requests:
+                                submit_warmup(node_index, node, next_index)
 
         if cancel_event.is_set():
             raise RuntimeError("Experiment cancelled before measurement")
@@ -1007,7 +1115,11 @@ def run_experiment(
         wall_s = time.perf_counter() - wall_started
         records.sort(key=lambda item: item["request_id"])
         summary = _aggregate(records, wall_s)
-        if config.execution_strategy == "node_sweep" and scenario_summaries:
+        if (
+            config.execution_strategy == "node_sweep"
+            and config.sweep_mode == "cumulative"
+            and scenario_summaries
+        ):
             baseline = float(scenario_summaries[0].get("cluster_tokens_per_s") or 0.0)
             for scenario_summary in scenario_summaries:
                 throughput = float(scenario_summary.get("cluster_tokens_per_s") or 0.0)
@@ -1029,8 +1141,12 @@ def run_experiment(
             {
                 "schema_version": 2,
                 "run_id": run_id,
+                "suite_id": config.suite_id,
                 "experiment_id": config.experiment_id,
                 "name": config.name,
+                "model_id": config.model_id,
+                "model_index": config.model_index,
+                "model_count": config.model_count,
                 "execution_strategy": config.execution_strategy,
                 "model_placement": "sharded" if config.execution_strategy == "model_parallel_rpc" else "replicated",
                 "status": "cancelled" if cancel_event.is_set() else "completed",
@@ -1038,6 +1154,7 @@ def run_experiment(
                 "finished_at": utc_now(),
                 "nodes": [node.name for node in nodes],
                 "actual_model_config": loaded,
+                "benchmark_parameters": benchmark_parameters(config),
                 "warnings": warnings,
                 "scenario_summaries": scenario_summaries,
                 "topology": topology,
@@ -1058,17 +1175,23 @@ def run_experiment(
         emit("run_finished", summary=summary)
         return summary
     except Exception as exc:
+        cancelled = cancel_event.is_set()
         failure = {
             "schema_version": 2,
             "run_id": run_id,
+            "suite_id": config.suite_id,
             "experiment_id": config.experiment_id,
             "name": config.name,
+            "model_id": config.model_id,
+            "model_index": config.model_index,
+            "model_count": config.model_count,
             "execution_strategy": config.execution_strategy,
             "model_placement": "sharded" if config.execution_strategy == "model_parallel_rpc" else "replicated",
-            "status": "failed",
+            "status": "cancelled" if cancelled else "failed",
             "finished_at": utc_now(),
             "nodes": [node.name for node in nodes],
             "actual_model_config": loaded,
+            "benchmark_parameters": benchmark_parameters(config),
             "error": str(exc),
             "result_dir": str(run_dir),
         }
@@ -1076,6 +1199,9 @@ def run_experiment(
             json.dumps(failure, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+        if cancelled:
+            emit("run_finished", summary=failure)
+            return failure
         emit("run_failed", error=str(exc), summary=failure)
         raise
     finally:

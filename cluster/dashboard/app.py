@@ -27,12 +27,13 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cluster.benchmark.runner import (
     DEFAULT_RESULTS_DIR,
     ExperimentConfig,
     experiment_strategy_catalog,
+    normalize_model_ids,
     run_experiment,
     strategy_work_units,
     validate_strategy,
@@ -51,7 +52,7 @@ from cluster.clusterctl import (
 DASHBOARD_DIR = Path(__file__).resolve().parent
 CLUSTER_DIR = DASHBOARD_DIR.parent
 PROJECT_ROOT = CLUSTER_DIR.parent
-RUNTIME_DIR = PROJECT_ROOT / ".run" / "cluster"
+RUNTIME_DIR = Path(os.getenv("CLUSTER_RUNTIME_DIR", PROJECT_ROOT / ".run" / "cluster"))
 INVENTORY_PATH = Path(os.getenv("CLUSTER_INVENTORY", DEFAULT_INVENTORY))
 RESULTS_DIR = Path(os.getenv("CLUSTER_RESULTS_DIR", DEFAULT_RESULTS_DIR))
 EXPERIMENTS_DIR = RUNTIME_DIR / "experiments"
@@ -68,6 +69,7 @@ def utc_now() -> str:
 def ensure_runtime() -> None:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    (RESULTS_DIR / "_suites").mkdir(parents=True, exist_ok=True)
     EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
     if not INVENTORY_PATH.exists():
         raise RuntimeError(
@@ -206,7 +208,12 @@ class ExperimentPayload(BaseModel):
     experiment_id: str = Field("", max_length=80, pattern=r"^[a-z0-9][a-z0-9_-]*$|^$")
     name: str = "cluster-load-test"
     node_names: List[str] = Field(min_length=1, max_length=4)
-    model_id: str
+    # model_id remains accepted for older dashboard/CLI clients.  model_ids is
+    # authoritative when present and model_id is normalized to its first item.
+    model_id: str = ""
+    model_ids: List[str] = Field(default_factory=list, max_length=32)
+    continue_on_model_error: bool = True
+    model_cooldown_s: float = Field(2.0, ge=0.0, le=300.0)
     n_ctx: int = Field(1024, ge=128, le=4096)
     n_gpu_layers: int = Field(30, ge=0, le=120)
     requests: int = Field(20, ge=1, le=10_000)
@@ -224,6 +231,13 @@ class ExperimentPayload(BaseModel):
     rpc_split_policy: str = "auto"
     rpc_tensor_split: List[float] = Field(default_factory=list, max_length=4)
     acknowledge_experimental_rpc: bool = False
+
+    @model_validator(mode="after")
+    def normalize_models(self) -> "ExperimentPayload":
+        models = normalize_model_ids(self.model_id, self.model_ids)
+        self.model_ids = models
+        self.model_id = models[0]
+        return self
 
 
 class ClusterSettingsPayload(BaseModel):
@@ -688,16 +702,219 @@ class ActionManager:
 actions = ActionManager()
 
 
-def read_run_summaries(limit: int = 30) -> List[Dict[str, Any]]:
+def _suite_model_records(
+    model_ids: Sequence[str],
+    summaries: Sequence[Dict[str, Any]],
+    errors: Sequence[Dict[str, Any]],
+    attempted_models: int,
+    suite_status: str,
+    cleanup_statuses: Optional[Dict[int, str]] = None,
+) -> List[Dict[str, Any]]:
+    summaries_by_index = {
+        int(summary.get("model_index", 0)): summary
+        for summary in summaries
+        if str(summary.get("model_index", "")).isdigit()
+    }
+    terminal = suite_status in {"completed", "partial", "failed", "cancelled"}
+    records = []
+    for index, model_id in enumerate(model_ids, start=1):
+        summary = summaries_by_index.get(index)
+        model_errors = [
+            error
+            for error in errors
+            if error.get("model_index") == index or error.get("model_id") == model_id
+        ]
+        cleanup_errors = [error for error in model_errors if error.get("stage") == "unload"]
+        attempted = index <= attempted_models or summary is not None
+        if summary is not None:
+            status = summary.get("status", "failed")
+        elif attempted:
+            status = "failed" if terminal else "running"
+        else:
+            status = "unrun"
+        cleanup_status = (cleanup_statuses or {}).get(index)
+        if cleanup_errors:
+            cleanup_status = "failed"
+        elif not cleanup_status:
+            cleanup_status = (
+                "completed"
+                if summary is not None
+                else "pending"
+                if attempted and not terminal
+                else "unrun"
+            )
+        records.append(
+            {
+                "model_id": model_id,
+                "model_index": index,
+                "attempted": attempted,
+                "status": status,
+                "run_id": summary.get("run_id") if summary else None,
+                "cleanup_status": cleanup_status,
+                "errors": model_errors,
+            }
+        )
+    return records
+
+
+def _suite_document(
+    *,
+    suite_id: str,
+    experiment_id: str,
+    name: str,
+    status: str,
+    model_ids: Sequence[str],
+    attempted_models: int,
+    completed_models: int,
+    total_work_units: int,
+    completed_work_units: int,
+    continue_on_model_error: bool,
+    model_cooldown_s: float,
+    started_at: str,
+    summaries: Sequence[Dict[str, Any]],
+    errors: Sequence[Dict[str, Any]],
+    finished_at: Optional[str] = None,
+    cleanup_statuses: Optional[Dict[int, str]] = None,
+) -> Dict[str, Any]:
+    document = {
+        "schema_version": 1,
+        "artifact_type": "experiment_suite",
+        "suite_id": suite_id,
+        "experiment_id": experiment_id,
+        "name": name,
+        "status": status,
+        "model_ids": list(model_ids),
+        "model_count": len(model_ids),
+        "attempted_models": attempted_models,
+        "completed_models": completed_models,
+        "total_work_units": total_work_units,
+        "completed_work_units": completed_work_units,
+        "continue_on_model_error": continue_on_model_error,
+        "model_cooldown_s": model_cooldown_s,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "updated_at": utc_now(),
+        "summaries": list(summaries),
+        "errors": list(errors),
+    }
+    document["models"] = _suite_model_records(
+        model_ids, summaries, errors, attempted_models, status, cleanup_statuses
+    )
+    return document
+
+
+def write_suite_summary(summary: Dict[str, Any]) -> Path:
+    suite_id = str(summary.get("suite_id") or "")
+    if not suite_id or not suite_id.replace("-", "").replace("_", "").isalnum():
+        raise ValueError("suite_id contains unsupported characters")
+    suites_dir = RESULTS_DIR / "_suites"
+    suites_dir.mkdir(parents=True, exist_ok=True)
+    path = suites_dir / f"{suite_id}.json"
+    temporary = path.with_suffix(f".tmp.{uuid.uuid4().hex}")
+    temporary.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+    return path
+
+
+def reconcile_interrupted_suites() -> int:
+    """Finalize suite artifacts left nonterminal by a previous dashboard process."""
+    reconciled = 0
+    suites_dir = RESULTS_DIR / "_suites"
+    if not suites_dir.exists():
+        return reconciled
+    for path in suites_dir.glob("*.json"):
+        try:
+            suite = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if (
+            suite.get("artifact_type") != "experiment_suite"
+            or suite.get("status") not in {"queued", "running", "cancelling"}
+        ):
+            continue
+        error = {
+            "stage": "dashboard_restart",
+            "error": "Suite was interrupted by a dashboard restart",
+        }
+        errors = list(suite.get("errors") or [])
+        errors.append(error)
+        suite.update(
+            {
+                "status": "failed",
+                "interrupted": True,
+                "interrupted_from_status": suite.get("status"),
+                "finished_at": utc_now(),
+                "errors": errors,
+            }
+        )
+        suite["updated_at"] = suite["finished_at"]
+        suite["models"] = _suite_model_records(
+            suite.get("model_ids") or [],
+            suite.get("summaries") or [],
+            errors,
+            int(suite.get("attempted_models") or 0),
+            "failed",
+            {
+                int(model["model_index"]): str(model.get("cleanup_status") or "pending")
+                for model in suite.get("models") or []
+                if str(model.get("model_index", "")).isdigit()
+            },
+        )
+        write_suite_summary(suite)
+        reconciled += 1
+    return reconciled
+
+
+def read_suite_summaries(limit: int = 100) -> List[Dict[str, Any]]:
+    suites = []
+    suites_dir = RESULTS_DIR / "_suites"
+    if suites_dir.exists():
+        paths = sorted(suites_dir.glob("*.json"), reverse=True)
+        for path in paths if limit <= 0 else paths[:limit]:
+            try:
+                suite = json.loads(path.read_text(encoding="utf-8"))
+                if suite.get("artifact_type") == "experiment_suite" and suite.get("suite_id"):
+                    suites.append(suite)
+            except (OSError, ValueError):
+                continue
+    return suites
+
+
+def _with_suite_metadata(
+    summary: Dict[str, Any], suites_by_id: Dict[str, Dict[str, Any]]
+) -> Dict[str, Any]:
+    suite = suites_by_id.get(str(summary.get("suite_id") or ""))
+    if not suite:
+        return summary
+    return {
+        **summary,
+        "suite_status": suite.get("status"),
+        "suite_started_at": suite.get("started_at"),
+        "suite_finished_at": suite.get("finished_at"),
+        "suite_attempted_models": suite.get("attempted_models"),
+        "suite_completed_models": suite.get("completed_models"),
+        "suite_models": suite.get("models", []),
+        "suite_errors": suite.get("errors", []),
+    }
+
+
+def read_run_summaries(limit: int = 100) -> List[Dict[str, Any]]:
     summaries = []
+    suites_by_id = {
+        str(suite["suite_id"]): suite for suite in read_suite_summaries(limit=0)
+    }
     if RESULTS_DIR.exists():
         paths = sorted(RESULTS_DIR.glob("*/summary.json"), reverse=True)
         for path in paths[:limit]:
             try:
-                summaries.append(json.loads(path.read_text(encoding="utf-8")))
+                summary = json.loads(path.read_text(encoding="utf-8"))
+                summaries.append(_with_suite_metadata(summary, suites_by_id))
             except (OSError, ValueError):
                 continue
     return summaries
+
+
+reconcile_interrupted_suites()
 
 
 def _experiment_slug(value: str) -> str:
@@ -791,80 +1008,413 @@ class ExperimentManager:
         self._cancel: Optional[threading.Event] = None
 
     def start(self, payload: ExperimentPayload) -> Dict[str, Any]:
-        config = ExperimentConfig.from_dict(payload.model_dump())
+        payload_data = payload.model_dump()
+        config = ExperimentConfig.from_dict(payload_data)
         config.validate()
         selected = select_nodes(load_nodes(INVENTORY_PATH), config.node_names)
+        if len(selected) != len(config.node_names):
+            raise ValueError("Some selected nodes are unavailable")
         validate_strategy(selected, config)
+        available_models = {item["id"] for item in list_models()}
+        missing_models = [model_id for model_id in payload.model_ids if model_id not in available_models]
+        if missing_models:
+            raise ValueError("Unknown model_ids: " + ", ".join(missing_models))
+        suite_id = "suite_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6]
+        per_model_total = strategy_work_units(config, len(selected))
+        suite_started_at = utc_now()
         with self._lock:
             if self._active and self._active.get("status") in {"queued", "running"}:
                 raise ValueError("Another experiment is already running")
-            client_id = "pending_" + uuid.uuid4().hex[:8]
-            self._active = {
-                "id": client_id,
+            active = {
+                "id": suite_id,
+                "suite_id": suite_id,
                 "experiment_id": config.experiment_id,
                 "name": config.name,
                 "status": "queued",
                 "phase": "queued",
                 "completed": 0,
-                "total": strategy_work_units(config, len(selected)),
+                "total": per_model_total * len(payload.model_ids),
+                "model_completed": 0,
+                "model_total": per_model_total,
                 "strategy": config.execution_strategy,
-                "started_at": utc_now(),
+                "started_at": suite_started_at,
                 "nodes": config.node_names,
+                "model_ids": list(payload.model_ids),
+                "current_model": payload.model_ids[0],
+                "model_index": 0,
+                "model_count": len(payload.model_ids),
+                "completed_models": 0,
+                "summaries": [],
+                "errors": [],
                 "latest": None,
                 "error": "",
             }
+            write_suite_summary(
+                _suite_document(
+                    suite_id=suite_id,
+                    experiment_id=config.experiment_id,
+                    name=config.name,
+                    status="queued",
+                    model_ids=payload.model_ids,
+                    attempted_models=0,
+                    completed_models=0,
+                    total_work_units=per_model_total * len(payload.model_ids),
+                    completed_work_units=0,
+                    continue_on_model_error=payload.continue_on_model_error,
+                    model_cooldown_s=payload.model_cooldown_s,
+                    started_at=suite_started_at,
+                    summaries=[],
+                    errors=[],
+                )
+            )
+            self._active = active
             self._cancel = threading.Event()
+            cancel_event = self._cancel
             record = dict(self._active)
         thread = threading.Thread(
             target=self._run,
-            args=(config,),
-            name="cluster-experiment",
+            args=(config, list(payload.model_ids), payload.continue_on_model_error, payload.model_cooldown_s, cancel_event),
+            name="cluster-experiment-suite",
             daemon=True,
         )
         thread.start()
         return record
 
-    def _handle_event(self, event: Dict[str, Any]) -> None:
+    def _handle_event(self, event: Dict[str, Any], completed_offset: int = 0) -> None:
         with self._lock:
             if self._active is None:
                 return
             if event.get("run_id"):
-                self._active["id"] = event["run_id"]
+                self._active["current_run_id"] = event["run_id"]
             event_type = event.get("type")
             if event_type == "run_started":
                 self._active["status"] = "running"
             elif event_type == "phase":
                 self._active["phase"] = event.get("phase")
             elif event_type == "request_completed":
-                self._active["completed"] = event.get("completed", 0)
+                model_completed = int(event.get("completed", 0))
+                self._active["model_completed"] = model_completed
+                self._active["completed"] = completed_offset + model_completed
                 self._active["latest"] = event.get("result")
             elif event_type == "run_finished":
-                self._active["status"] = event.get("summary", {}).get("status", "completed")
-                self._active["summary"] = event.get("summary")
+                # run_finished is model-scoped. The suite remains running until
+                # every selected model (or the configured stop condition) ends.
+                self._active["current_summary"] = event.get("summary")
             elif event_type == "run_failed":
-                self._active["status"] = "failed"
                 self._active["error"] = event.get("error", "")
         events.publish("experiment_event", event=event, active=self.active())
 
-    def _run(self, config: ExperimentConfig) -> None:
-        try:
-            summary = run_experiment(
-                config,
-                inventory_path=INVENTORY_PATH,
-                results_root=RESULTS_DIR,
-                progress=self._handle_event,
-                cancel_event=self._cancel,
+    def _publish_suite_event(self, event_type: str, **payload: Any) -> None:
+        event = {"type": event_type, "at": utc_now(), **payload}
+        events.publish("experiment_event", event=event, active=self.active())
+
+    @staticmethod
+    def _unload_models(node_names: Sequence[str]) -> List[str]:
+        """Best-effort concurrent unload with explicit errors for suite isolation."""
+        nodes = select_nodes(load_nodes(INVENTORY_PATH), node_names)
+        errors: List[str] = []
+
+        def unload(node: Node) -> None:
+            request_json(f"{node.api_url}/api/unload-model", method="POST", payload={}, timeout=60.0)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(nodes))) as executor:
+            futures = {executor.submit(unload, node): node for node in nodes}
+            for future in concurrent.futures.as_completed(futures):
+                node = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    errors.append(f"{node.name}: {exc}")
+        missing = sorted(set(node_names) - {node.name for node in nodes})
+        errors.extend(f"{name}: unavailable" for name in missing)
+        return errors
+
+    def _run(
+        self,
+        base_config: ExperimentConfig,
+        model_ids: List[str],
+        continue_on_model_error: bool,
+        model_cooldown_s: float,
+        cancel_event: threading.Event,
+    ) -> None:
+        suite_id = self._active["suite_id"] if self._active else ""
+        model_count = len(model_ids)
+        per_model_total = strategy_work_units(base_config, len(base_config.node_names))
+        completed_offset = 0
+        summaries: List[Dict[str, Any]] = []
+        errors: List[Dict[str, Any]] = []
+        cleanup_statuses: Dict[int, str] = {}
+        completed_models = 0
+        attempted_models = 0
+        suite_started_at = (
+            str(self._active.get("started_at")) if self._active else utc_now()
+        )
+
+        def persist_suite(status: str, finished_at: Optional[str] = None) -> Dict[str, Any]:
+            suite_summary = _suite_document(
+                suite_id=suite_id,
+                experiment_id=base_config.experiment_id,
+                name=base_config.name,
+                status=status,
+                model_ids=model_ids,
+                attempted_models=attempted_models,
+                completed_models=completed_models,
+                total_work_units=per_model_total * model_count,
+                completed_work_units=completed_offset,
+                continue_on_model_error=continue_on_model_error,
+                model_cooldown_s=model_cooldown_s,
+                started_at=suite_started_at,
+                finished_at=finished_at,
+                summaries=summaries,
+                errors=errors,
+                cleanup_statuses=cleanup_statuses,
             )
+            write_suite_summary(suite_summary)
+            return suite_summary
+
+        try:
             with self._lock:
                 if self._active:
-                    self._active["summary"] = summary
-                    self._active["status"] = summary.get("status", "completed")
+                    self._active.update({"status": "running", "phase": "suite", "started_at": suite_started_at})
+            persist_suite("running")
+            self._publish_suite_event(
+                "suite_started",
+                suite_id=suite_id,
+                experiment_id=base_config.experiment_id,
+                model_ids=model_ids,
+                model_count=model_count,
+                total_work_units=per_model_total * model_count,
+            )
+
+            for index, model_id in enumerate(model_ids, start=1):
+                if cancel_event.is_set():
+                    break
+                attempted_models += 1
+                config = ExperimentConfig.from_dict(
+                    {
+                        **asdict(base_config),
+                        "model_id": model_id,
+                        "suite_id": suite_id,
+                        "model_index": index,
+                        "model_count": model_count,
+                    }
+                )
+                config.validate()
+                local_completed = 0
+                captured_summary: Optional[Dict[str, Any]] = None
+                model_failed = False
+
+                with self._lock:
+                    if self._active:
+                        self._active.update(
+                            {
+                                "phase": "model_starting",
+                                "current_model": model_id,
+                                "model_index": index,
+                                "model_completed": 0,
+                                "current_run_id": "",
+                                "current_summary": None,
+                                "error": "",
+                            }
+                        )
+                self._publish_suite_event(
+                    "model_started",
+                    suite_id=suite_id,
+                    experiment_id=config.experiment_id,
+                    model_id=model_id,
+                    model_index=index,
+                    model_count=model_count,
+                    total_work_units=per_model_total,
+                )
+                persist_suite("running")
+
+                def handle_model_event(event: Dict[str, Any]) -> None:
+                    nonlocal local_completed, captured_summary
+                    if event.get("type") == "request_completed":
+                        local_completed = max(local_completed, int(event.get("completed", 0)))
+                    if event.get("type") in {"run_finished", "run_failed"} and event.get("summary"):
+                        captured_summary = event["summary"]
+                    self._handle_event(event, completed_offset)
+
+                try:
+                    summary = run_experiment(
+                        config,
+                        inventory_path=INVENTORY_PATH,
+                        results_root=RESULTS_DIR,
+                        progress=handle_model_event,
+                        cancel_event=cancel_event,
+                    )
+                    captured_summary = summary
+                    summaries.append(summary)
+                    if summary.get("status") == "completed":
+                        completed_models += 1
+                    self._publish_suite_event(
+                        "model_finished",
+                        suite_id=suite_id,
+                        experiment_id=config.experiment_id,
+                        model_id=model_id,
+                        model_index=index,
+                        model_count=model_count,
+                        status=summary.get("status", "completed"),
+                        summary=summary,
+                    )
+                except Exception as exc:
+                    model_failed = True
+                    failure_summary = captured_summary or {
+                        "suite_id": suite_id,
+                        "experiment_id": config.experiment_id,
+                        "model_id": model_id,
+                        "model_index": index,
+                        "model_count": model_count,
+                        "status": "failed",
+                        "error": str(exc),
+                    }
+                    summaries.append(failure_summary)
+                    if cancel_event.is_set():
+                        self._publish_suite_event(
+                            "model_finished",
+                            suite_id=suite_id,
+                            experiment_id=config.experiment_id,
+                            model_id=model_id,
+                            model_index=index,
+                            model_count=model_count,
+                            status="cancelled",
+                            summary=failure_summary,
+                        )
+                    else:
+                        error = {
+                            "model_id": model_id,
+                            "model_index": index,
+                            "stage": "benchmark",
+                            "error": str(exc),
+                        }
+                        errors.append(error)
+                        self._publish_suite_event(
+                            "model_failed",
+                            suite_id=suite_id,
+                            experiment_id=config.experiment_id,
+                            model_id=model_id,
+                            model_index=index,
+                            model_count=model_count,
+                            error=str(exc),
+                            summary=failure_summary,
+                        )
+                finally:
+                    completed_offset += local_completed
+                    with self._lock:
+                        if self._active:
+                            self._active.update(
+                                {
+                                    "completed": completed_offset,
+                                    "completed_models": completed_models,
+                                    "summaries": list(summaries),
+                                    "errors": list(errors),
+                                }
+                            )
+
+                cleanup_statuses[index] = "pending"
+                persist_suite("cancelling" if cancel_event.is_set() else "running")
+
+                # Every attempted model is unloaded, including the final
+                # successful model, so a finished suite leaves no allocation.
+                cleanup_failed = False
+                with self._lock:
+                    if self._active:
+                        self._active["phase"] = "model_cleanup"
+                try:
+                    cleanup_errors = self._unload_models(config.node_names)
+                except Exception as exc:
+                    cleanup_errors = [str(exc)]
+                if cleanup_errors:
+                    cleanup_failed = True
+                    cleanup_statuses[index] = "failed"
+                    cleanup_error = {
+                        "model_id": model_id,
+                        "model_index": index,
+                        "stage": "unload",
+                        "error": "; ".join(cleanup_errors),
+                    }
+                    errors.append(cleanup_error)
+                    self._publish_suite_event(
+                        "model_failed",
+                        suite_id=suite_id,
+                        experiment_id=config.experiment_id,
+                        model_id=model_id,
+                        model_index=index,
+                        model_count=model_count,
+                        stage="unload",
+                        error=cleanup_error["error"],
+                    )
+                    with self._lock:
+                        if self._active:
+                            self._active["errors"] = list(errors)
+                else:
+                    cleanup_statuses[index] = "completed"
+                persist_suite("cancelling" if cancel_event.is_set() else "running")
+
+                should_continue = (
+                    index < model_count
+                    and not cancel_event.is_set()
+                    and not cleanup_failed
+                    and (not model_failed or continue_on_model_error)
+                )
+                if not should_continue:
+                    break
+                if model_cooldown_s > 0:
+                    with self._lock:
+                        if self._active:
+                            self._active["phase"] = "model_cooldown"
+                    self._publish_suite_event(
+                        "model_cooldown",
+                        suite_id=suite_id,
+                        after_model_id=model_id,
+                        seconds=model_cooldown_s,
+                    )
+                    if cancel_event.wait(model_cooldown_s):
+                        break
+
+            if cancel_event.is_set():
+                final_status = "cancelled"
+            elif errors:
+                final_status = "partial" if completed_models else "failed"
+            elif attempted_models == model_count:
+                final_status = "completed"
+            else:
+                final_status = "failed"
+            suite_summary = persist_suite(final_status, utc_now())
+            with self._lock:
+                if self._active:
+                    self._active.update(
+                        {
+                            "status": final_status,
+                            "phase": "finished",
+                            "summary": suite_summary,
+                            "summaries": summaries,
+                            "errors": errors,
+                            "completed_models": completed_models,
+                            "finished_at": suite_summary["finished_at"],
+                            "error": errors[-1]["error"] if errors else "",
+                        }
+                    )
+            self._publish_suite_event("suite_finished", **suite_summary)
         except Exception as exc:
+            error = {"stage": "suite", "error": str(exc)}
+            errors.append(error)
+            suite_summary = persist_suite("failed", utc_now())
             with self._lock:
                 if self._active:
-                    self._active["status"] = "failed"
-                    self._active["error"] = str(exc)
-            events.publish("experiment_failed", message=str(exc), active=self.active())
+                    self._active.update(
+                        {
+                            "status": "failed",
+                            "phase": "finished",
+                            "error": str(exc),
+                            "errors": errors,
+                            "summary": suite_summary,
+                            "summaries": summaries,
+                            "finished_at": suite_summary["finished_at"],
+                        }
+                    )
+            self._publish_suite_event("suite_finished", **suite_summary)
         finally:
             status_monitor.refresh_now()
 
@@ -915,6 +1465,7 @@ async def bootstrap() -> Dict[str, Any]:
         "defaults": defaults,
         "active_experiment": experiments.active(),
         "runs": read_run_summaries(),
+        "suites": read_suite_summaries(),
         "experiment_groups": read_experiment_groups(),
         "actions": actions.list(),
         "settings": read_settings(),
@@ -1066,6 +1617,10 @@ async def start_experiment(payload: ExperimentPayload) -> Dict[str, Any]:
             raise ValueError(
                 "Raspberry Pi nodes require n_gpu_layers=0: " + ", ".join(str(item) for item in pi_nodes)
             )
+        catalog_ids = {item["id"] for item in list_models()}
+        missing_models = [model_id for model_id in payload.model_ids if model_id not in catalog_ids]
+        if missing_models:
+            raise ValueError("Unknown model_ids: " + ", ".join(missing_models))
         definition = save_experiment_definition(payload)
         linked_payload = payload.model_copy(update={"experiment_id": definition["experiment_id"]})
         active = experiments.start(linked_payload)
@@ -1079,6 +1634,7 @@ async def list_experiments() -> Dict[str, Any]:
     return {
         "active": experiments.active(),
         "runs": read_run_summaries(),
+        "suites": read_suite_summaries(),
         "experiment_groups": read_experiment_groups(),
     }
 
@@ -1104,7 +1660,11 @@ async def get_run(run_id: str) -> Dict[str, Any]:
     summary_path = RESULTS_DIR / run_id / "summary.json"
     if not summary_path.exists():
         raise HTTPException(status_code=404, detail="Run not found")
-    return json.loads(summary_path.read_text(encoding="utf-8"))
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    suites_by_id = {
+        str(suite["suite_id"]): suite for suite in read_suite_summaries(limit=0)
+    }
+    return _with_suite_metadata(summary, suites_by_id)
 
 
 @app.exception_handler(Exception)
