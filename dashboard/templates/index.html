@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>MediFlow Cluster Lab</title>
+  <meta name="description" content="Jetson head/worker LLM 클러스터를 구성하고 벤치마크하는 내부 대시보드">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="주요 메뉴">
+      <a class="brand" href="#overview" aria-label="MediFlow Cluster Lab 홈">
+        <span class="brand-mark">M</span>
+        <span><strong>MediFlow</strong><small>CLUSTER LAB</small></span>
+      </a>
+      <nav class="nav-list">
+        <a class="nav-link active" href="#overview" data-section="overview"><span>01</span>개요</a>
+        <a class="nav-link" href="#nodes" data-section="nodes"><span>02</span>노드</a>
+        <a class="nav-link" href="#experiment" data-section="experiment"><span>03</span>실험 설계</a>
+        <a class="nav-link" href="#runs" data-section="runs"><span>04</span>실행 기록</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="live-indicator"><i></i><span id="streamLabel">연결 준비 중</span></div>
+        <p>HEAD CONTROL PLANE</p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">JETSON ORIN NANO · EDGE INFERENCE</p>
+          <h1>LLM Cluster Observatory</h1>
+        </div>
+        <div class="topbar-actions">
+          <span class="timestamp" id="lastUpdated">상태 확인 중</span>
+          <button class="icon-button" id="refreshButton" type="button" title="상태 새로고침" aria-label="상태 새로고침">↻</button>
+          <button class="button secondary" id="addNodeButton" type="button">+ 워커 연결</button>
+        </div>
+      </header>
+
+      <section id="overview" class="section hero-section">
+        <div class="hero-copy">
+          <span class="section-kicker">LIVE TESTBED</span>
+          <h2>작은 엣지 노드를<br><em>하나의 실험실</em>처럼.</h2>
+          <p>연결된 Jetson의 상태를 확인하고, 참여 노드를 골라 동일 모델과 파라미터로 재현 가능한 LLM 부하 실험을 실행합니다.</p>
+          <div class="hero-actions">
+            <a class="button primary" href="#experiment">새 실험 설계</a>
+            <button class="button ghost" id="quickHealthButton" type="button">환경 점검 실행</button>
+          </div>
+        </div>
+        <div class="cluster-orbit" aria-label="현재 클러스터 요약">
+          <div class="orbit-ring ring-one"></div>
+          <div class="orbit-ring ring-two"></div>
+          <div class="core-node">
+            <span>HEAD</span>
+            <strong id="headStatus">—</strong>
+            <small>192.168.0.26</small>
+          </div>
+          <div class="satellite sat-one"><i></i><span>W01</span></div>
+          <div class="satellite sat-two"><i></i><span>W02</span></div>
+          <div class="satellite sat-three"><i></i><span>W03</span></div>
+          <div class="orbit-caption"><span id="onlineCount">0</span> / <span id="enabledCount">1</span> ONLINE</div>
+        </div>
+      </section>
+
+      <section class="metric-strip" aria-label="클러스터 주요 지표">
+        <article><span>참여 노드</span><strong id="selectedCount">1</strong><small>SELECTED</small></article>
+        <article><span>설치 모델</span><strong id="modelCount">—</strong><small>GGUF · HEAD</small></article>
+        <article><span>평균 전력</span><strong id="averagePower">—</strong><small>WATTS</small></article>
+        <article><span>최근 처리량</span><strong id="recentThroughput">—</strong><small>TOKENS / SEC</small></article>
+      </section>
+
+      <section id="nodes" class="section panel-section">
+        <div class="section-heading">
+          <div><span class="section-index">02 / NODES</span><h2>클러스터 토폴로지</h2></div>
+          <div class="heading-actions">
+            <div class="segmented" aria-label="빠른 노드 선택">
+              <button type="button" data-preset="1">1대</button>
+              <button type="button" data-preset="2">2대</button>
+              <button type="button" data-preset="4">4대</button>
+            </div>
+            <button class="button secondary compact" id="prepareButton" type="button">선택 워커 준비</button>
+          </div>
+        </div>
+        <div class="node-grid" id="nodeGrid">
+          <div class="skeleton-card"></div><div class="skeleton-card"></div>
+        </div>
+        <div class="node-actions-bar">
+          <div><strong id="selectionSummary">선택 노드 1대</strong><span>실험과 제어 작업은 선택한 노드에만 적용됩니다.</span></div>
+          <div>
+            <button class="button ghost compact" data-cluster-action="sync-code" type="button">코드 동기화</button>
+            <button class="button ghost compact" data-cluster-action="sync-models" type="button">선택 모델 동기화</button>
+            <button class="button ghost compact" data-cluster-action="start" type="button">서버 시작</button>
+            <button class="button ghost compact danger-text" data-cluster-action="stop" type="button">서버 중지</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="experiment" class="section experiment-section">
+        <div class="section-heading light-heading">
+          <div><span class="section-index">03 / EXPERIMENT</span><h2>실험 설계</h2></div>
+          <span class="form-status" id="configValidity">설정 준비됨</span>
+        </div>
+        <form id="experimentForm" class="experiment-layout">
+          <div class="form-main">
+            <div class="field full-field">
+              <label for="experimentName">실험 이름</label>
+              <input id="experimentName" name="name" value="cluster-load-test" required>
+            </div>
+            <div class="field full-field">
+              <label for="modelSelect">모델</label>
+              <div class="select-wrap"><select id="modelSelect" name="model_id" required></select></div>
+              <small id="modelHint">head 노드에 설치된 GGUF 모델</small>
+            </div>
+            <div class="parameter-grid">
+              <div class="field"><label for="requestsInput">총 요청</label><input id="requestsInput" name="requests" type="number" min="1" max="10000" value="20"></div>
+              <div class="field"><label for="concurrencyInput">동시성</label><input id="concurrencyInput" name="concurrency" type="number" min="1" max="256" value="4"></div>
+              <div class="field"><label for="maxTokensInput">생성 토큰</label><input id="maxTokensInput" name="max_tokens" type="number" min="1" max="1024" value="128"></div>
+              <div class="field"><label for="contextInput">컨텍스트</label><input id="contextInput" name="n_ctx" type="number" min="128" max="4096" step="128" value="1024"></div>
+              <div class="field"><label for="layersInput">GPU 레이어</label><input id="layersInput" name="n_gpu_layers" type="number" min="0" max="120" value="30"></div>
+              <div class="field"><label for="warmupInput">워밍업/노드</label><input id="warmupInput" name="warmup_requests" type="number" min="0" max="10" value="1"></div>
+              <div class="field range-field"><label for="temperatureInput">Temperature <output id="temperatureValue">0.0</output></label><input id="temperatureInput" name="temperature" type="range" min="0" max="2" step="0.1" value="0"></div>
+              <div class="field range-field"><label for="topPInput">Top-p <output id="topPValue">0.9</output></label><input id="topPInput" name="top_p" type="range" min="0" max="1" step="0.05" value="0.9"></div>
+              <div class="field"><label for="seedInput">Seed</label><input id="seedInput" name="seed" type="number" min="-1" max="2147483647" value="42"></div>
+              <label class="toggle-field"><input id="uniformInput" name="require_uniform_config" type="checkbox" checked><span></span><div><strong>동일 구성 강제</strong><small>자동 하향 조정 시 실험 중단</small></div></label>
+            </div>
+            <div class="field full-field prompt-field">
+              <label for="promptInput">테스트 프롬프트</label>
+              <textarea id="promptInput" name="prompt" rows="5" required></textarea>
+              <small><span id="promptLength">0</span>자 · 모든 요청에 같은 프롬프트 사용</small>
+            </div>
+          </div>
+          <aside class="run-console">
+            <div class="console-head"><span>RUN CONTROL</span><i id="runStateDot"></i></div>
+            <div class="run-summary">
+              <div><small>NODES</small><strong id="runNodes">1</strong></div>
+              <div><small>REQUESTS</small><strong id="runRequests">20</strong></div>
+              <div><small>CONCURRENCY</small><strong id="runConcurrency">4</strong></div>
+            </div>
+            <div class="progress-block">
+              <div><span id="runPhase">실행 대기</span><strong id="runProgressText">0%</strong></div>
+              <div class="progress-track"><i id="runProgressBar"></i></div>
+            </div>
+            <div class="console-log" id="consoleLog" aria-live="polite">
+              <p><time>READY</time> 노드와 파라미터를 설정하세요.</p>
+            </div>
+            <button class="button primary run-button" id="runButton" type="submit">벤치마크 시작 <span>→</span></button>
+            <button class="button danger run-button hidden" id="cancelButton" type="button">실험 취소</button>
+          </aside>
+        </form>
+      </section>
+
+      <section id="runs" class="section panel-section runs-section">
+        <div class="section-heading">
+          <div><span class="section-index">04 / RESULTS</span><h2>실행 기록</h2></div>
+          <span class="muted-copy">원시 요청과 설정은 head 노드에 함께 보존됩니다.</span>
+        </div>
+        <div class="result-highlight" id="resultHighlight">
+          <div class="empty-result"><strong>아직 완료된 클러스터 실험이 없습니다.</strong><span>첫 실험을 실행하면 처리량과 지연 지표가 여기에 표시됩니다.</span></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>실험</th><th>노드</th><th>성공률</th><th>TTFT p50</th><th>E2E p95</th><th>처리량</th><th>상태</th></tr></thead>
+            <tbody id="runsTable"><tr><td colspan="7" class="empty-cell">실행 기록 없음</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer><span>MediFlow Cluster Lab</span><span>Internal LAN · Reproducible Edge LLM Evaluation</span></footer>
+    </main>
+  </div>
+
+  <dialog id="nodeDialog" class="modal">
+    <form id="nodeForm" method="dialog">
+      <div class="modal-head"><div><span class="section-index">WORKER ONBOARDING</span><h2>Jetson 워커 연결</h2></div><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div>
+      <p class="modal-intro">워커의 LAN 주소와 SSH 계정을 등록합니다. 등록 후 준비 작업을 실행하면 코드, CUDA 런타임, 선택 모델과 API 서버를 순서대로 확인합니다.</p>
+      <div class="modal-grid">
+        <div class="field"><label for="nodeName">노드 이름</label><input id="nodeName" required placeholder="jetson-worker-01"></div>
+        <div class="field"><label for="nodeHost">IP 주소 / 호스트</label><input id="nodeHost" required placeholder="192.168.0.27"></div>
+        <div class="field"><label for="nodeUser">SSH 사용자</label><input id="nodeUser" required value="jetson_orin_nano"></div>
+        <div class="field"><label for="nodeSshPort">SSH 포트</label><input id="nodeSshPort" type="number" min="1" max="65535" value="22"></div>
+        <div class="field"><label for="nodeApiPort">API 포트</label><input id="nodeApiPort" type="number" min="1" max="65535" value="8000"></div>
+        <div class="field full-field"><label for="nodeProjectDir">프로젝트 경로</label><input id="nodeProjectDir" required value="/home/jetson_orin_nano/project/llm/local_llm_bench"></div>
+      </div>
+      <div class="key-panel"><span>HEAD SSH PUBLIC KEY</span><code id="publicKey">키가 아직 생성되지 않았습니다.</code><button type="button" id="copyKeyButton">복사</button></div>
+      <div class="modal-actions"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="submit" class="button primary">노드 저장</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="authDialog" class="modal auth-modal">
+    <form id="authForm" method="dialog">
+      <div class="modal-head"><div><span class="section-index">SECURE ACCESS</span><h2>대시보드 토큰</h2></div></div>
+      <p class="modal-intro">head 노드의 <code>.run/cluster/dashboard.token</code> 값을 입력하세요. 브라우저에만 저장됩니다.</p>
+      <div class="field"><label for="tokenInput">Access token</label><input id="tokenInput" type="password" required autocomplete="off"></div>
+      <div class="modal-actions"><button type="submit" class="button primary">대시보드 연결</button></div>
+    </form>
+  </dialog>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>
