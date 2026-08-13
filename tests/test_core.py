@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import importlib
 import tempfile
 import subprocess
 import os
+import sys
 import threading
+import time
+import json
 from unittest import mock
 import unittest
 from pathlib import Path
@@ -16,8 +20,11 @@ from cluster.benchmark.runner import (
     _measure_scenario,
     _rpc_platform_from_check,
     _stop_rpc_topology,
+    benchmark_parameters,
     build_strategy_scenarios,
+    normalize_model_ids,
     percentile,
+    run_experiment,
     strategy_work_units,
     validate_platform_layers,
     validate_strategy,
@@ -69,10 +76,111 @@ class ExperimentTests(unittest.TestCase):
         config = ExperimentConfig(node_names=["jetson-head"])
         config.validate()
 
+    def test_report_metadata_omits_prompt_text(self) -> None:
+        config = ExperimentConfig(node_names=["head"], prompt="sensitive benchmark prompt")
+        metadata = benchmark_parameters(config)
+        self.assertNotIn("prompt", metadata)
+        self.assertEqual(metadata["prompt_chars"], len(config.prompt))
+        self.assertEqual(len(metadata["prompt_sha256"]), 64)
+
     def test_rejects_unsafe_model_path(self) -> None:
         config = ExperimentConfig(node_names=["jetson-head"], model_id="../model.gguf")
         with self.assertRaisesRegex(ValueError, "safe relative"):
             config.validate()
+
+    def test_suite_coordinates_are_validated(self) -> None:
+        ExperimentConfig(
+            node_names=["jetson-head"],
+            suite_id="suite_20260813_ab12",
+            model_index=2,
+            model_count=3,
+        ).validate()
+        with self.assertRaisesRegex(ValueError, "model_index"):
+            ExperimentConfig(node_names=["jetson-head"], model_index=0, model_count=2).validate()
+        with self.assertRaisesRegex(ValueError, "suite_id"):
+            ExperimentConfig(node_names=["jetson-head"], suite_id="../../suite").validate()
+
+    def test_model_suite_normalizes_legacy_payload_and_rejects_duplicates(self) -> None:
+        legacy = normalize_model_ids("legacy/model.gguf", [])
+        self.assertEqual(legacy, ["legacy/model.gguf"])
+        selected = normalize_model_ids("stale.gguf", ["a.gguf", "b.gguf"])
+        self.assertEqual(selected, ["a.gguf", "b.gguf"])
+        with self.assertRaisesRegex(ValueError, "duplicates"):
+            normalize_model_ids("", ["a.gguf", "a.gguf"])
+        with self.assertRaisesRegex(ValueError, "safe relative"):
+            normalize_model_ids("", ["../escape.gguf"])
+
+    def test_run_persists_suite_and_model_identity_in_summary_config_and_events(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inventory = root / "nodes.csv"
+            inventory.write_text(INVENTORY, encoding="utf-8")
+            config = ExperimentConfig(
+                experiment_id="multi-model-comparison",
+                node_names=["jetson-head"],
+                model_id="models/example.gguf",
+                n_ctx=128,
+                n_gpu_layers=0,
+                requests=1,
+                concurrency=1,
+                max_tokens=1,
+                warmup_requests=0,
+                suite_id="suite_20260813_ab12",
+                model_index=2,
+                model_count=3,
+            )
+            emitted = []
+
+            def fake_request(node, _config, task):
+                return {
+                    "request_id": task.request_id,
+                    "logical_request_id": task.logical_request_id,
+                    "scenario_id": task.scenario_id,
+                    "replica_index": task.replica_index,
+                    "node": node.name,
+                    "assigned_node": node.name,
+                    "node_host": node.host,
+                    "started_at": "2026-08-13T00:00:00+00:00",
+                    "ok": True,
+                    "ttft_s": 0.01,
+                    "e2e_s": 0.02,
+                    "server_ttft_s": 0.01,
+                    "server_generation_s": 0.01,
+                    "generated_tokens": 1,
+                    "tokens_per_s": 100.0,
+                    "output_chars": 1,
+                    "output_sha256": "abc",
+                    "error": "",
+                    "warmup": False,
+                }
+
+            loaded = {
+                "node": "jetson-head",
+                "loaded": True,
+                "model_id": config.model_id,
+                "n_ctx": config.n_ctx,
+                "n_gpu_layers": config.n_gpu_layers,
+                "n_batch": 512,
+            }
+            with mock.patch("cluster.benchmark.runner._load_model", return_value=loaded), mock.patch(
+                "cluster.benchmark.runner._stream_request", side_effect=fake_request
+            ):
+                summary = run_experiment(
+                    config,
+                    inventory_path=inventory,
+                    results_root=root / "results",
+                    progress=emitted.append,
+                )
+
+            self.assertEqual(summary["suite_id"], config.suite_id)
+            self.assertEqual(summary["model_id"], config.model_id)
+            self.assertEqual(summary["model_index"], 2)
+            self.assertEqual(summary["model_count"], 3)
+            saved_config = json.loads((Path(summary["result_dir"]) / "config.json").read_text(encoding="utf-8"))
+            self.assertEqual(saved_config["suite_id"], config.suite_id)
+            self.assertTrue(emitted)
+            self.assertTrue(all(event["suite_id"] == config.suite_id for event in emitted))
+            self.assertTrue(all(event["model_id"] == config.model_id for event in emitted))
 
     def test_percentile_interpolates(self) -> None:
         self.assertEqual(percentile([1.0, 2.0, 3.0, 4.0], 0.50), 2.5)
@@ -129,6 +237,64 @@ class ExperimentTests(unittest.TestCase):
         plan = build_strategy_scenarios(config, nodes)
         self.assertEqual(len(plan[0].tasks), 6)
         self.assertEqual(strategy_work_units(config, len(nodes)), 6)
+
+    def test_broadcast_concurrency_releases_slots_by_logical_group(self) -> None:
+        nodes = [
+            Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True),
+            Node("worker", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True),
+        ]
+        config = ExperimentConfig(
+            node_names=[node.name for node in nodes],
+            execution_strategy="broadcast_compare",
+            requests=2,
+            concurrency=1,
+        )
+        scenario = build_strategy_scenarios(config, nodes)[0]
+        lock = threading.Lock()
+        first_started = 0
+        first_completed = 0
+        overlap = False
+        both_started = threading.Event()
+
+        def fake_request(node, _config, task):
+            nonlocal first_started, first_completed, overlap
+            if task.logical_request_id == 1:
+                with lock:
+                    first_started += 1
+                    if first_started == 2:
+                        both_started.set()
+                self.assertTrue(both_started.wait(1))
+                if node.name == "worker":
+                    time.sleep(0.08)
+                with lock:
+                    first_completed += 1
+            else:
+                with lock:
+                    overlap = overlap or first_completed < 2
+            return {
+                "request_id": task.request_id,
+                "logical_request_id": task.logical_request_id,
+                "scenario_id": task.scenario_id,
+                "node": node.name,
+                "ok": True,
+                "ttft_s": 0.01,
+                "e2e_s": 0.02,
+                "generated_tokens": 1,
+                "tokens_per_s": 50.0,
+            }
+
+        with mock.patch("cluster.benchmark.runner._stream_request", side_effect=fake_request):
+            records, _ = _measure_scenario(
+                scenario,
+                {node.name: node for node in nodes},
+                config,
+                lambda *_args, **_kwargs: None,
+                threading.Event(),
+                0,
+                len(scenario.tasks),
+            )
+        self.assertEqual(len(records), 4)
+        self.assertFalse(overlap)
 
     def test_broadcast_aggregate_separates_logical_and_physical_calls(self) -> None:
         records = [
@@ -203,6 +369,55 @@ class ExperimentTests(unittest.TestCase):
         self.assertLessEqual(stream.call_count, config.concurrency)
         self.assertLessEqual(len(records), config.concurrency)
 
+    def test_warmup_cancellation_does_not_queue_every_request(self) -> None:
+        head = Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True)
+        worker = Node("worker", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True)
+        config = ExperimentConfig(
+            node_names=["head", "worker"],
+            model_id="models/test.gguf",
+            requests=1,
+            max_tokens=1,
+            warmup_requests=10,
+        )
+        cancelled = threading.Event()
+        started = threading.Event()
+        calls = 0
+        lock = threading.Lock()
+
+        def fake_warmup(node, _config, _task, _warmup=False):
+            nonlocal calls
+            with lock:
+                calls += 1
+                if calls == 2:
+                    started.set()
+            started.wait(1)
+            cancelled.set()
+            time.sleep(0.03)
+            return {"node": node.name, "ok": True, "error": ""}
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch(
+            "cluster.benchmark.runner.load_nodes", return_value=[head, worker]
+        ), mock.patch(
+            "cluster.benchmark.runner._load_model",
+            side_effect=lambda node, _config: {
+                "node": node.name,
+                "model_id": config.model_id,
+                "n_ctx": config.n_ctx,
+                "n_gpu_layers": config.n_gpu_layers,
+                "n_batch": 128,
+            },
+        ), mock.patch(
+            "cluster.benchmark.runner._stream_request", side_effect=fake_warmup
+        ):
+            summary = run_experiment(
+                config,
+                inventory_path=Path(directory) / "nodes.csv",
+                results_root=Path(directory) / "results",
+                cancel_event=cancelled,
+            )
+        self.assertEqual(summary["status"], "cancelled")
+        self.assertLessEqual(calls, len(config.node_names))
+
     def test_rpc_check_identifies_pi_head_for_loopback_device(self) -> None:
         head = Node("pi-head", "head", "127.0.0.1", "pi", 22, 8000, "/opt/llm", True)
         self.assertEqual(
@@ -223,6 +438,182 @@ class ExperimentTests(unittest.TestCase):
             errors = _stop_rpc_topology(head, [worker])
         self.assertEqual(len(errors), 2)
         self.assertTrue(all("stop failed" in error for error in errors))
+
+
+@unittest.skipUnless(
+    importlib.util.find_spec("fastapi") and importlib.util.find_spec("pydantic"),
+    "dashboard runtime dependencies are not installed",
+)
+class DashboardSuitePersistenceTests(unittest.TestCase):
+    @staticmethod
+    def _load_dashboard(root: Path):
+        inventory = root / "nodes.csv"
+        inventory.write_text(INVENTORY, encoding="utf-8")
+        if "cluster.dashboard.app" in sys.modules:
+            return sys.modules["cluster.dashboard.app"]
+        with mock.patch.dict(
+            os.environ,
+            {
+                "CLUSTER_INVENTORY": str(inventory),
+                "CLUSTER_RESULTS_DIR": str(root / "results"),
+                "CLUSTER_RUNTIME_DIR": str(root / "runtime"),
+            },
+        ), mock.patch.object(threading.Thread, "start", return_value=None):
+            return importlib.import_module("cluster.dashboard.app")
+
+    def test_run_list_merges_persisted_suite_status_and_unrun_models(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self._load_dashboard(root)
+            results = root / "results"
+            run_dir = results / "run_1"
+            run_dir.mkdir(parents=True)
+            model_summary = {
+                "run_id": "run_1",
+                "suite_id": "suite_test_cancelled",
+                "experiment_id": "experiment-1",
+                "model_id": "models/a.gguf",
+                "model_index": 1,
+                "model_count": 2,
+                "status": "cancelled",
+            }
+            (run_dir / "summary.json").write_text(
+                json.dumps(model_summary), encoding="utf-8"
+            )
+            suite = dashboard._suite_document(
+                suite_id="suite_test_cancelled",
+                experiment_id="experiment-1",
+                name="cancelled suite",
+                status="cancelled",
+                model_ids=["models/a.gguf", "models/b.gguf"],
+                attempted_models=1,
+                completed_models=0,
+                total_work_units=2,
+                completed_work_units=1,
+                continue_on_model_error=False,
+                model_cooldown_s=0,
+                started_at="2026-08-13T00:00:00+00:00",
+                finished_at="2026-08-13T00:01:00+00:00",
+                summaries=[model_summary],
+                errors=[],
+            )
+
+            with mock.patch.object(dashboard, "RESULTS_DIR", results):
+                dashboard.write_suite_summary(suite)
+                runs = dashboard.read_run_summaries()
+                suites = dashboard.read_suite_summaries()
+
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(runs[0]["suite_status"], "cancelled")
+            self.assertEqual(runs[0]["suite_attempted_models"], 1)
+            self.assertEqual(runs[0]["suite_models"][1]["status"], "unrun")
+            self.assertEqual(suites[0]["models"][1]["model_id"], "models/b.gguf")
+
+    def test_startup_reconciles_only_nonterminal_suite_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self._load_dashboard(root)
+            results = root / "results"
+            running = dashboard._suite_document(
+                suite_id="suite_interrupted",
+                experiment_id="experiment-1",
+                name="interrupted suite",
+                status="running",
+                model_ids=["models/a.gguf", "models/b.gguf"],
+                attempted_models=1,
+                completed_models=1,
+                total_work_units=2,
+                completed_work_units=1,
+                continue_on_model_error=False,
+                model_cooldown_s=0,
+                started_at="2026-08-13T00:00:00+00:00",
+                summaries=[
+                    {
+                        "run_id": "run_1",
+                        "model_id": "models/a.gguf",
+                        "model_index": 1,
+                        "status": "completed",
+                    }
+                ],
+                errors=[],
+                cleanup_statuses={1: "completed"},
+            )
+            completed = {**running, "suite_id": "suite_completed", "status": "completed"}
+
+            with mock.patch.object(dashboard, "RESULTS_DIR", results):
+                dashboard.write_suite_summary(running)
+                dashboard.write_suite_summary(completed)
+                self.assertEqual(dashboard.reconcile_interrupted_suites(), 1)
+                suites = {
+                    suite["suite_id"]: suite
+                    for suite in dashboard.read_suite_summaries(limit=0)
+                }
+
+            interrupted = suites["suite_interrupted"]
+            self.assertEqual(interrupted["status"], "failed")
+            self.assertTrue(interrupted["interrupted"])
+            self.assertEqual(interrupted["interrupted_from_status"], "running")
+            self.assertEqual(interrupted["errors"][-1]["stage"], "dashboard_restart")
+            self.assertEqual(interrupted["models"][1]["status"], "unrun")
+            self.assertEqual(suites["suite_completed"]["status"], "completed")
+
+    def test_final_success_is_unloaded_and_unload_failure_is_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self._load_dashboard(root)
+            results = root / "results"
+            manager = dashboard.ExperimentManager()
+            manager._active = {
+                "suite_id": "suite_test_cleanup",
+                "started_at": "2026-08-13T00:00:00+00:00",
+                "status": "queued",
+            }
+            config = ExperimentConfig(
+                experiment_id="experiment-1",
+                name="cleanup suite",
+                node_names=["jetson-head"],
+                requests=1,
+                concurrency=1,
+                max_tokens=1,
+                warmup_requests=0,
+            )
+
+            def fake_run(model_config, **_kwargs):
+                return {
+                    "run_id": f"run_{model_config.model_index}",
+                    "suite_id": model_config.suite_id,
+                    "experiment_id": model_config.experiment_id,
+                    "model_id": model_config.model_id,
+                    "model_index": model_config.model_index,
+                    "model_count": model_config.model_count,
+                    "status": "completed",
+                }
+
+            with mock.patch.object(dashboard, "RESULTS_DIR", results), mock.patch.object(
+                dashboard, "run_experiment", side_effect=fake_run
+            ), mock.patch.object(
+                manager,
+                "_unload_models",
+                side_effect=[[], ["jetson-head: unload failed"]],
+            ) as unload, mock.patch.object(dashboard.status_monitor, "refresh_now"):
+                manager._run(
+                    config,
+                    ["models/a.gguf", "models/b.gguf"],
+                    continue_on_model_error=False,
+                    model_cooldown_s=0,
+                    cancel_event=threading.Event(),
+                )
+
+            suite = json.loads(
+                (results / "_suites" / "suite_test_cleanup.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(unload.call_count, 2)
+            self.assertEqual(manager.active()["status"], "partial")
+            self.assertEqual(suite["status"], "partial")
+            self.assertEqual(suite["models"][1]["cleanup_status"], "failed")
+            self.assertEqual(suite["errors"][0]["stage"], "unload")
 
 
 class PlatformPlanTests(unittest.TestCase):
