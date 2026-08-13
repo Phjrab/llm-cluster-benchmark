@@ -1,0 +1,683 @@
+#!/usr/bin/env python3
+"""Control a small head/worker Jetson LLM benchmark cluster over SSH."""
+
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import csv
+import json
+import os
+import shlex
+import socket
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+
+CLUSTER_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CLUSTER_DIR.parent
+DEFAULT_INVENTORY = PROJECT_ROOT / ".run" / "cluster" / "nodes.local.csv"
+DEFAULT_IDENTITY = Path.home() / ".ssh" / "id_ed25519_llm_cluster"
+
+
+@dataclass(frozen=True)
+class Node:
+    name: str
+    role: str
+    host: str
+    user: str
+    ssh_port: int
+    api_port: int
+    project_dir: str
+    enabled: bool
+    identity_file: str = ""
+
+    @property
+    def api_url(self) -> str:
+        return f"http://{self.host}:{self.api_port}"
+
+    @property
+    def ssh_target(self) -> str:
+        return f"{self.user}@{self.host}" if self.user else self.host
+
+    @property
+    def is_local(self) -> bool:
+        if self.role != "head":
+            return False
+        local_names = {
+            "127.0.0.1",
+            "localhost",
+            "::1",
+            socket.gethostname(),
+            socket.getfqdn(),
+        }
+        return self.host in local_names
+
+
+def _as_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on", "enabled"}
+
+
+def load_nodes(path: Path, include_disabled: bool = False) -> List[Node]:
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Inventory not found: {path}. Copy cluster/config/nodes.example.csv to "
+            ".run/cluster/nodes.local.csv and edit it."
+        )
+
+    nodes: List[Node] = []
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        required = {
+            "name",
+            "role",
+            "host",
+            "user",
+            "ssh_port",
+            "api_port",
+            "project_dir",
+            "enabled",
+        }
+        missing = required.difference(reader.fieldnames or [])
+        if missing:
+            raise ValueError(f"Inventory is missing columns: {', '.join(sorted(missing))}")
+
+        for line_number, row in enumerate(reader, start=2):
+            if not row.get("name", "").strip():
+                continue
+            try:
+                node = Node(
+                    name=row["name"].strip(),
+                    role=row["role"].strip().lower(),
+                    host=row["host"].strip(),
+                    user=row["user"].strip(),
+                    ssh_port=int(row["ssh_port"]),
+                    api_port=int(row["api_port"]),
+                    project_dir=row["project_dir"].strip(),
+                    enabled=_as_bool(row["enabled"]),
+                    identity_file=row.get("identity_file", "").strip(),
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid inventory row {line_number}: {exc}") from exc
+
+            if node.role not in {"head", "worker"}:
+                raise ValueError(f"Invalid role for {node.name}: {node.role}")
+            if not node.host:
+                raise ValueError(f"Host is empty for {node.name}")
+            if not node.project_dir.startswith("/"):
+                raise ValueError(f"project_dir must be absolute for {node.name}")
+            if node.ssh_port < 1 or node.api_port < 1:
+                raise ValueError(f"Ports must be positive for {node.name}")
+            nodes.append(node)
+
+    names = [node.name for node in nodes]
+    if len(names) != len(set(names)):
+        raise ValueError("Inventory contains duplicate node names")
+    if sum(1 for node in nodes if node.role == "head" and node.enabled) != 1:
+        raise ValueError("Inventory must contain exactly one enabled head node")
+    return nodes if include_disabled else [node for node in nodes if node.enabled]
+
+
+def select_nodes(nodes: Sequence[Node], names: Sequence[str], workers_only: bool = False) -> List[Node]:
+    selected = list(nodes)
+    if workers_only:
+        selected = [node for node in selected if node.role == "worker"]
+    if names:
+        wanted = set(names)
+        selected = [node for node in selected if node.name in wanted]
+        found = {node.name for node in selected}
+        missing = wanted.difference(found)
+        if missing:
+            raise ValueError(f"Unknown or disabled nodes: {', '.join(sorted(missing))}")
+    return selected
+
+
+def _identity_path(node: Node) -> Optional[Path]:
+    raw = node.identity_file.strip()
+    if not raw and DEFAULT_IDENTITY.exists():
+        return DEFAULT_IDENTITY
+    if not raw:
+        return None
+    return Path(os.path.expandvars(os.path.expanduser(raw)))
+
+
+def ssh_base(node: Node) -> List[str]:
+    command = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=8",
+        "-o",
+        "ServerAliveInterval=5",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        "-p",
+        str(node.ssh_port),
+    ]
+    identity = _identity_path(node)
+    if identity is not None:
+        command.extend(["-i", str(identity), "-o", "IdentitiesOnly=yes"])
+    command.append(node.ssh_target)
+    return command
+
+
+def run_on_node(
+    node: Node,
+    args: Sequence[str],
+    timeout: int = 120,
+    check: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    if node.is_local:
+        command = list(args)
+    else:
+        remote_command = " ".join(shlex.quote(part) for part in args)
+        command = ssh_base(node) + [remote_command]
+    return subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=check,
+    )
+
+
+def request_json(
+    url: str,
+    method: str = "GET",
+    payload: Optional[Dict[str, Any]] = None,
+    timeout: float = 10.0,
+) -> Dict[str, Any]:
+    data = None
+    headers = {"Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def status_one(node: Node) -> Dict[str, Any]:
+    result: Dict[str, Any] = {
+        "name": node.name,
+        "role": node.role,
+        "host": node.host,
+        "ssh": False,
+        "project": False,
+        "api": False,
+        "loaded_model": None,
+        "error": "",
+    }
+    try:
+        probe = run_on_node(
+            node,
+            ["test", "-d", node.project_dir],
+            timeout=12,
+        )
+        result["ssh"] = probe.returncode == 0
+        result["project"] = probe.returncode == 0
+        if probe.returncode != 0:
+            result["error"] = (probe.stderr or "project directory missing").strip()
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        result["error"] = str(exc)
+
+    try:
+        health = request_json(f"{node.api_url}/health", timeout=3.0)
+        result["api"] = health.get("ok") is True
+        current = health.get("current") or {}
+        result["loaded_model"] = current.get("model_id")
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        if not result["error"]:
+            result["error"] = f"API: {exc}"
+    return result
+
+
+def run_parallel(nodes: Sequence[Node], function: Any) -> List[Any]:
+    if not nodes:
+        return []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
+        futures = {executor.submit(function, node): node for node in nodes}
+        results = []
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
+    order = {node.name: index for index, node in enumerate(nodes)}
+    return sorted(results, key=lambda item: order[item["name"]])
+
+
+def print_status(results: Sequence[Dict[str, Any]]) -> None:
+    print(f"{'NODE':<20} {'ROLE':<7} {'SSH':<5} {'PROJECT':<8} {'API':<5} MODEL")
+    for item in results:
+        print(
+            f"{item['name']:<20} {item['role']:<7} "
+            f"{str(item['ssh']):<5} {str(item['project']):<8} "
+            f"{str(item['api']):<5} {item['loaded_model'] or '-'}"
+        )
+        if item["error"]:
+            print(f"  error: {item['error']}")
+
+
+def command_inventory(nodes: Sequence[Node], _args: argparse.Namespace) -> int:
+    print(f"{'NODE':<20} {'ROLE':<7} {'HOST':<16} {'SSH':<5} {'API':<5} PROJECT")
+    for node in nodes:
+        print(
+            f"{node.name:<20} {node.role:<7} {node.host:<16} "
+            f"{node.ssh_port:<5} {node.api_port:<5} {node.project_dir}"
+        )
+    return 0
+
+
+def command_status(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    results = run_parallel(nodes, status_one)
+    print_status(results)
+    if args.json_out:
+        output = Path(args.json_out)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(results, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return 0 if all(item["ssh"] and item["project"] for item in results) else 1
+
+
+def _doctor_one(node: Node) -> Dict[str, Any]:
+    script = f"{node.project_dir}/cluster/worker_setup.sh"
+    try:
+        proc = run_on_node(
+            node,
+            [script, "--check-only", "--project-dir", node.project_dir],
+            timeout=60,
+        )
+        return {
+            "name": node.name,
+            "ok": proc.returncode == 0,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
+        }
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc)}
+
+
+def _setup_one(node: Node) -> Dict[str, Any]:
+    script = f"{node.project_dir}/cluster/worker_setup.sh"
+    try:
+        proc = run_on_node(
+            node,
+            [script, "--install", "--project-dir", node.project_dir],
+            timeout=3600,
+        )
+        return {
+            "name": node.name,
+            "ok": proc.returncode == 0,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
+        }
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc)}
+
+
+def command_doctor(nodes: Sequence[Node], _args: argparse.Namespace) -> int:
+    results = run_parallel(nodes, _doctor_one)
+    for item in results:
+        print(f"[{item['name']}] {'OK' if item['ok'] else 'FAIL'}")
+        if item["stdout"]:
+            print(item["stdout"])
+        if item["stderr"]:
+            print(item["stderr"], file=sys.stderr)
+    return 0 if all(item["ok"] for item in results) else 1
+
+
+def command_setup(nodes: Sequence[Node], _args: argparse.Namespace) -> int:
+    workers = [node for node in nodes if node.role == "worker"]
+    if not workers:
+        print("No enabled worker nodes; nothing to set up.")
+        return 0
+    results = run_parallel(workers, _setup_one)
+    for item in results:
+        print(f"[{item['name']}] {'OK' if item['ok'] else 'FAIL'}")
+        if item["stdout"]:
+            print(item["stdout"])
+        if item["stderr"]:
+            print(item["stderr"], file=sys.stderr)
+    return 0 if all(item["ok"] for item in results) else 1
+
+
+def _rsync_ssh(node: Node) -> str:
+    parts = [
+        "ssh",
+        "-p",
+        str(node.ssh_port),
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+    ]
+    identity = _identity_path(node)
+    if identity is not None:
+        parts.extend(["-i", str(identity), "-o", "IdentitiesOnly=yes"])
+    return " ".join(shlex.quote(part) for part in parts)
+
+
+def sync_code_one(node: Node, dry_run: bool = False) -> Dict[str, Any]:
+    if node.is_local:
+        return {"name": node.name, "ok": True, "stdout": "local head; skipped", "stderr": ""}
+    mkdir = run_on_node(node, ["mkdir", "-p", node.project_dir], timeout=30)
+    if mkdir.returncode != 0:
+        return {"name": node.name, "ok": False, "stdout": mkdir.stdout, "stderr": mkdir.stderr}
+
+    command = [
+        "rsync",
+        "-az",
+        "--itemize-changes",
+        "--exclude=.git/",
+        "--exclude=.venv/",
+        "--exclude=models/",
+        "--exclude=outputs/",
+        "--exclude=.run/",
+        "--exclude=__pycache__/",
+        "--exclude=cluster/nodes.local.csv",
+        "--exclude=cluster/results/",
+        "-e",
+        _rsync_ssh(node),
+    ]
+    if dry_run:
+        command.append("--dry-run")
+    command.extend([f"{PROJECT_ROOT}/", f"{node.ssh_target}:{node.project_dir}/"])
+    proc = subprocess.run(command, text=True, capture_output=True, timeout=600)
+    return {
+        "name": node.name,
+        "ok": proc.returncode == 0,
+        "stdout": proc.stdout.strip(),
+        "stderr": proc.stderr.strip(),
+    }
+
+
+def command_sync_code(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    workers = [node for node in nodes if node.role == "worker"]
+    results = [sync_code_one(node, dry_run=args.dry_run) for node in workers]
+    if not results:
+        print("No enabled worker nodes; nothing to sync.")
+        return 0
+    for item in results:
+        print(f"[{item['name']}] {'OK' if item['ok'] else 'FAIL'}")
+        if item["stdout"]:
+            print(item["stdout"])
+        if item["stderr"]:
+            print(item["stderr"], file=sys.stderr)
+    return 0 if all(item["ok"] for item in results) else 1
+
+
+def sync_models_one(node: Node, model_paths: Sequence[str], dry_run: bool = False) -> Dict[str, Any]:
+    if node.is_local:
+        return {"name": node.name, "ok": True, "stdout": "local head; skipped", "stderr": ""}
+    target_models = f"{node.project_dir}/models"
+    mkdir = run_on_node(node, ["mkdir", "-p", target_models], timeout=30)
+    if mkdir.returncode != 0:
+        return {"name": node.name, "ok": False, "stdout": mkdir.stdout, "stderr": mkdir.stderr}
+
+    stdout: List[str] = []
+    stderr: List[str] = []
+    ok = True
+    for relative in model_paths:
+        source = (PROJECT_ROOT / "models" / relative).resolve()
+        try:
+            source.relative_to((PROJECT_ROOT / "models").resolve())
+        except ValueError:
+            return {"name": node.name, "ok": False, "stdout": "", "stderr": f"Unsafe model path: {relative}"}
+        if not source.is_file() or source.suffix.lower() != ".gguf":
+            return {"name": node.name, "ok": False, "stdout": "", "stderr": f"Model not found: {relative}"}
+
+        remote_parent = f"{target_models}/{Path(relative).parent.as_posix()}"
+        parent_result = run_on_node(node, ["mkdir", "-p", remote_parent], timeout=30)
+        if parent_result.returncode != 0:
+            return {"name": node.name, "ok": False, "stdout": parent_result.stdout, "stderr": parent_result.stderr}
+
+        command = [
+            "rsync",
+            "-ah",
+            "--partial",
+            "--append-verify",
+            "--info=progress2",
+            "-e",
+            _rsync_ssh(node),
+        ]
+        if dry_run:
+            command.append("--dry-run")
+        command.extend([str(source), f"{node.ssh_target}:{remote_parent}/"])
+        proc = subprocess.run(command, text=True, capture_output=True, timeout=7200)
+        stdout.append(proc.stdout.strip())
+        stderr.append(proc.stderr.strip())
+        ok = ok and proc.returncode == 0
+        if proc.returncode != 0:
+            break
+    return {
+        "name": node.name,
+        "ok": ok,
+        "stdout": "\n".join(item for item in stdout if item),
+        "stderr": "\n".join(item for item in stderr if item),
+    }
+
+
+def all_model_paths() -> List[str]:
+    model_root = PROJECT_ROOT / "models"
+    return sorted(path.relative_to(model_root).as_posix() for path in model_root.rglob("*.gguf"))
+
+
+def command_sync_models(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    paths = args.model or all_model_paths()
+    if not paths:
+        print("No GGUF models found on head.", file=sys.stderr)
+        return 1
+    workers = [node for node in nodes if node.role == "worker"]
+    if not workers:
+        print("No enabled worker nodes; nothing to sync.")
+        return 0
+    for node in workers:
+        item = sync_models_one(node, paths, dry_run=args.dry_run)
+        print(f"[{item['name']}] {'OK' if item['ok'] else 'FAIL'}")
+        if item["stdout"]:
+            print(item["stdout"])
+        if item["stderr"]:
+            print(item["stderr"], file=sys.stderr)
+        if not item["ok"]:
+            return 1
+    return 0
+
+
+def command_prepare(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    workers = [node for node in nodes if node.role == "worker"]
+    if not workers:
+        print("No enabled worker nodes; nothing to prepare.")
+        return 0
+    model_paths = args.model or []
+    for node in workers:
+        print(f"[{node.name}] syncing project code", flush=True)
+        code_result = sync_code_one(node)
+        if not code_result["ok"]:
+            print(code_result["stderr"], file=sys.stderr)
+            return 1
+
+        print(f"[{node.name}] checking/installing runtime", flush=True)
+        setup_result = _setup_one(node)
+        if setup_result["stdout"]:
+            print(setup_result["stdout"])
+        if not setup_result["ok"]:
+            print(setup_result["stderr"], file=sys.stderr)
+            return 1
+
+        if model_paths:
+            print(f"[{node.name}] syncing {len(model_paths)} selected model(s)", flush=True)
+            model_result = sync_models_one(node, model_paths)
+            if model_result["stdout"]:
+                print(model_result["stdout"])
+            if not model_result["ok"]:
+                print(model_result["stderr"], file=sys.stderr)
+                return 1
+
+        print(f"[{node.name}] starting worker API", flush=True)
+        start_result = _lifecycle_one(node, "start")
+        if start_result["stdout"]:
+            print(start_result["stdout"])
+        if not start_result["ok"]:
+            print(start_result["stderr"], file=sys.stderr)
+            return 1
+        print(f"[{node.name}] ready", flush=True)
+    return 0
+
+
+def _lifecycle_one(node: Node, action: str) -> Dict[str, Any]:
+    script = f"{node.project_dir}/cluster/worker/{action}.sh"
+    env_command = [
+        "env",
+        f"PORT={node.api_port}",
+        "HOST=0.0.0.0",
+        f"CLUSTER_NODE_NAME={node.name}",
+        f"CLUSTER_NODE_ROLE={node.role}",
+        script,
+    ]
+    try:
+        proc = run_on_node(node, env_command, timeout=120)
+        return {
+            "name": node.name,
+            "ok": proc.returncode == 0,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
+        }
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc)}
+
+
+def command_lifecycle(nodes: Sequence[Node], action: str) -> int:
+    results = run_parallel(nodes, lambda node: _lifecycle_one(node, action))
+    for item in results:
+        print(f"[{item['name']}] {'OK' if item['ok'] else 'FAIL'}")
+        if item["stdout"]:
+            print(item["stdout"])
+        if item["stderr"]:
+            print(item["stderr"], file=sys.stderr)
+    return 0 if all(item["ok"] for item in results) else 1
+
+
+def _select_model_one(node: Node, model_id: str, n_ctx: int, n_gpu_layers: int) -> Dict[str, Any]:
+    try:
+        result = request_json(
+            f"{node.api_url}/api/select-model",
+            method="POST",
+            payload={"model_id": model_id, "n_ctx": n_ctx, "n_gpu_layers": n_gpu_layers},
+            timeout=900.0,
+        )
+        current = result.get("current") or {}
+        return {
+            "name": node.name,
+            "ok": result.get("ok") is True,
+            "model": current.get("model_id"),
+            "n_ctx": current.get("n_ctx"),
+            "n_gpu_layers": current.get("n_gpu_layers"),
+            "error": "",
+        }
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        return {"name": node.name, "ok": False, "model": None, "error": str(exc)}
+
+
+def command_select_model(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    results = run_parallel(
+        nodes,
+        lambda node: _select_model_one(node, args.model_id, args.n_ctx, args.n_gpu_layers),
+    )
+    for item in results:
+        if item["ok"]:
+            print(
+                f"[{item['name']}] OK model={item['model']} "
+                f"n_ctx={item['n_ctx']} n_gpu_layers={item['n_gpu_layers']}"
+            )
+        else:
+            print(f"[{item['name']}] FAIL {item['error']}", file=sys.stderr)
+    return 0 if all(item["ok"] for item in results) else 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--inventory",
+        type=Path,
+        default=Path(os.getenv("CLUSTER_INVENTORY", DEFAULT_INVENTORY)),
+    )
+    parser.add_argument("--node", action="append", default=[], help="Limit to a node name; repeatable")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    subparsers.add_parser("inventory", help="Print enabled nodes")
+    status_parser = subparsers.add_parser("status", help="Check SSH, project and API status")
+    status_parser.add_argument("--json-out")
+    subparsers.add_parser("doctor", help="Run environment checks on enabled nodes")
+    subparsers.add_parser("setup", help="Install the worker Python/CUDA runtime")
+
+    sync_code_parser = subparsers.add_parser("sync-code", help="Rsync code from head to workers")
+    sync_code_parser.add_argument("--dry-run", action="store_true")
+
+    sync_models_parser = subparsers.add_parser("sync-models", help="Rsync GGUF models to workers")
+    sync_models_parser.add_argument(
+        "--model",
+        action="append",
+        default=[],
+        help="Relative path under models/; repeatable. Default: all models",
+    )
+    sync_models_parser.add_argument("--dry-run", action="store_true")
+
+    prepare_parser = subparsers.add_parser(
+        "prepare",
+        help="Sync code, install runtime, sync selected models and start workers",
+    )
+    prepare_parser.add_argument(
+        "--model",
+        action="append",
+        default=[],
+        help="Relative model path to sync; repeatable",
+    )
+
+    subparsers.add_parser("start", help="Start API servers on enabled nodes")
+    subparsers.add_parser("stop", help="Stop API servers on enabled nodes")
+
+    select_parser = subparsers.add_parser("select-model", help="Load the same model on enabled nodes")
+    select_parser.add_argument("--model-id", required=True)
+    select_parser.add_argument("--n-ctx", type=int, default=1024)
+    select_parser.add_argument("--n-gpu-layers", type=int, default=20)
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        nodes = load_nodes(args.inventory)
+        nodes = select_nodes(nodes, args.node)
+    except (FileNotFoundError, ValueError) as exc:
+        parser.error(str(exc))
+
+    if args.command == "inventory":
+        return command_inventory(nodes, args)
+    if args.command == "status":
+        return command_status(nodes, args)
+    if args.command == "doctor":
+        return command_doctor(nodes, args)
+    if args.command == "setup":
+        return command_setup(nodes, args)
+    if args.command == "sync-code":
+        return command_sync_code(nodes, args)
+    if args.command == "sync-models":
+        return command_sync_models(nodes, args)
+    if args.command == "prepare":
+        return command_prepare(nodes, args)
+    if args.command == "start":
+        return command_lifecycle(nodes, "start")
+    if args.command == "stop":
+        return command_lifecycle(nodes, "stop")
+    if args.command == "select-model":
+        return command_select_model(nodes, args)
+    parser.error(f"Unsupported command: {args.command}")
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
