@@ -3,13 +3,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import concurrent.futures
 import csv
+import ipaddress
 import json
 import os
 import queue
+import re
 import secrets
-import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -34,6 +37,7 @@ from cluster.benchmark.runner import (
 from cluster.clusterctl import (
     DEFAULT_INVENTORY,
     Node,
+    discover_node,
     load_nodes,
     request_json,
     run_on_node,
@@ -47,9 +51,11 @@ PROJECT_ROOT = CLUSTER_DIR.parent
 RUNTIME_DIR = PROJECT_ROOT / ".run" / "cluster"
 INVENTORY_PATH = Path(os.getenv("CLUSTER_INVENTORY", DEFAULT_INVENTORY))
 RESULTS_DIR = Path(os.getenv("CLUSTER_RESULTS_DIR", DEFAULT_RESULTS_DIR))
+EXPERIMENTS_DIR = RUNTIME_DIR / "experiments"
 DEFAULTS_PATH = CLUSTER_DIR / "config" / "experiment_defaults.json"
 EXAMPLE_INVENTORY = CLUSTER_DIR / "config" / "nodes.example.csv"
 TOKEN_PATH = RUNTIME_DIR / "dashboard.token"
+SETTINGS_PATH = RUNTIME_DIR / "settings.json"
 
 
 def utc_now() -> str:
@@ -59,12 +65,18 @@ def utc_now() -> str:
 def ensure_runtime() -> None:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
     if not INVENTORY_PATH.exists():
-        INVENTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(EXAMPLE_INVENTORY, INVENTORY_PATH)
+        raise RuntimeError(
+            f"Cluster inventory is missing: {INVENTORY_PATH}. "
+            "Run ./cluster/setup_head.sh before starting the dashboard."
+        )
     if not TOKEN_PATH.exists():
         TOKEN_PATH.write_text(secrets.token_urlsafe(24) + "\n", encoding="utf-8")
         TOKEN_PATH.chmod(0o600)
+    if not SETTINGS_PATH.exists():
+        SETTINGS_PATH.write_text('{\n  "worker_api_auth": false\n}\n', encoding="utf-8")
+        SETTINGS_PATH.chmod(0o600)
 
 
 ensure_runtime()
@@ -120,13 +132,14 @@ events = EventBus()
 class NodePayload(BaseModel):
     name: str = Field(min_length=1, max_length=40, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
     role: str = "worker"
-    host: str = Field(min_length=1, max_length=255)
-    user: str = Field(min_length=1, max_length=64)
+    host: str = Field(min_length=1, max_length=45)
+    user: str = Field(min_length=1, max_length=64, pattern=r"^[a-z_][a-zA-Z0-9_-]*$")
     ssh_port: int = Field(22, ge=1, le=65535)
     api_port: int = Field(8000, ge=1, le=65535)
     project_dir: str = Field(min_length=2, max_length=512)
     enabled: bool = True
     identity_file: str = Field("", max_length=512)
+    platform: str = "auto"
 
     @field_validator("role")
     @classmethod
@@ -139,8 +152,44 @@ class NodePayload(BaseModel):
     @field_validator("project_dir")
     @classmethod
     def validate_project_dir(cls, value: str) -> str:
-        if not value.startswith("/") or ".." in Path(value).parts:
+        if (
+            not value.startswith(("/home/", "/opt/", "/srv/"))
+            or ".." in Path(value).parts
+            or not re.fullmatch(r"/[a-zA-Z0-9._/-]+", value)
+        ):
             raise ValueError("project_dir must be a safe absolute path")
+        return value
+
+    @field_validator("host")
+    @classmethod
+    def validate_host(cls, value: str) -> str:
+        try:
+            address = ipaddress.ip_address(value.strip())
+        except ValueError as exc:
+            raise ValueError("host must be a private IPv4 address") from exc
+        allowed = (
+            ipaddress.ip_network("10.0.0.0/8"),
+            ipaddress.ip_network("172.16.0.0/12"),
+            ipaddress.ip_network("192.168.0.0/16"),
+            ipaddress.ip_network("127.0.0.0/8"),
+        )
+        if address.version != 4 or not any(address in network for network in allowed):
+            raise ValueError("host must belong to the head node's private LAN")
+        return str(address)
+
+    @field_validator("identity_file")
+    @classmethod
+    def validate_identity_file(cls, value: str) -> str:
+        if value:
+            raise ValueError("identity_file is managed by the head node")
+        return ""
+
+    @field_validator("platform")
+    @classmethod
+    def validate_platform(cls, value: str) -> str:
+        value = value.lower().strip()
+        if value not in {"auto", "jetson", "raspberry-pi"}:
+            raise ValueError("platform must be auto, jetson or raspberry-pi")
         return value
 
 
@@ -151,8 +200,9 @@ class ActionPayload(BaseModel):
 
 
 class ExperimentPayload(BaseModel):
+    experiment_id: str = Field("", max_length=80, pattern=r"^[a-z0-9][a-z0-9_-]*$|^$")
     name: str = "cluster-load-test"
-    node_names: List[str]
+    node_names: List[str] = Field(min_length=1, max_length=4)
     model_id: str
     n_ctx: int = Field(1024, ge=128, le=4096)
     n_gpu_layers: int = Field(30, ge=0, le=120)
@@ -167,7 +217,31 @@ class ExperimentPayload(BaseModel):
     require_uniform_config: bool = True
 
 
+class ClusterSettingsPayload(BaseModel):
+    worker_api_auth: bool = False
+
+
 inventory_lock = threading.RLock()
+settings_lock = threading.RLock()
+
+
+def read_settings() -> Dict[str, Any]:
+    with settings_lock:
+        try:
+            raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raw = {}
+        return {"worker_api_auth": bool(raw.get("worker_api_auth", False))}
+
+
+def write_settings(settings: Dict[str, Any]) -> None:
+    with settings_lock:
+        temporary = SETTINGS_PATH.with_suffix(f".tmp.{uuid.uuid4().hex}")
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(settings, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+        os.replace(temporary, SETTINGS_PATH)
 
 
 def read_all_nodes() -> List[Node]:
@@ -181,6 +255,11 @@ def write_all_nodes(nodes: Sequence[Node]) -> None:
         raise ValueError("Exactly one enabled head node is required")
     if len({node.name for node in nodes}) != len(nodes):
         raise ValueError("Node names must be unique")
+    endpoints = [(node.host, node.ssh_port) for node in nodes]
+    if len(set(endpoints)) != len(endpoints):
+        raise ValueError("Each physical host and SSH port can be registered only once")
+    if sum(1 for node in nodes if node.enabled) > 4:
+        raise ValueError("At most four nodes can be enabled in one cluster")
     INVENTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
     temporary = INVENTORY_PATH.with_suffix(f".tmp.{uuid.uuid4().hex}")
     fieldnames = [
@@ -193,6 +272,7 @@ def write_all_nodes(nodes: Sequence[Node]) -> None:
         "project_dir",
         "enabled",
         "identity_file",
+        "platform",
     ]
     with temporary.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -206,6 +286,7 @@ def write_all_nodes(nodes: Sequence[Node]) -> None:
 
 def serialize_node(node: Node) -> Dict[str, Any]:
     item = asdict(node)
+    item.pop("identity_file", None)
     item["api_url"] = node.api_url
     return item
 
@@ -236,6 +317,8 @@ def probe_node(node: Node) -> Dict[str, Any]:
         "model_count": 0,
         "model_ids": [],
         "node_info": {},
+        "profile": {},
+        "capabilities": {},
         "error": "",
         "checked_at": utc_now(),
     }
@@ -243,25 +326,181 @@ def probe_node(node: Node) -> Dict[str, Any]:
         result["error"] = "disabled"
         return result
     try:
-        check = run_on_node(node, ["test", "-d", node.project_dir], timeout=8)
-        result["ssh"] = check.returncode == 0
-        result["project"] = check.returncode == 0
-        if check.returncode != 0:
-            result["error"] = (check.stderr or "project directory missing").strip()
-    except Exception as exc:
-        result["error"] = f"SSH: {exc}"
-    try:
         health = request_json(f"{node.api_url}/cluster/health", timeout=4.0)
-        result["api"] = health.get("ok") is True
+        reported = health.get("node") or {}
+        result["api"] = (
+            health.get("ok") is True
+            and int(health.get("telemetry_version") or 0) >= 2
+            and reported.get("name") == node.name
+        )
         result["current"] = health.get("current") or {}
         result["metrics"] = health.get("metrics") or {}
         result["model_count"] = int(health.get("model_count") or 0)
         result["model_ids"] = health.get("model_ids") or []
-        result["node_info"] = health.get("node") or {}
+        result["node_info"] = reported
+        result["profile"] = health.get("profile") or {}
+        result["capabilities"] = health.get("capabilities") or {}
+        result["telemetry_version"] = health.get("telemetry_version")
+        if not result["api"]:
+            raise ValueError("worker API identity or telemetry schema mismatch")
+        result["ssh"] = True
+        result["project"] = True
     except Exception as exc:
-        if not result["error"]:
-            result["error"] = f"API: {exc}"
+        discovery = discover_node(node, timeout=8)
+        result["ssh"] = discovery["ssh"]
+        result["project"] = discovery["project"]
+        result["discovery"] = discovery
+        if not discovery["ssh"]:
+            result["error"] = "SSH key authentication failed or the host is unreachable"
+        elif not discovery["project"]:
+            result["error"] = "SSH connected; project is not installed yet"
+        else:
+            result["error"] = f"Worker API is offline: {exc}"
     return result
+
+
+def _private_scan_networks() -> List[Dict[str, str]]:
+    try:
+        process = subprocess.run(
+            ["ip", "-j", "-4", "addr", "show", "up", "scope", "global"],
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=True,
+        )
+        interfaces = json.loads(process.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return []
+    allowed = (
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+        ipaddress.ip_network("192.168.0.0/16"),
+    )
+    found: List[Dict[str, str]] = []
+    seen = set()
+    for interface in interfaces:
+        interface_name = str(interface.get("ifname", ""))
+        if interface_name.startswith(("docker", "br-", "veth", "virbr", "tailscale")):
+            continue
+        for info in interface.get("addr_info", []):
+            raw = info.get("local", "")
+            try:
+                address = ipaddress.ip_address(raw)
+            except ValueError:
+                continue
+            if address.version != 4 or not any(address in network for network in allowed):
+                continue
+            prefix = max(int(info.get("prefixlen", 24)), 24)
+            network = ipaddress.ip_network(f"{address}/{prefix}", strict=False)
+            key = str(network)
+            if key not in seen:
+                seen.add(key)
+                found.append({"interface": interface_name, "local_ip": str(address), "network": key})
+    return found
+
+
+def _port_open(host: str, port: int = 22) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.22):
+            return True
+    except OSError:
+        return False
+
+
+def _ssh_fingerprint(host: str, port: int = 22) -> str:
+    try:
+        scan = subprocess.run(
+            ["ssh-keyscan", "-T", "2", "-p", str(port), host],
+            text=True,
+            capture_output=True,
+            timeout=4,
+        )
+        key_line = next((line for line in scan.stdout.splitlines() if line and not line.startswith("#")), "")
+        if not key_line:
+            return ""
+        fingerprint = subprocess.run(
+            ["ssh-keygen", "-lf", "-"],
+            input=key_line + "\n",
+            text=True,
+            capture_output=True,
+            timeout=3,
+        )
+        return fingerprint.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+scan_lock = threading.Lock()
+scan_cache: Dict[str, Any] = {"at": 0.0, "result": None}
+
+
+def scan_lan_devices(force: bool = False) -> Dict[str, Any]:
+    with scan_lock:
+        if not force and scan_cache["result"] is not None and time.monotonic() - scan_cache["at"] < 15:
+            return json.loads(json.dumps(scan_cache["result"]))
+    networks = _private_scan_networks()
+    candidates: List[str] = []
+    local_ips = {item["local_ip"] for item in networks}
+    for item in networks:
+        network = ipaddress.ip_network(item["network"])
+        candidates.extend(str(address) for address in network.hosts())
+    candidates = sorted(set(candidates), key=lambda value: tuple(int(part) for part in value.split(".")))
+    open_hosts: List[str] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(64, max(1, len(candidates)))) as executor:
+        futures = {executor.submit(_port_open, host): host for host in candidates}
+        for future in concurrent.futures.as_completed(futures):
+            if future.result():
+                open_hosts.append(futures[future])
+    existing = {node.host: node for node in read_all_nodes()}
+    head_node = next((node for node in read_all_nodes() if node.role == "head"), None)
+    devices = []
+    for host in sorted(open_hosts, key=lambda value: tuple(int(part) for part in value.split("."))):
+        known = existing.get(host) or (head_node if host in local_ips else None)
+        devices.append(
+            {
+                "host": host,
+                "ssh_port": 22,
+                "fingerprint": _ssh_fingerprint(host),
+                "known_node": known.name if known else "",
+                "is_head": host in local_ips,
+            }
+        )
+    result = {"networks": networks, "devices": devices, "scanned_at": utc_now()}
+    with scan_lock:
+        scan_cache["at"] = time.monotonic()
+        scan_cache["result"] = result
+    return json.loads(json.dumps(result))
+
+
+def probe_candidate(node: Node) -> Dict[str, Any]:
+    discovery = discover_node(node, timeout=20)
+    configured = node.platform
+    detected = discovery.get("platform_kind", "unknown")
+    warnings: List[str] = []
+    if configured != "auto" and discovery["ssh"] and configured != detected:
+        warnings.append(f"configured platform {configured} differs from detected {detected}")
+    if discovery["ssh"] and detected == "raspberry-pi" and discovery.get("architecture") not in {"aarch64", "arm64"}:
+        warnings.append("Raspberry Pi requires a 64-bit OS")
+    if discovery["ssh"] and not discovery.get("sudo_nopasswd") and discovery.get("missing_packages"):
+        warnings.append("system dependencies require one manual sudo command")
+    compatible = (
+        discovery["ssh"]
+        and detected in {"jetson", "raspberry-pi"}
+        and discovery.get("architecture") in {"aarch64", "arm64"}
+    )
+    if discovery["ssh"] and detected not in {"jetson", "raspberry-pi"}:
+        warnings.append("only NVIDIA Jetson and Raspberry Pi are supported")
+    if discovery["ssh"] and discovery.get("architecture") not in {"aarch64", "arm64"}:
+        warnings.append("a 64-bit ARM operating system is required")
+    return {
+        "ok": compatible,
+        "ssh_ok": discovery["ssh"],
+        "stage": "ready_to_register" if compatible else "incompatible" if discovery["ssh"] else "pairing_required",
+        "node": serialize_node(node),
+        "fingerprint": _ssh_fingerprint(node.host, node.ssh_port),
+        "discovery": discovery,
+        "warnings": warnings,
+    }
 
 
 class StatusMonitor:
@@ -306,7 +545,7 @@ status_monitor = StatusMonitor()
 
 
 class ActionManager:
-    ALLOWED = {"doctor", "setup", "prepare", "sync-code", "sync-models", "start", "stop", "select-model"}
+    ALLOWED = {"doctor", "setup", "prepare", "sync-code", "sync-models", "start", "stop", "restart", "select-model"}
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -319,6 +558,12 @@ class ActionManager:
         selected = select_nodes(enabled, payload.node_names)
         if not selected:
             raise ValueError("Select at least one enabled node")
+        selected_names = {node.name for node in selected}
+        experiment = experiments.active() if "experiments" in globals() else None
+        if experiment and experiment.get("status") in {"queued", "running"}:
+            overlap = selected_names.intersection(experiment.get("nodes") or [])
+            if overlap:
+                raise ValueError("Nodes are busy with an experiment: " + ", ".join(sorted(overlap)))
         action_id = datetime.now().strftime("%H%M%S") + "_" + uuid.uuid4().hex[:6]
         record = {
             "id": action_id,
@@ -331,6 +576,9 @@ class ActionManager:
             "log": [],
         }
         with self._lock:
+            for action in self._actions.values():
+                if action.get("status") in {"queued", "running"} and selected_names.intersection(action.get("nodes") or []):
+                    raise ValueError("A selected node already has a running control action")
             self._actions[action_id] = record
         thread = threading.Thread(
             target=self._run,
@@ -414,6 +662,17 @@ class ActionManager:
             values = list(self._actions.values())
         return json.loads(json.dumps(values[-20:][::-1]))
 
+    def busy_nodes(self) -> List[str]:
+        with self._lock:
+            return sorted(
+                {
+                    node
+                    for action in self._actions.values()
+                    if action.get("status") in {"queued", "running"}
+                    for node in action.get("nodes", [])
+                }
+            )
+
 
 actions = ActionManager()
 
@@ -428,6 +687,82 @@ def read_run_summaries(limit: int = 30) -> List[Dict[str, Any]]:
             except (OSError, ValueError):
                 continue
     return summaries
+
+
+def _experiment_slug(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug[:48] or "experiment"
+
+
+experiment_catalog_lock = threading.RLock()
+
+
+def save_experiment_definition(payload: ExperimentPayload) -> Dict[str, Any]:
+    with experiment_catalog_lock:
+        experiment_id = payload.experiment_id
+        if not experiment_id:
+            experiment_id = f"{_experiment_slug(payload.name)}-{uuid.uuid4().hex[:6]}"
+        path = EXPERIMENTS_DIR / f"{experiment_id}.json"
+        existing: Dict[str, Any] = {}
+        if path.exists():
+            try:
+                existing = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                existing = {}
+        now = utc_now()
+        definition = {
+            "experiment_id": experiment_id,
+            "name": payload.name,
+            "created_at": existing.get("created_at", now),
+            "updated_at": now,
+            "archived": False,
+            "default_config": {
+                key: value
+                for key, value in payload.model_dump().items()
+                if key not in {"experiment_id", "name"}
+            },
+        }
+        temporary = path.with_suffix(f".tmp.{uuid.uuid4().hex}")
+        temporary.write_text(json.dumps(definition, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(temporary, path)
+        return definition
+
+
+def read_experiment_groups() -> List[Dict[str, Any]]:
+    definitions: Dict[str, Dict[str, Any]] = {}
+    with experiment_catalog_lock:
+        for path in sorted(EXPERIMENTS_DIR.glob("*.json")):
+            try:
+                definition = json.loads(path.read_text(encoding="utf-8"))
+                definitions[definition["experiment_id"]] = definition
+            except (OSError, ValueError, KeyError):
+                continue
+    for run in read_run_summaries(limit=500):
+        experiment_id = run.get("experiment_id")
+        if not experiment_id:
+            experiment_id = f"legacy-{_experiment_slug(str(run.get('name') or 'unnamed'))}"
+        group = definitions.setdefault(
+            experiment_id,
+            {
+                "experiment_id": experiment_id,
+                "name": run.get("name") or experiment_id,
+                "created_at": run.get("started_at") or run.get("finished_at"),
+                "updated_at": run.get("finished_at"),
+                "archived": False,
+                "default_config": {},
+                "legacy": not bool(run.get("experiment_id")),
+            },
+        )
+        group.setdefault("runs", []).append(run)
+        if str(run.get("finished_at", "")) > str(group.get("updated_at", "")):
+            group["updated_at"] = run.get("finished_at")
+    groups = []
+    for definition in definitions.values():
+        runs = sorted(definition.get("runs", []), key=lambda item: item.get("finished_at", ""), reverse=True)
+        definition = {**definition, "runs": runs, "run_count": len(runs)}
+        definition["latest_run"] = runs[0] if runs else None
+        groups.append(definition)
+    return sorted(groups, key=lambda item: item.get("updated_at") or "", reverse=True)
 
 
 class ExperimentManager:
@@ -445,6 +780,7 @@ class ExperimentManager:
             client_id = "pending_" + uuid.uuid4().hex[:8]
             self._active = {
                 "id": client_id,
+                "experiment_id": config.experiment_id,
                 "name": config.name,
                 "status": "queued",
                 "phase": "queued",
@@ -557,10 +893,11 @@ async def bootstrap() -> Dict[str, Any]:
         "defaults": defaults,
         "active_experiment": experiments.active(),
         "runs": read_run_summaries(),
+        "experiment_groups": read_experiment_groups(),
         "actions": actions.list(),
+        "settings": read_settings(),
         "onboarding": {
             "public_key": public_key,
-            "identity_file": str(Path.home() / ".ssh" / "id_ed25519_llm_cluster"),
         },
     }
 
@@ -574,6 +911,30 @@ async def event_stream() -> StreamingResponse:
     )
 
 
+@app.get("/api/settings", dependencies=[Depends(verify_token)])
+async def get_settings() -> Dict[str, Any]:
+    return {"settings": read_settings()}
+
+
+@app.put("/api/settings", dependencies=[Depends(verify_token)])
+async def update_settings(payload: ClusterSettingsPayload) -> Dict[str, Any]:
+    previous = read_settings()
+    updated = payload.model_dump()
+    write_settings(updated)
+    action: Optional[Dict[str, Any]] = None
+    if previous != updated:
+        try:
+            enabled_names = [node.name for node in load_nodes(INVENTORY_PATH)]
+            action = actions.start(
+                ActionPayload(action="restart", node_names=enabled_names, options={})
+            )
+        except ValueError as exc:
+            write_settings(previous)
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    events.publish("settings_changed", settings=updated, action=action)
+    return {"ok": True, "settings": updated, "action": action}
+
+
 @app.get("/api/status", dependencies=[Depends(verify_token)])
 async def get_status() -> Dict[str, Any]:
     return {"nodes": status_monitor.snapshot(), "at": utc_now()}
@@ -583,6 +944,19 @@ async def get_status() -> Dict[str, Any]:
 async def refresh_status() -> Dict[str, Any]:
     threading.Thread(target=status_monitor.refresh_now, daemon=True).start()
     return {"ok": True}
+
+
+@app.post("/api/network/scan", dependencies=[Depends(verify_token)])
+async def scan_network(force: bool = False) -> Dict[str, Any]:
+    return await asyncio.to_thread(scan_lan_devices, force)
+
+
+@app.post("/api/nodes/probe", dependencies=[Depends(verify_token)])
+async def probe_unregistered_node(payload: NodePayload) -> Dict[str, Any]:
+    if payload.role != "worker":
+        raise HTTPException(status_code=400, detail="Only worker candidates can be probed")
+    node = Node(**payload.model_dump())
+    return await asyncio.to_thread(probe_candidate, node)
 
 
 @app.post("/api/nodes", dependencies=[Depends(verify_token)])
@@ -643,15 +1017,44 @@ async def list_actions() -> Dict[str, Any]:
 @app.post("/api/experiments", dependencies=[Depends(verify_token)])
 async def start_experiment(payload: ExperimentPayload) -> Dict[str, Any]:
     try:
-        active = experiments.start(payload)
+        current = experiments.active()
+        if current and current.get("status") in {"queued", "running"}:
+            raise ValueError("Another experiment is already running")
+        busy = set(actions.busy_nodes()).intersection(payload.node_names)
+        if busy:
+            raise ValueError("Nodes have a running control action: " + ", ".join(sorted(busy)))
+        status_by_name = {item.get("name"): item for item in status_monitor.snapshot()}
+        inventory_by_name = {item.name: item for item in read_all_nodes()}
+        pi_nodes = []
+        for name in payload.node_names:
+            detected = (status_by_name.get(name, {}).get("profile") or {}).get("platform_kind")
+            configured = inventory_by_name.get(name).platform if inventory_by_name.get(name) else "auto"
+            if detected == "raspberry-pi" or configured == "raspberry-pi":
+                pi_nodes.append(name)
+        if pi_nodes and payload.n_gpu_layers != 0:
+            raise ValueError(
+                "Raspberry Pi nodes require n_gpu_layers=0: " + ", ".join(str(item) for item in pi_nodes)
+            )
+        definition = save_experiment_definition(payload)
+        linked_payload = payload.model_copy(update={"experiment_id": definition["experiment_id"]})
+        active = experiments.start(linked_payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "experiment": active}
+    return {"ok": True, "experiment": active, "definition": definition}
 
 
 @app.get("/api/experiments", dependencies=[Depends(verify_token)])
 async def list_experiments() -> Dict[str, Any]:
-    return {"active": experiments.active(), "runs": read_run_summaries()}
+    return {
+        "active": experiments.active(),
+        "runs": read_run_summaries(),
+        "experiment_groups": read_experiment_groups(),
+    }
+
+
+@app.get("/api/experiment-groups", dependencies=[Depends(verify_token)])
+async def list_experiment_groups() -> Dict[str, Any]:
+    return {"experiment_groups": read_experiment_groups()}
 
 
 @app.post("/api/experiments/cancel", dependencies=[Depends(verify_token)])

@@ -30,12 +30,13 @@
     <main class="main-content">
       <header class="topbar">
         <div>
-          <p class="eyebrow">JETSON ORIN NANO · EDGE INFERENCE</p>
+          <p class="eyebrow">JETSON + RASPBERRY PI · EDGE INFERENCE</p>
           <h1>LLM Cluster Observatory</h1>
         </div>
         <div class="topbar-actions">
           <span class="timestamp" id="lastUpdated">상태 확인 중</span>
           <button class="icon-button" id="refreshButton" type="button" title="상태 새로고침" aria-label="상태 새로고침">↻</button>
+          <button class="icon-button" id="settingsButton" type="button" title="클러스터 설정" aria-label="클러스터 설정">⚙</button>
           <button class="button secondary" id="addNodeButton" type="button">+ 워커 연결</button>
         </div>
       </header>
@@ -44,7 +45,7 @@
         <div class="hero-copy">
           <span class="section-kicker">LIVE TESTBED</span>
           <h2>작은 엣지 노드를<br><em>하나의 실험실처럼.</em></h2>
-          <p>연결된 Jetson의 상태를 확인하고, 참여 노드를 골라 동일 모델과 파라미터로 재현 가능한 LLM 부하 실험을 실행합니다.</p>
+          <p>연결된 Jetson과 Raspberry Pi의 상태를 확인하고, 참여 노드를 골라 동일 모델과 파라미터로 재현 가능한 LLM 부하 실험을 실행합니다.</p>
           <div class="hero-actions">
             <a class="button primary" href="#experiment">새 실험 설계</a>
             <button class="button ghost" id="quickHealthButton" type="button">환경 점검 실행</button>
@@ -68,7 +69,7 @@
       <section class="metric-strip" aria-label="클러스터 주요 지표">
         <article><span>참여 노드</span><strong id="selectedCount">1</strong><small>SELECTED</small></article>
         <article><span>설치 모델</span><strong id="modelCount">—</strong><small>GGUF · HEAD</small></article>
-        <article><span>평균 전력</span><strong id="averagePower">—</strong><small>WATTS</small></article>
+        <article><span>클러스터 전력</span><strong id="averagePower">—</strong><small>SUM · WATTS</small></article>
         <article><span>최근 처리량</span><strong id="recentThroughput">—</strong><small>TOKENS / SEC</small></article>
       </section>
 
@@ -105,6 +106,11 @@
         </div>
         <form id="experimentForm" class="experiment-layout">
           <div class="form-main">
+            <div class="field full-field">
+              <label for="experimentGroupSelect">실험 묶음</label>
+              <div class="select-wrap"><select id="experimentGroupSelect" name="experiment_id"><option value="">+ 새 실험 만들기</option></select></div>
+              <small>기존 실험을 선택하면 설정과 결과가 같은 실험 ID로 연결됩니다.</small>
+            </div>
             <div class="field full-field">
               <label for="experimentName">실험 이름</label>
               <input id="experimentName" name="name" value="cluster-load-test" required>
@@ -154,11 +160,17 @@
 
       <section id="runs" class="section panel-section runs-section">
         <div class="section-heading">
-          <div><span class="section-index">04 / RESULTS</span><h2>실행 기록</h2></div>
-          <span class="muted-copy">원시 요청과 설정은 head 노드에 함께 보존됩니다.</span>
+          <div><span class="section-index">04 / RESULTS</span><h2>실험별 결과</h2></div>
+          <div class="results-filter"><label for="resultExperimentFilter">실험 선택</label><select id="resultExperimentFilter"><option value="all">전체 실험</option></select></div>
         </div>
+        <div class="experiment-context" id="experimentContext">모든 실험의 실행 기록을 표시합니다.</div>
         <div class="result-highlight" id="resultHighlight">
           <div class="empty-result"><strong>아직 완료된 클러스터 실험이 없습니다.</strong><span>첫 실험을 실행하면 처리량과 지연 지표가 여기에 표시됩니다.</span></div>
+        </div>
+        <div class="chart-grid" id="chartGrid" hidden>
+          <article class="chart-card chart-wide"><div><span>THROUGHPUT TREND</span><strong>반복 실행 처리량</strong></div><canvas id="throughputChart" height="240" aria-label="실행별 클러스터 토큰 처리량 그래프"></canvas></article>
+          <article class="chart-card"><div><span>LATENCY</span><strong>TTFT / E2E 비교</strong></div><canvas id="latencyChart" height="240" aria-label="실행별 TTFT와 E2E 지연 그래프"></canvas></article>
+          <article class="chart-card"><div><span>LATEST RUN</span><strong>노드별 기여도</strong></div><canvas id="nodeChart" height="240" aria-label="최근 실행 노드별 처리량 그래프"></canvas></article>
         </div>
         <div class="table-wrap">
           <table>
@@ -174,19 +186,33 @@
 
   <dialog id="nodeDialog" class="modal">
     <form id="nodeForm" method="dialog">
-      <div class="modal-head"><div><span class="section-index">WORKER ONBOARDING</span><h2>Jetson 워커 연결</h2></div><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div>
-      <p class="modal-intro">워커의 LAN 주소와 SSH 계정을 등록합니다. 등록 후 준비 작업을 실행하면 코드, CUDA 런타임, 선택 모델과 API 서버를 순서대로 확인합니다.</p>
+      <div class="modal-head"><div><span class="section-index">WORKER ONBOARDING</span><h2>엣지 워커 찾기</h2></div><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div>
+      <p class="modal-intro">Head와 같은 사설 LAN에서 SSH가 열린 기기를 찾습니다. 기기를 선택한 뒤 공개 키 인증과 Jetson/Pi 환경을 확인하고 자동 준비합니다.</p>
+      <div class="device-discovery">
+        <div><strong>연결된 기기</strong><span id="scanStatus">검색을 시작하세요.</span><button type="button" class="button secondary compact" id="scanNetworkButton">기기 다시 검색</button></div>
+        <div class="device-list" id="deviceList"><div class="device-empty">아직 검색하지 않았습니다.</div></div>
+      </div>
       <div class="modal-grid">
         <div class="field"><label for="nodeName">노드 이름</label><input id="nodeName" required placeholder="jetson-worker-01"></div>
-        <div class="field"><label for="nodeHost">IP 주소 / 호스트</label><input id="nodeHost" required placeholder="192.168.0.27"></div>
+        <div class="field"><label for="nodePlatform">플랫폼</label><select id="nodePlatform"><option value="auto">자동 감지</option><option value="jetson">NVIDIA Jetson</option><option value="raspberry-pi">Raspberry Pi 5</option></select></div>
+        <div class="field"><label for="nodeHost">선택된 IP 주소</label><input id="nodeHost" required placeholder="기기를 선택하거나 직접 입력"></div>
         <div class="field"><label for="nodeUser">SSH 사용자</label><input id="nodeUser" required value="jetson_orin_nano"></div>
         <div class="field"><label for="nodeSshPort">SSH 포트</label><input id="nodeSshPort" type="number" min="1" max="65535" value="22"></div>
         <div class="field"><label for="nodeApiPort">API 포트</label><input id="nodeApiPort" type="number" min="1" max="65535" value="8000"></div>
         <div class="field full-field"><label for="nodeProjectDir">프로젝트 경로</label><input id="nodeProjectDir" required value="/home/jetson_orin_nano/project/llm/local_llm_bench"></div>
       </div>
       <div class="key-panel"><span>HEAD SSH PUBLIC KEY</span><code id="publicKey">키가 아직 생성되지 않았습니다.</code><button type="button" id="copyKeyButton">복사</button></div>
-      <div class="modal-actions"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="submit" class="button primary">노드 저장</button></div>
+      <p class="pairing-note">최초 한 번 이 키를 워커의 <code>~/.ssh/authorized_keys</code>에 등록해야 합니다. SSH 또는 sudo 비밀번호는 대시보드가 받거나 저장하지 않습니다.</p>
+      <div class="probe-result" id="probeResult" hidden></div>
+      <div class="modal-actions"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="button" class="button secondary" id="probeNodeButton">SSH 환경 확인</button><button type="submit" class="button primary" id="savePrepareButton">저장 후 자동 준비</button></div>
     </form>
+  </dialog>
+
+  <dialog id="nodeDetailDialog" class="modal node-detail-modal">
+    <div class="node-detail-shell">
+      <div class="modal-head"><div><span class="section-index">LIVE NODE TELEMETRY</span><h2 id="detailNodeName">노드 상태</h2></div><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div>
+      <div id="nodeDetailContent"></div>
+    </div>
   </dialog>
 
   <dialog id="authDialog" class="modal auth-modal">
@@ -195,6 +221,21 @@
       <p class="modal-intro">head 노드의 <code>.run/cluster/dashboard.token</code> 값을 입력하세요. 브라우저에만 저장됩니다.</p>
       <div class="field"><label for="tokenInput">Access token</label><input id="tokenInput" type="password" required autocomplete="off"></div>
       <div class="modal-actions"><button type="submit" class="button primary">대시보드 연결</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="modal settings-modal">
+    <form id="settingsForm" method="dialog">
+      <div class="modal-head"><div><span class="section-index">CLUSTER SETTINGS</span><h2>클러스터 설정</h2></div><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div>
+      <p class="modal-intro">신뢰할 수 있는 로컬 네트워크에서는 워커 API 인증을 꺼둘 수 있습니다. 여러 사용자가 같은 LAN을 쓰거나 외부 접근 가능성이 있으면 켜세요.</p>
+      <label class="settings-toggle">
+        <input id="workerAuthInput" type="checkbox">
+        <span></span>
+        <div><strong>워커 API 토큰 인증</strong><small>상태 조회, 모델 변경, 추론 요청을 head/worker 공유 토큰으로 보호</small></div>
+      </label>
+      <div class="settings-notice" id="workerAuthNotice">현재 꺼짐 · 신뢰 LAN 전용 모드</div>
+      <p class="settings-help">변경을 저장하면 연결된 노드 API가 현재 설정으로 자동 재시작됩니다. 대시보드 접근 토큰은 이 설정과 별개로 유지됩니다.</p>
+      <div class="modal-actions"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="submit" class="button primary">설정 저장 및 적용</button></div>
     </form>
   </dialog>
 
