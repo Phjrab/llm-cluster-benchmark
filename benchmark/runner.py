@@ -24,6 +24,7 @@ from cluster.clusterctl import (
     load_nodes,
     request_json,
     select_nodes,
+    worker_auth_headers,
 )
 
 
@@ -34,6 +35,7 @@ ProgressCallback = Callable[[Dict[str, Any]], None]
 
 @dataclass
 class ExperimentConfig:
+    experiment_id: str = ""
     name: str = "cluster-load-test"
     node_names: List[str] = field(default_factory=list)
     model_id: str = "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
@@ -58,6 +60,8 @@ class ExperimentConfig:
     def validate(self) -> None:
         if not self.name.strip():
             raise ValueError("Experiment name cannot be empty")
+        if self.experiment_id and not self.experiment_id.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("experiment_id contains unsupported characters")
         if not self.node_names:
             raise ValueError("Select at least one node")
         if not self.model_id.endswith(".gguf") or self.model_id.startswith("/") or ".." in Path(self.model_id).parts:
@@ -116,7 +120,7 @@ def _stream_request(node: Node, config: ExperimentConfig, request_id: int, warmu
     request = urllib.request.Request(
         f"{node.api_url}/cluster/chat/stream",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream", **worker_auth_headers()},
         method="POST",
     )
     started_wall = utc_now()
@@ -182,7 +186,15 @@ def _load_model(node: Node, config: ExperimentConfig) -> Dict[str, Any]:
     current = result.get("current") or {}
     if result.get("ok") is not True:
         raise RuntimeError(f"{node.name} rejected model selection")
-    return {"node": node.name, **current}
+    health = request_json(f"{node.api_url}/cluster/health", timeout=10.0)
+    profile = health.get("profile") or {}
+    return {
+        "node": node.name,
+        **current,
+        "platform_kind": profile.get("platform_kind"),
+        "runtime_backend": (profile.get("runtime_backend") or {}).get("kind"),
+        "inference_threads": profile.get("inference_threads"),
+    }
 
 
 def _validate_uniform(loaded: Sequence[Dict[str, Any]], config: ExperimentConfig) -> List[str]:
@@ -202,6 +214,26 @@ def _validate_uniform(loaded: Sequence[Dict[str, Any]], config: ExperimentConfig
     return warnings
 
 
+def validate_platform_layers(nodes: Sequence[Node], config: ExperimentConfig) -> None:
+    if config.n_gpu_layers == 0:
+        return
+    pi_nodes: List[str] = []
+    for node in nodes:
+        kind = node.platform
+        if kind == "auto":
+            try:
+                health = request_json(f"{node.api_url}/cluster/health", timeout=5.0)
+                kind = str((health.get("profile") or {}).get("platform_kind") or "auto")
+            except Exception:
+                kind = "auto"
+        if kind == "raspberry-pi":
+            pi_nodes.append(node.name)
+    if pi_nodes:
+        raise ValueError(
+            "Raspberry Pi nodes require n_gpu_layers=0: " + ", ".join(pi_nodes)
+        )
+
+
 def _aggregate(records: Sequence[Dict[str, Any]], wall_s: float) -> Dict[str, Any]:
     successful = [item for item in records if item["ok"]]
     ttft = [float(item["ttft_s"]) for item in successful if item["ttft_s"] is not None]
@@ -211,15 +243,36 @@ def _aggregate(records: Sequence[Dict[str, Any]], wall_s: float) -> Dict[str, An
     for item in records:
         bucket = per_node.setdefault(
             item["node"],
-            {"requests": 0, "successful": 0, "tokens": 0, "e2e_s": []},
+            {
+                "requests": 0,
+                "successful": 0,
+                "tokens": 0,
+                "ttft_s": [],
+                "e2e_s": [],
+                "tokens_per_s_samples": [],
+            },
         )
         bucket["requests"] += 1
         if item["ok"]:
             bucket["successful"] += 1
             bucket["tokens"] += int(item["generated_tokens"])
             bucket["e2e_s"].append(float(item["e2e_s"]))
+            if item.get("ttft_s") is not None:
+                bucket["ttft_s"].append(float(item["ttft_s"]))
+            if item.get("tokens_per_s") is not None:
+                bucket["tokens_per_s_samples"].append(float(item["tokens_per_s"]))
     for bucket in per_node.values():
-        bucket["e2e_p50_s"] = percentile(bucket.pop("e2e_s"), 0.50)
+        node_ttft = bucket.pop("ttft_s")
+        node_e2e = bucket.pop("e2e_s")
+        node_tps = bucket.pop("tokens_per_s_samples")
+        bucket["failed"] = bucket["requests"] - bucket["successful"]
+        bucket["success_rate"] = round(bucket["successful"] / bucket["requests"], 6) if bucket["requests"] else 0.0
+        bucket["effective_tokens_per_s"] = round(bucket["tokens"] / wall_s, 6) if wall_s > 0 else 0.0
+        bucket["average_generation_tokens_per_s"] = round(sum(node_tps) / len(node_tps), 6) if node_tps else None
+        bucket["ttft_p50_s"] = percentile(node_ttft, 0.50)
+        bucket["ttft_p95_s"] = percentile(node_ttft, 0.95)
+        bucket["e2e_p50_s"] = percentile(node_e2e, 0.50)
+        bucket["e2e_p95_s"] = percentile(node_e2e, 0.95)
     return {
         "requests": len(records),
         "successful": len(successful),
@@ -250,6 +303,7 @@ def run_experiment(
     nodes = select_nodes(all_nodes, config.node_names)
     if len(nodes) != len(config.node_names):
         raise ValueError("Some selected nodes are unavailable")
+    validate_platform_layers(nodes, config)
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
     run_dir = results_root / run_id
@@ -357,6 +411,7 @@ def run_experiment(
         summary.update(
             {
                 "run_id": run_id,
+                "experiment_id": config.experiment_id,
                 "name": config.name,
                 "status": "cancelled" if cancel_event.is_set() else "completed",
                 "started_at": json.loads(events_path.read_text(encoding="utf-8").splitlines()[0])["at"],
@@ -383,6 +438,7 @@ def run_experiment(
     except Exception as exc:
         failure = {
             "run_id": run_id,
+            "experiment_id": config.experiment_id,
             "name": config.name,
             "status": "failed",
             "finished_at": utc_now(),

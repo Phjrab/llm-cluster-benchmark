@@ -1,4 +1,7 @@
 {
+  "experiment_id": "",
+  "name": "cluster-load-test",
+  "node_names": ["edge-head"],
   "model_id": "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
   "n_ctx": 1024,
   "n_gpu_layers": 30,
@@ -9,5 +12,6 @@
   "top_p": 0.9,
   "seed": 42,
   "warmup_requests": 1,
+  "require_uniform_config": true,
   "prompt": "엣지 장치에서 의료 LLM을 실행할 때의 장점과 한계를 한 문단으로 설명해줘."
 }
