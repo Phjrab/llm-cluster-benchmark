@@ -32,7 +32,10 @@ from pydantic import BaseModel, Field, field_validator
 from cluster.benchmark.runner import (
     DEFAULT_RESULTS_DIR,
     ExperimentConfig,
+    experiment_strategy_catalog,
     run_experiment,
+    strategy_work_units,
+    validate_strategy,
 )
 from cluster.clusterctl import (
     DEFAULT_INVENTORY,
@@ -215,6 +218,12 @@ class ExperimentPayload(BaseModel):
     warmup_requests: int = Field(1, ge=0, le=10)
     prompt: str = Field(min_length=1, max_length=20_000)
     require_uniform_config: bool = True
+    execution_strategy: str = "replicated_round_robin"
+    sweep_mode: str = "cumulative"
+    rpc_split_mode: str = "layer"
+    rpc_split_policy: str = "auto"
+    rpc_tensor_split: List[float] = Field(default_factory=list, max_length=4)
+    acknowledge_experimental_rpc: bool = False
 
 
 class ClusterSettingsPayload(BaseModel):
@@ -545,7 +554,7 @@ status_monitor = StatusMonitor()
 
 
 class ActionManager:
-    ALLOWED = {"doctor", "setup", "prepare", "sync-code", "sync-models", "start", "stop", "restart", "select-model"}
+    ALLOWED = {"doctor", "setup", "prepare", "prepare-rpc", "sync-code", "sync-models", "start", "stop", "restart", "select-model"}
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -603,6 +612,8 @@ class ActionManager:
         if payload.action in {"sync-models", "prepare"}:
             for model in payload.options.get("models", []):
                 command.extend(["--model", str(model)])
+        elif payload.action == "prepare-rpc":
+            pass
         elif payload.action == "select-model":
             command.extend(
                 [
@@ -709,6 +720,14 @@ def save_experiment_definition(payload: ExperimentPayload) -> Dict[str, Any]:
                 existing = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 existing = {}
+        if existing:
+            previous_strategy = (existing.get("default_config") or {}).get(
+                "execution_strategy", "replicated_round_robin"
+            )
+            if previous_strategy != payload.execution_strategy:
+                raise ValueError(
+                    "한 실험 묶음에는 하나의 실행 방식만 사용할 수 있습니다. 새 실험 묶음을 만드세요."
+                )
         now = utc_now()
         definition = {
             "experiment_id": experiment_id,
@@ -774,6 +793,8 @@ class ExperimentManager:
     def start(self, payload: ExperimentPayload) -> Dict[str, Any]:
         config = ExperimentConfig.from_dict(payload.model_dump())
         config.validate()
+        selected = select_nodes(load_nodes(INVENTORY_PATH), config.node_names)
+        validate_strategy(selected, config)
         with self._lock:
             if self._active and self._active.get("status") in {"queued", "running"}:
                 raise ValueError("Another experiment is already running")
@@ -785,7 +806,8 @@ class ExperimentManager:
                 "status": "queued",
                 "phase": "queued",
                 "completed": 0,
-                "total": config.requests,
+                "total": strategy_work_units(config, len(selected)),
+                "strategy": config.execution_strategy,
                 "started_at": utc_now(),
                 "nodes": config.node_names,
                 "latest": None,
@@ -896,6 +918,7 @@ async def bootstrap() -> Dict[str, Any]:
         "experiment_groups": read_experiment_groups(),
         "actions": actions.list(),
         "settings": read_settings(),
+        "experiment_strategies": experiment_strategy_catalog(),
         "onboarding": {
             "public_key": public_key,
         },
@@ -1000,7 +1023,7 @@ async def delete_node(node_name: str) -> Dict[str, Any]:
 
 @app.post("/api/actions", dependencies=[Depends(verify_token)])
 async def start_action(payload: ActionPayload) -> Dict[str, Any]:
-    if payload.action in {"setup", "prepare"} and payload.options.get("confirmed") is not True:
+    if payload.action in {"setup", "prepare", "prepare-rpc"} and payload.options.get("confirmed") is not True:
         raise HTTPException(status_code=400, detail="Worker setup requires explicit confirmation")
     try:
         record = actions.start(payload)
@@ -1025,13 +1048,21 @@ async def start_experiment(payload: ExperimentPayload) -> Dict[str, Any]:
             raise ValueError("Nodes have a running control action: " + ", ".join(sorted(busy)))
         status_by_name = {item.get("name"): item for item in status_monitor.snapshot()}
         inventory_by_name = {item.name: item for item in read_all_nodes()}
+        selected_nodes = [inventory_by_name[name] for name in payload.node_names if name in inventory_by_name]
+        strategy_config = ExperimentConfig.from_dict(payload.model_dump())
+        validate_strategy(selected_nodes, strategy_config)
+        if payload.execution_strategy == "model_parallel_rpc" and read_settings()["worker_api_auth"]:
+            raise ValueError(
+                "워커 API 보안 모드에서는 인증 없는 llama.cpp RPC 포트를 열지 않습니다. "
+                "SSH 터널 모드가 추가되기 전에는 신뢰 LAN에서만 보안을 끄고 실행하세요."
+            )
         pi_nodes = []
         for name in payload.node_names:
             detected = (status_by_name.get(name, {}).get("profile") or {}).get("platform_kind")
             configured = inventory_by_name.get(name).platform if inventory_by_name.get(name) else "auto"
             if detected == "raspberry-pi" or configured == "raspberry-pi":
                 pi_nodes.append(name)
-        if pi_nodes and payload.n_gpu_layers != 0:
+        if pi_nodes and payload.n_gpu_layers != 0 and payload.execution_strategy != "model_parallel_rpc":
             raise ValueError(
                 "Raspberry Pi nodes require n_gpu_layers=0: " + ", ".join(str(item) for item in pi_nodes)
             )
