@@ -60,8 +60,8 @@ else
 fi
 
 if [[ ! -f "$SETTINGS_FILE" ]]; then
-  printf '{\n  "worker_api_auth": false\n}\n' >"$SETTINGS_FILE"
-  echo "[OK] created cluster settings (worker API auth disabled by default)"
+  printf '{\n  "worker_api_auth": false,\n  "dashboard_token_auth": false\n}\n' >"$SETTINGS_FILE"
+  echo "[OK] created cluster settings (worker and dashboard token auth disabled by default)"
 fi
 chmod 600 "$SETTINGS_FILE"
 
