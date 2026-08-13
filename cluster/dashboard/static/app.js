@@ -62,6 +62,53 @@ function finite(value) {
 const fmt = (value, digits = 1, fallback = "—") => finite(value) ? Number(value).toFixed(digits) : fallback;
 const pct = value => finite(value) ? `${fmt(value, 0)}%` : "—";
 const platformName = value => ({ jetson: "NVIDIA Jetson", "raspberry-pi": "Raspberry Pi 5", auto: "자동 감지", "generic-linux": "Linux" }[value] || value || "미확인");
+const STRATEGIES = {
+  single_node: { label: "단일 노드 기준선", short: "SINGLE" },
+  replicated_round_robin: { label: "복제 · 요청 분산", short: "ROUND ROBIN" },
+  broadcast_compare: { label: "전체 동시 전송", short: "BROADCAST" },
+  node_sweep: { label: "노드 수 스윕", short: "NODE SWEEP" },
+  model_parallel_rpc: { label: "모델 분할 · RPC", short: "MODEL RPC", experimental: true },
+  legacy: { label: "이전 방식 · 복제 요청 분산", short: "LEGACY RR" },
+};
+
+function selectedStrategy() {
+  return $('input[name="execution_strategy"]:checked')?.value || "replicated_round_robin";
+}
+
+function plannedNodeNames() {
+  return [...state.selectedNodes];
+}
+
+function runStrategy(run) {
+  return run.execution_strategy || run.strategy || run.config?.execution_strategy || run.definition?.default_config?.execution_strategy || "legacy";
+}
+
+function strategyMeta(value) {
+  return STRATEGIES[value] || { label: value || "알 수 없음", short: String(value || "UNKNOWN").toUpperCase() };
+}
+
+function parseRpcTensorSplit(strict = false) {
+  const raw = $("#rpcTensorSplitInput").value.trim();
+  if (!raw) {
+    if (strict && $("#rpcSplitPolicySelect").value === "custom") throw new Error("직접 분할을 선택했다면 노드별 비율을 입력하세요.");
+    return [];
+  }
+  let values;
+  try {
+    values = raw.startsWith("[") ? JSON.parse(raw) : raw.split(",").map(value => Number(value.trim()));
+  } catch (_error) {
+    if (strict) throw new Error("노드별 비율은 1, 1, 2 같은 숫자 목록이어야 합니다.");
+    return [];
+  }
+  const valid = Array.isArray(values) && values.length && values.every(value => Number.isFinite(Number(value)) && Number(value) > 0);
+  if (!valid) {
+    if (strict) throw new Error("노드별 분할 비율에는 0보다 큰 숫자만 사용할 수 있습니다.");
+    return [];
+  }
+  const normalized = values.map(Number);
+  if (strict && normalized.length !== state.selectedNodes.size) throw new Error(`선택 노드 ${state.selectedNodes.size}대와 같은 개수의 분할 비율이 필요합니다.`);
+  return normalized;
+}
 
 function formatUptime(seconds) {
   if (!finite(seconds)) return "—";
@@ -190,30 +237,87 @@ function updateSummary() {
   });
   const latest = state.runs.find(run => run.status === "completed");
   $("#recentThroughput").textContent = latest ? fmt(latest.cluster_tokens_per_s) : "—";
+  updateStrategyGuidance();
   updatePlatformGuidance();
   updateModelAvailability();
 }
 
 function updatePlatformGuidance() {
-  const selectedKinds = [...state.selectedNodes].map(name => {
+  const selectedKinds = plannedNodeNames().map(name => {
     const node = state.nodes.find(item => item.name === name);
     return node ? actualPlatform(node) : "auto";
   });
   const hasPi = selectedKinds.includes("raspberry-pi");
   const layers = $("#layersInput");
-  layers.max = hasPi ? "0" : "120";
-  if (hasPi && Number(layers.value) !== 0) layers.value = "0";
-  $("#configValidity").textContent = hasPi ? "Pi 포함 · CPU 모드" : "설정 준비됨";
+  const rpc = selectedStrategy() === "model_parallel_rpc";
+  layers.max = hasPi && !rpc ? "0" : "120";
+  if (hasPi && !rpc && Number(layers.value) !== 0) layers.value = "0";
+  layers.disabled = rpc;
+  layers.title = rpc ? "RPC 모델 분할은 coordinator와 원격 장치의 전체 가속 가능 레이어를 사용합니다." : "";
+  $("#uniformInput").disabled = rpc;
+  $("#configValidity").textContent = rpc
+    ? ($("#rpcAcknowledgeInput").checked ? "RPC 실험 준비됨" : "RPC 위험 확인 필요")
+    : hasPi ? "Pi 포함 · CPU 모드" : "설정 준비됨";
+}
+
+function updateStrategyGuidance() {
+  const strategy = selectedStrategy();
+  const meta = strategyMeta(strategy);
+  const nodeCount = Math.max(1, state.selectedNodes.size);
+  const requests = Math.max(0, Number($("#requestsInput").value) || 0);
+  const sweepMode = $("#sweepModeSelect").value;
+  const splitPolicy = $("#rpcSplitPolicySelect").value;
+  $("#sweepOptions").hidden = strategy !== "node_sweep";
+  $("#rpcOptions").hidden = strategy !== "model_parallel_rpc";
+  $("#rpcTensorField").hidden = splitPolicy !== "custom";
+  $$(".strategy-card").forEach(card => card.classList.toggle("selected", card.querySelector("input")?.checked));
+  $("#strategyFormulaTitle").textContent = meta.label;
+  $("#runStrategyBadge").textContent = meta.label;
+  $("#runNodes").textContent = strategy === "single_node" ? 1 : nodeCount;
+
+  let modelCopies = nodeCount;
+  let nodesPerAnswer = 1;
+  let logicalRequests = requests;
+  let physicalCalls = requests;
+  let explanation = "모델을 노드마다 복제하고 사용자 요청은 한 노드씩 분배합니다.";
+  if (strategy === "single_node") {
+    modelCopies = 1;
+    explanation = nodeCount === 1
+      ? `선택한 노드(${[...state.selectedNodes][0] || "미선택"}) 하나에서 기준 성능을 측정합니다.`
+      : "정확한 기준선을 위해 노드 한 대만 선택해야 합니다.";
+  } else if (strategy === "broadcast_compare") {
+    physicalCalls = requests * nodeCount;
+    explanation = `논리 요청 ${requests}개를 ${nodeCount}대 모두에 보내 서로 독립된 답변 ${physicalCalls}개를 비교합니다.`;
+  } else if (strategy === "node_sweep") {
+    physicalCalls = requests * nodeCount;
+    logicalRequests = physicalCalls;
+    explanation = sweepMode === "cumulative"
+      ? `1대부터 ${nodeCount}대까지 ${nodeCount}개 단계에서 요청 ${requests}개씩 실행합니다. 각 단계 안에서는 선택된 노드가 요청을 나눕니다.`
+      : `${nodeCount}대를 하나씩 분리해 각 노드에 요청 ${requests}개를 실행합니다.`;
+  } else if (strategy === "model_parallel_rpc") {
+    modelCopies = "1 · 분할";
+    nodesPerAnswer = nodeCount;
+    explanation = `모델 하나를 ${nodeCount}대에 나누고 한 답변 계산에 모두 참여시킵니다. 물리 호출 수에는 내부 텐서 RPC 통신을 포함하지 않습니다.`;
+  }
+  $("#formulaModelCopies").textContent = modelCopies;
+  $("#formulaNodesPerAnswer").textContent = nodesPerAnswer;
+  $("#formulaLogicalRequests").textContent = logicalRequests;
+  $("#formulaPhysicalCalls").textContent = physicalCalls;
+  $("#strategyFormulaExplanation").textContent = explanation;
 }
 
 function updateModelAvailability() {
   const modelId = $("#modelSelect")?.value;
   if (!modelId) return;
-  const missing = [...state.selectedNodes].filter(name => {
+  const plannedNames = plannedNodeNames();
+  const placementNames = selectedStrategy() === "model_parallel_rpc"
+    ? plannedNames.filter(name => state.nodes.find(node => node.name === name)?.role === "head")
+    : plannedNames;
+  const missing = placementNames.filter(name => {
     const live = statusFor(name);
     return live.api && Array.isArray(live.model_ids) && !live.model_ids.includes(modelId);
   });
-  const selectedKinds = [...state.selectedNodes].map(name => {
+  const selectedKinds = plannedNames.map(name => {
     const node = state.nodes.find(item => item.name === name);
     return node ? actualPlatform(node) : "auto";
   });
@@ -223,8 +327,13 @@ function updateModelAvailability() {
     hint.style.color = "var(--orange)";
   } else {
     const model = state.models.find(item => item.id === modelId);
-    const piNote = selectedKinds.includes("raspberry-pi") ? " · Pi CPU/OpenBLAS · GPU 레이어 0" : "";
-    hint.textContent = model ? `${model.size_gb} GB · 선택 노드 모델 상태 정상${piNote}` : "head 노드에 설치된 GGUF 모델";
+    const piNote = selectedKinds.includes("raspberry-pi")
+      ? selectedStrategy() === "model_parallel_rpc" ? " · Pi는 RPC CPU 장치로 참여" : " · Pi CPU/OpenBLAS · GPU 레이어 0"
+      : "";
+    const placementNote = selectedStrategy() === "model_parallel_rpc"
+      ? " · GGUF는 head에만 필요, worker는 텐서 수신"
+      : " · 선택 노드 모델 상태 정상";
+    hint.textContent = model ? `${model.size_gb} GB${placementNote}${piNote}` : "head 노드에 설치된 GGUF 모델";
     hint.style.color = "";
   }
 }
@@ -256,6 +365,14 @@ function applyConfig(defaults, includeName = true) {
   if (includeName && defaults.name !== undefined) $("#experimentName").value = defaults.name;
   Object.entries(mapping).forEach(([key, selector]) => { if (defaults[key] !== undefined) $(selector).value = defaults[key]; });
   if (defaults.require_uniform_config !== undefined) $("#uniformInput").checked = defaults.require_uniform_config !== false;
+  const strategy = defaults.execution_strategy || defaults.strategy;
+  const strategyInput = strategy ? $$('input[name="execution_strategy"]').find(input => input.value === strategy) : null;
+  if (strategyInput) strategyInput.checked = true;
+  if (defaults.sweep_mode !== undefined) $("#sweepModeSelect").value = defaults.sweep_mode;
+  if (defaults.rpc_split_mode !== undefined) $("#rpcSplitModeSelect").value = defaults.rpc_split_mode;
+  if (defaults.rpc_split_policy !== undefined) $("#rpcSplitPolicySelect").value = defaults.rpc_split_policy;
+  if (Array.isArray(defaults.rpc_tensor_split)) $("#rpcTensorSplitInput").value = defaults.rpc_tensor_split.join(", ");
+  if (defaults.acknowledge_experimental_rpc !== undefined) $("#rpcAcknowledgeInput").checked = Boolean(defaults.acknowledge_experimental_rpc);
   if (defaults.model_id && state.models.some(model => model.id === defaults.model_id)) $("#modelSelect").value = defaults.model_id;
   if (Array.isArray(defaults.node_names)) {
     const available = defaults.node_names.filter(name => state.nodes.some(node => node.name === name && node.enabled));
@@ -277,6 +394,8 @@ function updateFormMirrors() {
   $("#promptLength").textContent = $("#promptInput").value.length;
   $("#runRequests").textContent = $("#requestsInput").value;
   $("#runConcurrency").textContent = $("#concurrencyInput").value;
+  updateStrategyGuidance();
+  updatePlatformGuidance();
   updateModelAvailability();
 }
 
@@ -285,7 +404,11 @@ function renderExperimentGroups() {
   const resultSelect = $("#resultExperimentFilter");
   const currentForm = formSelect.value;
   const currentResult = resultSelect.value || "all";
-  const options = state.experimentGroups.map(group => `<option value="${escapeHtml(group.experiment_id)}">${escapeHtml(group.name)} · ${group.run_count || 0}회${group.legacy ? " · 이전 기록" : ""}</option>`).join("");
+  const options = state.experimentGroups.map(group => {
+    const strategy = group.default_config?.execution_strategy;
+    const strategySuffix = strategy ? ` · ${strategyMeta(strategy).label}` : "";
+    return `<option value="${escapeHtml(group.experiment_id)}">${escapeHtml(group.name)} · ${group.run_count || 0}회${escapeHtml(strategySuffix)}${group.legacy ? " · 이전 기록" : ""}</option>`;
+  }).join("");
   formSelect.innerHTML = `<option value="">+ 새 실험 만들기</option>${options}`;
   resultSelect.innerHTML = `<option value="all">전체 실험</option>${options}`;
   if ([...formSelect.options].some(option => option.value === currentForm)) formSelect.value = currentForm;
@@ -303,12 +426,17 @@ function renderRuns() {
   const runs = filteredRuns();
   const filter = $("#resultExperimentFilter").value;
   const group = state.experimentGroups.find(item => item.experiment_id === filter);
-  $("#experimentContext").textContent = group
-    ? `${group.name} · ${group.run_count || 0}회 실행 · experiment_id ${group.experiment_id}`
+  const completedStrategies = new Set(runs.filter(run => run.status === "completed" && finite(run.cluster_tokens_per_s)).map(runStrategy));
+  const mixedAllStrategies = completedStrategies.size > 1;
+  const baseContext = group
+    ? `${group.name} · ${group.run_count || 0}회 실행 · ${strategyMeta(group.default_config?.execution_strategy || runStrategy(runs[0] || {})).label} · experiment_id ${group.experiment_id}`
     : `모든 실험 ${state.experimentGroups.length}개 · 실행 ${state.runs.length}회`;
+  $("#experimentContext").textContent = mixedAllStrategies
+    ? `${baseContext} · 서로 다른 실행 방식이 섞여 있어 그래프를 숨겼습니다. 방식별 실험 묶음을 따로 만들어 비교하세요.`
+    : baseContext;
   const table = $("#runsTable");
   if (!runs.length) {
-    table.innerHTML = `<tr><td colspan="7" class="empty-cell">이 실험의 실행 기록 없음</td></tr>`;
+    table.innerHTML = `<tr><td colspan="8" class="empty-cell">이 실험의 실행 기록 없음</td></tr>`;
     $("#resultHighlight").innerHTML = `<div class="empty-result"><strong>연결된 벤치마크 결과가 없습니다.</strong><span>이 실험을 실행하면 결과가 같은 experiment_id에 누적됩니다.</span></div>`;
     $("#chartGrid").hidden = true;
     updateSummary();
@@ -317,6 +445,7 @@ function renderRuns() {
   table.innerHTML = runs.slice(0, 30).map(run => `
     <tr data-run-experiment="${escapeHtml(runExperimentId(run))}">
       <td><strong>${escapeHtml(run.name || run.run_id)}</strong><br><small>${escapeHtml(run.run_id || "")}</small></td>
+      <td><span class="strategy-badge ${strategyMeta(runStrategy(run)).experimental ? "experimental" : ""}">${escapeHtml(strategyMeta(runStrategy(run)).label)}</span></td>
       <td>${Array.isArray(run.nodes) ? run.nodes.length : "—"}</td>
       <td>${run.success_rate !== undefined ? pct(Number(run.success_rate) * 100) : "—"}</td>
       <td>${run.ttft_p50_s != null ? `${fmt(run.ttft_p50_s, 2)}s` : "—"}</td>
@@ -326,18 +455,23 @@ function renderRuns() {
     </tr>`).join("");
   const latest = runs.find(run => run.status === "completed") || runs[0];
   if (latest && latest.cluster_tokens_per_s != null) {
+    const latestStrategy = strategyMeta(runStrategy(latest));
+    const throughputTitle = runStrategy(latest) === "model_parallel_rpc" ? "SHARDED MODEL THROUGHPUT" : "CLUSTER THROUGHPUT";
+    const successDetail = runStrategy(latest) === "broadcast_compare" && latest.answer_agreement_rate != null
+      ? `답변 일치 ${pct(Number(latest.answer_agreement_rate) * 100)}`
+      : `${latest.successful || 0} / ${latest.requests || 0} physical calls`;
     $("#resultHighlight").innerHTML = `<div class="result-cards">
-      <article class="result-card primary-result"><span>CLUSTER THROUGHPUT</span><strong>${fmt(latest.cluster_tokens_per_s)}<small> tok/s</small></strong><small>${escapeHtml(latest.name || latest.run_id)}</small></article>
+      <article class="result-card primary-result"><span>${throughputTitle}</span><strong>${fmt(latest.cluster_tokens_per_s)}<small> tok/s</small></strong><small>${escapeHtml(latest.name || latest.run_id)}</small><i class="result-strategy">${escapeHtml(latestStrategy.label)}</i></article>
       <article class="result-card"><span>TTFT · P50</span><strong>${fmt(latest.ttft_p50_s, 2)}s</strong><small>첫 토큰 지연</small></article>
       <article class="result-card"><span>E2E · P95</span><strong>${fmt(latest.e2e_p95_s, 2)}s</strong><small>요청 완료 지연</small></article>
-      <article class="result-card"><span>SUCCESS</span><strong>${pct(Number(latest.success_rate) * 100)}</strong><small>${latest.successful || 0} / ${latest.requests || 0} requests</small></article>
+      <article class="result-card"><span>SUCCESS</span><strong>${pct(Number(latest.success_rate) * 100)}</strong><small>${successDetail}</small></article>
     </div>`;
   } else {
     $("#resultHighlight").innerHTML = `<div class="empty-result"><strong>완료된 측정값이 없습니다.</strong><span>최근 실행 상태: ${escapeHtml((latest?.status || "unknown").toUpperCase())}${latest?.error ? ` · ${escapeHtml(latest.error)}` : ""}</span></div>`;
   }
   const hasCompletedMetrics = runs.some(run => run.status === "completed" && finite(run.cluster_tokens_per_s));
-  $("#chartGrid").hidden = !hasCompletedMetrics;
-  if (hasCompletedMetrics) requestAnimationFrame(() => drawResultCharts(runs));
+  $("#chartGrid").hidden = !hasCompletedMetrics || mixedAllStrategies;
+  if (hasCompletedMetrics && !mixedAllStrategies) requestAnimationFrame(() => drawResultCharts(runs));
   $$('[data-run-experiment]').forEach(row => row.addEventListener("click", () => {
     $("#resultExperimentFilter").value = row.dataset.runExperiment;
     renderRuns();
@@ -453,6 +587,19 @@ function drawResultCharts(runs) {
   );
   const latest = [...completed].reverse().find(run => run.per_node && Object.keys(run.per_node).length);
   if (!latest) return drawEmptyChart($("#nodeChart"), "노드별 지표가 있는 새 실행이 필요합니다");
+  if (runStrategy(latest) === "model_parallel_rpc") {
+    $("#nodeChartTitle").textContent = "분할 모델 공동 처리량";
+    return drawEmptyChart($("#nodeChart"), "RPC 분할은 워커별 tok/s를 계산하지 않습니다");
+  }
+  if (runStrategy(latest) === "node_sweep" && Array.isArray(latest.scenario_summaries)) {
+    $("#nodeChartTitle").textContent = "스윕 단계별 처리량";
+    return drawBarChart(
+      $("#nodeChart"),
+      latest.scenario_summaries.map(item => item.label || item.scenario_id),
+      [{ label: "cluster tok/s", color: "#163126", values: latest.scenario_summaries.map(item => item.cluster_tokens_per_s) }],
+    );
+  }
+  $("#nodeChartTitle").textContent = "노드별 기여도";
   const nodeNames = Object.keys(latest.per_node);
   drawBarChart(
     $("#nodeChart"),
@@ -557,6 +704,7 @@ function setRunState(active) {
   $("#cancelButton").classList.toggle("hidden", !running);
   $("#runStateDot").classList.toggle("running", running);
   if (!active) return;
+  if (active.execution_strategy || active.strategy) $("#runStrategyBadge").textContent = strategyMeta(active.execution_strategy || active.strategy).label;
   const total = Number(active.total || 0);
   const completed = Number(active.completed || 0);
   const progress = total ? Math.min(100, Math.round(completed / total * 100)) : 0;
@@ -678,11 +826,33 @@ async function runAction(action, options = {}) {
 }
 
 function experimentPayload() {
+  const executionStrategy = selectedStrategy();
+  const selectedNodeNames = [...state.selectedNodes];
+  if (executionStrategy === "single_node" && selectedNodeNames.length !== 1) {
+    throw new Error("단일 노드 기준선은 정확히 한 대만 선택해야 합니다.");
+  }
+  if (["broadcast_compare", "node_sweep"].includes(executionStrategy) && selectedNodeNames.length < 2) {
+    throw new Error("선택한 실행 방식에는 최소 두 대의 노드가 필요합니다.");
+  }
+  if (executionStrategy === "model_parallel_rpc") {
+    const selectedNodes = selectedNodeNames.map(name => state.nodes.find(node => node.name === name)).filter(Boolean);
+    if (selectedNodes.filter(node => node.role === "head").length !== 1 || !selectedNodes.some(node => node.role === "worker")) {
+      throw new Error("모델 분할 RPC에는 coordinator인 head 1대와 worker 1대 이상을 선택해야 합니다.");
+    }
+    if (!$("#rpcAcknowledgeInput").checked) throw new Error("모델 분할 RPC의 실험적 특성과 위험을 먼저 확인하세요.");
+  }
+  const tensorSplit = executionStrategy === "model_parallel_rpc" && $("#rpcSplitPolicySelect").value === "custom" ? parseRpcTensorSplit(true) : [];
   return {
     experiment_id: $("#experimentGroupSelect").value,
     name: $("#experimentName").value.trim(),
-    node_names: [...state.selectedNodes],
+    node_names: plannedNodeNames(),
     model_id: $("#modelSelect").value,
+    execution_strategy: executionStrategy,
+    sweep_mode: $("#sweepModeSelect").value,
+    rpc_split_mode: $("#rpcSplitModeSelect").value,
+    rpc_split_policy: $("#rpcSplitPolicySelect").value,
+    rpc_tensor_split: tensorSplit,
+    acknowledge_experimental_rpc: $("#rpcAcknowledgeInput").checked,
     requests: Number($("#requestsInput").value),
     concurrency: Number($("#concurrencyInput").value),
     max_tokens: Number($("#maxTokensInput").value),
@@ -891,6 +1061,16 @@ function bindEvents() {
       runActionOnNodes("prepare", workers, { confirmed: true, models: [$("#modelSelect").value] });
     }
   });
+  $("#prepareRpcButton").addEventListener("click", () => {
+    const nodes = [...state.selectedNodes];
+    const records = nodes.map(name => state.nodes.find(node => node.name === name)).filter(Boolean);
+    if (records.filter(node => node.role === "head").length !== 1 || !records.some(node => node.role === "worker")) {
+      return toast("노드 구성 확인", "RPC coordinator인 head 1대와 worker 1대 이상을 선택하세요.", "error");
+    }
+    if (confirm(`선택한 ${nodes.length}대에 모델 분할 RPC 실행 환경을 준비합니다. 실제 성능은 네트워크 상태에 따라 저하될 수 있습니다. 계속할까요?`)) {
+      runActionOnNodes("prepare-rpc", nodes, { confirmed: true });
+    }
+  });
   $$('[data-cluster-action]').forEach(button => button.addEventListener("click", () => {
     const action = button.dataset.clusterAction;
     const options = action === "sync-models" ? { models: [$("#modelSelect").value] } : {};
@@ -916,7 +1096,8 @@ function bindEvents() {
   $("#modelSelect").addEventListener("change", updateModelAvailability);
   $("#experimentForm").addEventListener("submit", async event => {
     event.preventDefault();
-    const missingOffline = [...state.selectedNodes].filter(name => !statusFor(name).api);
+    const participatingNodes = plannedNodeNames();
+    const missingOffline = participatingNodes.filter(name => !statusFor(name).api);
     if (missingOffline.length) return toast("노드 API 오프라인", `${missingOffline.join(", ")} 서버를 먼저 시작하세요.`, "error");
     try {
       const data = await api("/api/experiments", { method: "POST", body: experimentPayload() });
