@@ -785,6 +785,39 @@ def command_prepare(nodes: Sequence[Node], args: argparse.Namespace) -> int:
     return 0
 
 
+def _prepare_rpc_one(node: Node) -> Dict[str, Any]:
+    script = f"{node.project_dir}/cluster/rpc/runtime.sh"
+    try:
+        process = run_on_node(node, [script, "prepare"], timeout=7200)
+        return {
+            "name": node.name,
+            "ok": process.returncode == 0,
+            "stdout": process.stdout.strip(),
+            "stderr": process.stderr.strip(),
+        }
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc)}
+
+
+def command_prepare_rpc(nodes: Sequence[Node], _args: argparse.Namespace) -> int:
+    """Build the pinned native llama.cpp RPC runtime on selected nodes."""
+    for node in nodes:
+        print(f"[{node.name}] syncing current project before RPC build", flush=True)
+        if not node.is_local:
+            sync = sync_code_one(node)
+            if not sync["ok"]:
+                print(sync["stderr"], file=sys.stderr)
+                return 1
+        print(f"[{node.name}] building pinned llama.cpp RPC runtime", flush=True)
+        result = _prepare_rpc_one(node)
+        if result["stdout"]:
+            print(result["stdout"])
+        if not result["ok"]:
+            print(result["stderr"], file=sys.stderr)
+            return 1
+    return 0
+
+
 def _lifecycle_one(node: Node, action: str) -> Dict[str, Any]:
     if action == "restart":
         stopped = _lifecycle_one(node, "stop")
@@ -912,6 +945,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Relative model path to sync; repeatable",
     )
+    subparsers.add_parser(
+        "prepare-rpc",
+        help="Build the pinned native llama.cpp RPC model-parallel runtime",
+    )
 
     subparsers.add_parser("start", help="Start API servers on enabled nodes")
     subparsers.add_parser("stop", help="Stop API servers on enabled nodes")
@@ -951,6 +988,8 @@ def main() -> int:
         return command_sync_models(nodes, args)
     if args.command == "prepare":
         return command_prepare(nodes, args)
+    if args.command == "prepare-rpc":
+        return command_prepare_rpc(nodes, args)
     if args.command == "start":
         return command_lifecycle(nodes, "start")
     if args.command == "stop":
