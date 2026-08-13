@@ -8,10 +8,12 @@ import concurrent.futures
 import csv
 import json
 import os
+import secrets
 import shlex
 import socket
 import subprocess
 import sys
+import threading
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -23,6 +25,80 @@ CLUSTER_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CLUSTER_DIR.parent
 DEFAULT_INVENTORY = PROJECT_ROOT / ".run" / "cluster" / "nodes.local.csv"
 DEFAULT_IDENTITY = Path.home() / ".ssh" / "id_ed25519_llm_cluster"
+DEFAULT_WORKER_TOKEN = PROJECT_ROOT / ".run" / "cluster" / "worker.token"
+DEFAULT_SETTINGS = PROJECT_ROOT / ".run" / "cluster" / "settings.json"
+_worker_token_lock = threading.Lock()
+SYSTEM_PACKAGE_ALLOWLIST = {
+    "ca-certificates",
+    "curl",
+    "git",
+    "rsync",
+    "openssh-client",
+    "iproute2",
+    "build-essential",
+    "cmake",
+    "ninja-build",
+    "pkg-config",
+    "python3",
+    "python3-dev",
+    "python3-venv",
+    "libopenblas-dev",
+}
+
+DISCOVERY_SCRIPT = r"""
+set -eu
+project_dir=$1
+board=$(if [ -r /proc/device-tree/model ]; then tr -d '\000' </proc/device-tree/model; else uname -m; fi)
+if [ -f /etc/nv_tegra_release ] || [ -d /etc/nv_tegra_release.d ] || command -v nvpmodel >/dev/null 2>&1; then
+  platform_kind=jetson
+elif printf '%s' "$board" | grep -qi 'raspberry pi'; then
+  platform_kind=raspberry-pi
+else
+  platform_kind=unsupported
+fi
+pretty_os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | head -n 1 | sed 's/^"//;s/"$//')
+packages='ca-certificates curl git rsync openssh-client iproute2 build-essential cmake ninja-build pkg-config python3 python3-dev python3-venv'
+[ "$platform_kind" = raspberry-pi ] && packages="$packages libopenblas-dev"
+missing=''
+venv_works=false
+venv_probe=$(mktemp -d 2>/dev/null || true)
+if [ -n "$venv_probe" ] && python3 -m venv "$venv_probe/check" >/dev/null 2>&1; then
+  venv_works=true
+fi
+[ -n "$venv_probe" ] && rm -rf "$venv_probe"
+if command -v dpkg-query >/dev/null 2>&1; then
+  for package_name in $packages; do
+    if [ "$package_name" = python3-venv ] && [ "$venv_works" = true ]; then
+      continue
+    fi
+    if ! dpkg-query -W -f='${db:Status-Abbrev}' "$package_name" 2>/dev/null | grep -q '^ii'; then
+      missing="$missing $package_name"
+    fi
+  done
+fi
+sudo_nopasswd=false
+if [ "$(id -u)" -eq 0 ]; then
+  sudo_nopasswd=true
+elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+  sudo_nopasswd=true
+fi
+project_exists=false
+[ -d "$project_dir" ] && project_exists=true
+python_version=$(python3 --version 2>&1 || true)
+disk_free_kb=$(df -Pk "${project_dir%/*}" 2>/dev/null | awk 'NR==2 {print $4}' || true)
+ntp_sync=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)
+printf 'platform_kind=%s\n' "$platform_kind"
+printf 'board_model=%s\n' "$board"
+printf 'architecture=%s\n' "$(uname -m)"
+printf 'os=%s\n' "$pretty_os"
+printf 'kernel=%s\n' "$(uname -r)"
+printf 'python=%s\n' "$python_version"
+printf 'sudo_nopasswd=%s\n' "$sudo_nopasswd"
+printf 'project_exists=%s\n' "$project_exists"
+printf 'missing_packages=%s\n' "$(printf '%s' "$missing" | xargs)"
+printf 'disk_free_kb=%s\n' "$disk_free_kb"
+printf 'ntp_synchronized=%s\n' "$ntp_sync"
+""".strip()
 
 
 @dataclass(frozen=True)
@@ -36,6 +112,7 @@ class Node:
     project_dir: str
     enabled: bool
     identity_file: str = ""
+    platform: str = "auto"
 
     @property
     def api_url(self) -> str:
@@ -101,12 +178,15 @@ def load_nodes(path: Path, include_disabled: bool = False) -> List[Node]:
                     project_dir=row["project_dir"].strip(),
                     enabled=_as_bool(row["enabled"]),
                     identity_file=row.get("identity_file", "").strip(),
+                    platform=(row.get("platform", "auto") or "auto").strip().lower(),
                 )
             except (KeyError, TypeError, ValueError) as exc:
                 raise ValueError(f"Invalid inventory row {line_number}: {exc}") from exc
 
             if node.role not in {"head", "worker"}:
                 raise ValueError(f"Invalid role for {node.name}: {node.role}")
+            if node.platform not in {"auto", "jetson", "raspberry-pi"}:
+                raise ValueError(f"Invalid platform for {node.name}: {node.platform}")
             if not node.host:
                 raise ValueError(f"Host is empty for {node.name}")
             if not node.project_dir.startswith("/"):
@@ -187,6 +267,100 @@ def run_on_node(
     )
 
 
+def discover_node(node: Node, timeout: int = 20) -> Dict[str, Any]:
+    """Inspect a key-authenticated Linux node without requiring project files."""
+    result: Dict[str, Any] = {
+        "name": node.name,
+        "ssh": False,
+        "project": False,
+        "platform_kind": "unknown",
+        "missing_packages": [],
+        "sudo_nopasswd": False,
+        "error": "",
+    }
+    try:
+        proc = run_on_node(
+            node,
+            ["sh", "-lc", DISCOVERY_SCRIPT, "cluster-discovery", node.project_dir],
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        result["error"] = str(exc)
+        return result
+    if proc.returncode != 0:
+        result["error"] = (proc.stderr or "SSH discovery failed").strip()
+        return result
+    result["ssh"] = True
+    for line in proc.stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        result[key.strip()] = value.strip()
+    result["project"] = str(result.get("project_exists", "false")).lower() == "true"
+    result["sudo_nopasswd"] = str(result.get("sudo_nopasswd", "false")).lower() == "true"
+    result["missing_packages"] = str(result.get("missing_packages", "")).split()
+    disk_free_kb = str(result.get("disk_free_kb", ""))
+    result["disk_free_gb"] = round(int(disk_free_kb) / (1024 * 1024), 2) if disk_free_kb.isdigit() else None
+    return result
+
+
+def bootstrap_system_one(node: Node) -> Dict[str, Any]:
+    discovery = discover_node(node)
+    if not discovery["ssh"]:
+        return {"name": node.name, "ok": False, "stdout": "", "stderr": discovery["error"]}
+    if discovery.get("platform_kind") not in {"jetson", "raspberry-pi"}:
+        return {
+            "name": node.name,
+            "ok": False,
+            "stdout": "",
+            "stderr": f"Unsupported platform: {discovery.get('board_model', 'unknown')}",
+        }
+    if discovery.get("architecture") not in {"aarch64", "arm64"}:
+        return {
+            "name": node.name,
+            "ok": False,
+            "stdout": "",
+            "stderr": f"64-bit ARM OS is required; detected {discovery.get('architecture')}",
+        }
+    missing = [item for item in discovery["missing_packages"] if item in SYSTEM_PACKAGE_ALLOWLIST]
+    if not missing:
+        return {
+            "name": node.name,
+            "ok": True,
+            "stdout": f"platform={discovery['platform_kind']} system dependencies ready",
+            "stderr": "",
+            "discovery": discovery,
+        }
+    if not discovery["sudo_nopasswd"]:
+        manual = "sudo apt-get update && sudo apt-get install -y " + " ".join(missing)
+        return {
+            "name": node.name,
+            "ok": False,
+            "stdout": "",
+            "stderr": "Passwordless sudo is unavailable. Run once on the worker: " + manual,
+            "discovery": discovery,
+        }
+    prefix: List[str] = []
+    identity = run_on_node(node, ["id", "-u"], timeout=10)
+    if identity.stdout.strip() != "0":
+        prefix = ["sudo", "-n"]
+    update = run_on_node(node, prefix + ["apt-get", "update"], timeout=600)
+    if update.returncode != 0:
+        return {"name": node.name, "ok": False, "stdout": update.stdout, "stderr": update.stderr}
+    install = run_on_node(
+        node,
+        prefix + ["apt-get", "install", "-y", "--no-install-recommends", *missing],
+        timeout=1200,
+    )
+    return {
+        "name": node.name,
+        "ok": install.returncode == 0,
+        "stdout": install.stdout.strip(),
+        "stderr": install.stderr.strip(),
+        "discovery": discovery,
+    }
+
+
 def request_json(
     url: str,
     method: str = "GET",
@@ -194,13 +368,61 @@ def request_json(
     timeout: float = 10.0,
 ) -> Dict[str, Any]:
     data = None
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", **worker_auth_headers()}
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def ensure_worker_token() -> str:
+    with _worker_token_lock:
+        configured = os.getenv("CLUSTER_API_TOKEN", "").strip()
+        if configured:
+            DEFAULT_WORKER_TOKEN.parent.mkdir(parents=True, exist_ok=True)
+            if not DEFAULT_WORKER_TOKEN.exists() or DEFAULT_WORKER_TOKEN.read_text(encoding="utf-8").strip() != configured:
+                temporary = DEFAULT_WORKER_TOKEN.with_suffix(".tmp")
+                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                    handle.write(configured + "\n")
+                os.replace(temporary, DEFAULT_WORKER_TOKEN)
+            return configured
+        if not DEFAULT_WORKER_TOKEN.exists():
+            DEFAULT_WORKER_TOKEN.parent.mkdir(parents=True, exist_ok=True)
+            temporary = DEFAULT_WORKER_TOKEN.with_suffix(".tmp")
+            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(secrets.token_urlsafe(32) + "\n")
+            os.replace(temporary, DEFAULT_WORKER_TOKEN)
+        DEFAULT_WORKER_TOKEN.chmod(0o600)
+        return DEFAULT_WORKER_TOKEN.read_text(encoding="utf-8").strip()
+
+
+def worker_auth_headers() -> Dict[str, str]:
+    if not worker_auth_enabled():
+        return {}
+    token = ensure_worker_token()
+    return {"X-Cluster-Worker-Token": token} if token else {}
+
+
+def cluster_settings() -> Dict[str, Any]:
+    defaults: Dict[str, Any] = {"worker_api_auth": False}
+    try:
+        stored = json.loads(DEFAULT_SETTINGS.read_text(encoding="utf-8"))
+        if isinstance(stored, dict):
+            defaults.update({key: value for key, value in stored.items() if key in defaults})
+    except (OSError, ValueError):
+        pass
+    return defaults
+
+
+def worker_auth_enabled() -> bool:
+    override = os.getenv("CLUSTER_WORKER_AUTH", "").strip().lower()
+    if override:
+        return override in {"1", "true", "yes", "on", "enabled"}
+    return bool(cluster_settings().get("worker_api_auth", False))
 
 
 def status_one(node: Node) -> Dict[str, Any]:
@@ -214,21 +436,16 @@ def status_one(node: Node) -> Dict[str, Any]:
         "loaded_model": None,
         "error": "",
     }
-    try:
-        probe = run_on_node(
-            node,
-            ["test", "-d", node.project_dir],
-            timeout=12,
-        )
-        result["ssh"] = probe.returncode == 0
-        result["project"] = probe.returncode == 0
-        if probe.returncode != 0:
-            result["error"] = (probe.stderr or "project directory missing").strip()
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        result["error"] = str(exc)
+    discovery = discover_node(node, timeout=12)
+    result["ssh"] = discovery["ssh"]
+    result["project"] = discovery["project"]
+    if not discovery["ssh"]:
+        result["error"] = discovery["error"]
+    elif not discovery["project"]:
+        result["error"] = "project directory missing"
 
     try:
-        health = request_json(f"{node.api_url}/health", timeout=3.0)
+        health = request_json(f"{node.api_url}/cluster/health", timeout=3.0)
         result["api"] = health.get("ok") is True
         current = health.get("current") or {}
         result["loaded_model"] = current.get("model_id")
@@ -394,6 +611,32 @@ def sync_code_one(node: Node, dry_run: bool = False) -> Dict[str, Any]:
     }
 
 
+def sync_worker_token_one(node: Node) -> Dict[str, Any]:
+    ensure_worker_token()
+    if node.is_local:
+        return {"name": node.name, "ok": True, "stdout": "local token ready", "stderr": ""}
+    remote_runtime = f"{node.project_dir}/.run/cluster"
+    mkdir = run_on_node(node, ["mkdir", "-p", remote_runtime], timeout=30)
+    if mkdir.returncode != 0:
+        return {"name": node.name, "ok": False, "stdout": mkdir.stdout, "stderr": mkdir.stderr}
+    command = [
+        "rsync",
+        "-a",
+        "--chmod=F600",
+        "-e",
+        _rsync_ssh(node),
+        str(DEFAULT_WORKER_TOKEN),
+        f"{node.ssh_target}:{remote_runtime}/worker.token",
+    ]
+    proc = subprocess.run(command, text=True, capture_output=True, timeout=60)
+    return {
+        "name": node.name,
+        "ok": proc.returncode == 0,
+        "stdout": proc.stdout.strip(),
+        "stderr": proc.stderr.strip(),
+    }
+
+
 def command_sync_code(nodes: Sequence[Node], args: argparse.Namespace) -> int:
     workers = [node for node in nodes if node.role == "worker"]
     results = [sync_code_one(node, dry_run=args.dry_run) for node in workers]
@@ -493,6 +736,14 @@ def command_prepare(nodes: Sequence[Node], args: argparse.Namespace) -> int:
         return 0
     model_paths = args.model or []
     for node in workers:
+        print(f"[{node.name}] discovering platform and system dependencies", flush=True)
+        bootstrap_result = bootstrap_system_one(node)
+        if bootstrap_result["stdout"]:
+            print(bootstrap_result["stdout"])
+        if not bootstrap_result["ok"]:
+            print(bootstrap_result["stderr"], file=sys.stderr)
+            return 1
+
         print(f"[{node.name}] syncing project code", flush=True)
         code_result = sync_code_one(node)
         if not code_result["ok"]:
@@ -506,6 +757,13 @@ def command_prepare(nodes: Sequence[Node], args: argparse.Namespace) -> int:
         if not setup_result["ok"]:
             print(setup_result["stderr"], file=sys.stderr)
             return 1
+
+        if worker_auth_enabled():
+            print(f"[{node.name}] provisioning worker API credential", flush=True)
+            token_result = sync_worker_token_one(node)
+            if not token_result["ok"]:
+                print(token_result["stderr"], file=sys.stderr)
+                return 1
 
         if model_paths:
             print(f"[{node.name}] syncing {len(model_paths)} selected model(s)", flush=True)
@@ -528,6 +786,15 @@ def command_prepare(nodes: Sequence[Node], args: argparse.Namespace) -> int:
 
 
 def _lifecycle_one(node: Node, action: str) -> Dict[str, Any]:
+    if action == "restart":
+        stopped = _lifecycle_one(node, "stop")
+        if not stopped["ok"]:
+            return stopped
+        if worker_auth_enabled():
+            token = sync_worker_token_one(node)
+            if not token["ok"]:
+                return token
+        return _lifecycle_one(node, "start")
     script = f"{node.project_dir}/cluster/worker/{action}.sh"
     env_command = [
         "env",
@@ -535,6 +802,8 @@ def _lifecycle_one(node: Node, action: str) -> Dict[str, Any]:
         "HOST=0.0.0.0",
         f"CLUSTER_NODE_NAME={node.name}",
         f"CLUSTER_NODE_ROLE={node.role}",
+        f"CLUSTER_PLATFORM={node.platform}",
+        f"CLUSTER_WORKER_AUTH={'true' if worker_auth_enabled() else 'false'}",
         script,
     ]
     try:
@@ -582,6 +851,13 @@ def _select_model_one(node: Node, model_id: str, n_ctx: int, n_gpu_layers: int) 
 
 
 def command_select_model(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    pi_nodes = [node.name for node in nodes if node.platform == "raspberry-pi"]
+    if pi_nodes and args.n_gpu_layers != 0:
+        print(
+            "Raspberry Pi nodes require --n-gpu-layers 0: " + ", ".join(pi_nodes),
+            file=sys.stderr,
+        )
+        return 1
     results = run_parallel(
         nodes,
         lambda node: _select_model_one(node, args.model_id, args.n_ctx, args.n_gpu_layers),
@@ -611,6 +887,7 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser = subparsers.add_parser("status", help="Check SSH, project and API status")
     status_parser.add_argument("--json-out")
     subparsers.add_parser("doctor", help="Run environment checks on enabled nodes")
+    subparsers.add_parser("discover", help="Discover platform and bootstrap prerequisites")
     subparsers.add_parser("setup", help="Install the worker Python/CUDA runtime")
 
     sync_code_parser = subparsers.add_parser("sync-code", help="Rsync code from head to workers")
@@ -638,6 +915,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("start", help="Start API servers on enabled nodes")
     subparsers.add_parser("stop", help="Stop API servers on enabled nodes")
+    subparsers.add_parser("restart", help="Restart API servers with current settings")
 
     select_parser = subparsers.add_parser("select-model", help="Load the same model on enabled nodes")
     select_parser.add_argument("--model-id", required=True)
@@ -661,6 +939,10 @@ def main() -> int:
         return command_status(nodes, args)
     if args.command == "doctor":
         return command_doctor(nodes, args)
+    if args.command == "discover":
+        discovered = run_parallel(nodes, discover_node)
+        print(json.dumps(discovered, ensure_ascii=False, indent=2))
+        return 0 if all(item["ssh"] for item in discovered) else 1
     if args.command == "setup":
         return command_setup(nodes, args)
     if args.command == "sync-code":
@@ -673,6 +955,8 @@ def main() -> int:
         return command_lifecycle(nodes, "start")
     if args.command == "stop":
         return command_lifecycle(nodes, "stop")
+    if args.command == "restart":
+        return command_lifecycle(nodes, "restart")
     if args.command == "select-model":
         return command_select_model(nodes, args)
     parser.error(f"Unsupported command: {args.command}")
