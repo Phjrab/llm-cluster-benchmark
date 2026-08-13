@@ -39,6 +39,7 @@ cd <project-dir>
 - `.run/cluster/settings.json`: 선택형 보안 설정(대시보드·worker API 인증 모두 기본 꺼짐)
 - `.run/cluster/worker.token`: 인증을 켤 때 생성되는 비공개 head/worker 공유 토큰
 - `.run/cluster/experiments/`: 실험 정의 카탈로그
+- `.run/cluster/environment/<node>.json`: 노드별 최신 LLM 런타임 점검 결과
 - `.run/cluster/results/`: 실행별 원시 결과와 요약
 
 대시보드는 기본적으로 `http://HEAD_IP:8080`에서 실행한다. 내부 LAN 전용이며 인터넷에
@@ -70,8 +71,8 @@ NVIDIA 이미지에 정상 설치되어 있는지만 검증한다.
 공통 apt 의존성:
 
 ```text
-ca-certificates curl git rsync build-essential cmake ninja-build pkg-config
-python3 python3-dev python3-venv
+ca-certificates curl git rsync openssh-client iproute2 util-linux
+build-essential cmake ninja-build pkg-config python3 python3-dev python3-venv
 ```
 
 Raspberry Pi에는 `libopenblas-dev`가 추가된다. 설치 스크립트는 재실행 가능한 형태이며,
@@ -80,6 +81,46 @@ Raspberry Pi에는 `libopenblas-dev`가 추가된다. 설치 스크립트는 재
 ```bash
 ./cluster/worker_setup.sh --plan-only --platform jetson
 ./cluster/worker_setup.sh --plan-only --platform raspberry-pi
+```
+
+## 노드별 LLM 런타임 점검과 자동 구성
+
+개요의 `노드 실행 환경`은 head를 포함한 선택 노드를 독립적으로 점검한다.
+
+- Jetson Orin / Raspberry Pi 5 보드와 64-bit ARM OS
+- 고정 apt 허용 목록, 프로젝트 쓰기 경로와 디스크 여유
+- `<project-dir>/.venv`와 `requirements-runtime.txt`의 고정 Python 버전
+- `llama-cpp-python==0.3.20`과 Jetson CUDA 또는 Pi OpenBLAS/ARM 최적화
+- GGUF 발견 개수와 Jetson jtop 고급 측정 사용 가능 여부
+
+`선택 노드 환경 점검`은 읽기 전용이다. `선택 노드 자동 구성`을 명시적으로
+확인하면 누락된 시스템 패키지를 고정 allowlist에서만 처리하고 프로젝트를
+동기화한 뒤 프로젝트 안의 `.venv`에 Python/LLM 런타임을 설치한다. root 또는
+`sudo -n`이 가능할 때만 apt를 자동 실행하며, 비밀번호가 필요하면 대시보드가
+정확한 수동 명령만 표시한다. JetPack, CUDA, OS 이미지는 자동 설치하지 않는다.
+
+결과는 `.run/cluster/environment/<node>.json`에 `0600`으로 원자적 저장되며,
+노드 카드에 `READY`, `AUTO FIX`, `MANUAL`, `BLOCKED`로 표시된다. `READY`는
+플랫폼별 LLM 런타임이 검증됐다는 뜻이다. 실험 시작 시점에는 다시 다음을
+강제한다.
+
+- 점검 결과가 24시간 이내이고 backend가 검증됐을 것
+- worker API가 온라인일 것
+- 복제 전략은 선택한 모든 노드에, RPC는 coordinator head에 선택 GGUF가 있을 것
+
+따라서 런타임 구성 후 API가 중지돼 있으면 `서버 시작`, 모델이 없으면
+`선택 모델 동기화`를 별도로 실행한다. 런타임 점검이 대용량 모델을 암묵적으로
+복제하거나 서버를 자동 시작하지는 않는다.
+
+CLI에서도 같은 점검과 설치 흐름을 사용할 수 있다.
+
+```bash
+python -m cluster.clusterctl environment-check
+python -m cluster.clusterctl --node edge-worker-01 environment-install --confirmed
+
+# 단일 노드 스크립트로 JSON 산출물까지 저장
+./cluster/worker_setup.sh --check-only --project-dir "$PWD" \
+  --report-json "$PWD/.run/cluster/environment/local-check.json"
 ```
 
 ## jtop형 노드 상태
@@ -199,6 +240,8 @@ python -m cluster.clusterctl inventory
 python -m cluster.clusterctl status
 python -m cluster.clusterctl discover
 python -m cluster.clusterctl doctor
+python -m cluster.clusterctl environment-check
+python -m cluster.clusterctl --node edge-worker-01 environment-install --confirmed
 python -m cluster.clusterctl prepare \
   --model qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf
 python -m cluster.clusterctl start

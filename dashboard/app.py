@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import csv
+import hashlib
 import ipaddress
 import json
 import os
@@ -60,6 +61,8 @@ DEFAULTS_PATH = CLUSTER_DIR / "config" / "experiment_defaults.json"
 EXAMPLE_INVENTORY = CLUSTER_DIR / "config" / "nodes.example.csv"
 TOKEN_PATH = RUNTIME_DIR / "dashboard.token"
 SETTINGS_PATH = RUNTIME_DIR / "settings.json"
+ENVIRONMENT_DIR = RUNTIME_DIR / "environment"
+ENVIRONMENT_MARKER = "CLUSTER_ENVIRONMENT_JSON="
 
 
 def utc_now() -> str:
@@ -72,6 +75,8 @@ def ensure_runtime() -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     (RESULTS_DIR / "_suites").mkdir(parents=True, exist_ok=True)
     EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    ENVIRONMENT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    ENVIRONMENT_DIR.chmod(0o700)
     if not INVENTORY_PATH.exists():
         raise RuntimeError(
             f"Cluster inventory is missing: {INVENTORY_PATH}. "
@@ -196,6 +201,12 @@ class NodePayload(BaseModel):
             or not re.fullmatch(r"/[a-zA-Z0-9._/-]+", value)
         ):
             raise ValueError("project_dir must be a safe absolute path")
+        normalized = str(Path(value))
+        parts = Path(normalized).parts
+        if normalized in {"/home", "/opt", "/srv"} or (
+            len(parts) >= 2 and parts[1] == "home" and len(parts) < 4
+        ):
+            raise ValueError("project_dir must name a dedicated project directory")
         return value
 
     @field_validator("host")
@@ -362,6 +373,286 @@ def serialize_node(node: Node) -> Dict[str, Any]:
     item.pop("identity_file", None)
     item["api_url"] = node.api_url
     return item
+
+
+def _environment_path(node_name: str) -> Path:
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}", node_name):
+        raise ValueError("Invalid node name for environment report")
+    return ENVIRONMENT_DIR / f"{node_name}.json"
+
+
+def _node_environment_fingerprint(node: Node) -> str:
+    identity = {
+        "name": node.name,
+        "role": node.role,
+        "host": node.host,
+        "user": node.user,
+        "ssh_port": node.ssh_port,
+        "api_port": node.api_port,
+        "project_dir": node.project_dir,
+        "platform": node.platform,
+    }
+    encoded = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _invalidate_environment_report(node_name: str) -> None:
+    try:
+        _environment_path(node_name).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _environment_placeholder(node: Node) -> Dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "node": node.name,
+        "status": "not_checked",
+        "checked_at": None,
+        "received_at": None,
+        "inventory_fingerprint": _node_environment_fingerprint(node),
+        "platform": node.platform,
+        "board_model": "",
+        "architecture": "",
+        "os": "",
+        "python": "",
+        "disk_free_gb": None,
+        "project_dir": node.project_dir,
+        "venv_path": f"{node.project_dir}/.venv",
+        "checks": [],
+        "missing_system_packages": [],
+        "manual_commands": [],
+        "backend": {"kind": "unknown", "verified": False},
+        "model_count": 0,
+    }
+
+
+def normalize_environment_report(raw: Dict[str, Any], node: Node) -> Dict[str, Any]:
+    allowed_statuses = {
+        "ready",
+        "needs_setup",
+        "manual",
+        "unavailable",
+        "failed",
+        "not_checked",
+        "repairable",
+        "blocked",
+        "checking",
+    }
+    status = str(raw.get("status") or "failed")
+    if status not in allowed_statuses:
+        status = "failed"
+    checks = []
+    for index, item in enumerate(raw.get("checks") or []):
+        if index >= 40 or not isinstance(item, dict):
+            break
+        check_status = str(item.get("status") or "unknown")
+        if check_status not in {"pass", "fail", "warn", "missing", "unknown", "checking"}:
+            check_status = "unknown"
+        check_id = re.sub(
+            r"[^a-zA-Z0-9_-]",
+            "_",
+            str(item.get("id") or f"check_{index}"),
+        )[:64]
+        checks.append(
+            {
+                "id": check_id,
+                "label": str(item.get("label") or check_id)[:120],
+                "status": check_status,
+                "detail": str(item.get("detail") or "")[:2000],
+                "auto_fixable": bool(item.get("auto_fixable", False)),
+            }
+        )
+    missing = [
+        str(item)[:80]
+        for item in (raw.get("missing_system_packages") or [])[:40]
+        if isinstance(item, str)
+    ]
+    manual = [
+        str(item)[:2000]
+        for item in (raw.get("manual_commands") or [])[:10]
+        if isinstance(item, str)
+    ]
+    try:
+        model_count = max(0, int(raw.get("model_count", 0)))
+    except (TypeError, ValueError):
+        model_count = 0
+    raw_backend = raw.get("backend")
+    if isinstance(raw_backend, dict):
+        backend: Any = {
+            "kind": str(raw_backend.get("kind") or "unknown")[:64],
+            "verified": bool(raw_backend.get("verified", False)),
+        }
+    else:
+        backend = {
+            "kind": str(raw_backend or "unknown")[:64],
+            # Old reports used a scalar only after successful verification.
+            "verified": bool(raw_backend and raw_backend != "unknown"),
+        }
+    try:
+        disk_free_gb: Optional[float] = round(float(raw.get("disk_free_gb")), 2)
+    except (TypeError, ValueError):
+        disk_free_gb = None
+    return {
+        "schema_version": 1,
+        "node": node.name,
+        "status": status,
+        # Never manufacture a fresh timestamp for an incomplete/legacy file:
+        # experiment admission treats a missing timestamp as stale and asks
+        # the user to run a real preflight again.
+        "checked_at": str(raw.get("checked_at")) if raw.get("checked_at") else None,
+        "received_at": str(raw.get("received_at")) if raw.get("received_at") else None,
+        "inventory_fingerprint": str(raw.get("inventory_fingerprint") or "")[:64],
+        "platform": str(raw.get("platform") or node.platform)[:80],
+        "board_model": str(raw.get("board_model") or "")[:240],
+        "architecture": str(raw.get("architecture") or "")[:32],
+        "os": str(raw.get("os") or "")[:240],
+        "python": str(raw.get("python") or "")[:120],
+        "disk_free_gb": disk_free_gb,
+        "project_dir": node.project_dir,
+        "venv_path": f"{node.project_dir}/.venv",
+        "checks": checks,
+        "missing_system_packages": missing,
+        "manual_commands": manual,
+        "backend": backend,
+        "model_count": model_count,
+    }
+
+
+def write_environment_report(raw: Dict[str, Any]) -> Dict[str, Any]:
+    node_name = str(raw.get("node") or "")
+    nodes = {node.name: node for node in read_all_nodes()}
+    if node_name not in nodes:
+        raise ValueError("Environment report references an unknown node")
+    received = {
+        **raw,
+        "received_at": utc_now(),
+        "inventory_fingerprint": _node_environment_fingerprint(nodes[node_name]),
+    }
+    report = normalize_environment_report(received, nodes[node_name])
+    ENVIRONMENT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    ENVIRONMENT_DIR.chmod(0o700)
+    target = _environment_path(node_name)
+    temporary = target.with_suffix(f".tmp.{uuid.uuid4().hex}")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(report, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+        target.chmod(0o600)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+    return report
+
+
+def read_environment_reports() -> List[Dict[str, Any]]:
+    reports = []
+    for node in read_all_nodes():
+        try:
+            raw = json.loads(_environment_path(node.name).read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                raise ValueError("environment report must be an object")
+            if raw.get("inventory_fingerprint") != _node_environment_fingerprint(node):
+                placeholder = _environment_placeholder(node)
+                placeholder["status"] = "not_checked"
+                placeholder["checks"] = [
+                    {
+                        "id": "inventory_identity",
+                        "label": "Node inventory identity",
+                        "status": "fail",
+                        "detail": "Node address or project identity changed; run a fresh environment check",
+                        "auto_fixable": True,
+                    }
+                ]
+                reports.append(placeholder)
+                continue
+            reports.append(normalize_environment_report(raw, node))
+        except (FileNotFoundError, OSError, ValueError, TypeError):
+            reports.append(_environment_placeholder(node))
+    return reports
+
+
+def validate_experiment_environment(
+    nodes: Sequence[Node],
+    live_status: Dict[str, Dict[str, Any]],
+    model_ids: Sequence[str],
+    execution_strategy: str,
+) -> None:
+    """Reject experiments whose most recent persisted preflight is unsafe or stale."""
+    reports = {item["node"]: item for item in read_environment_reports()}
+    now = datetime.now(timezone.utc)
+    problems: List[str] = []
+    for node in nodes:
+        report = reports.get(node.name) or _environment_placeholder(node)
+        checked_at = report.get("checked_at")
+        received_at = report.get("received_at")
+        age_hours: Optional[float] = None
+        if received_at:
+            try:
+                parsed = datetime.fromisoformat(str(received_at).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                age_hours = (now - parsed.astimezone(timezone.utc)).total_seconds() / 3600
+            except ValueError:
+                pass
+        if report.get("status") != "ready":
+            problems.append(
+                f"{node.name}: 환경 상태 {report.get('status') or 'not_checked'} "
+                "(환경 점검 또는 자동 구성을 실행하세요)"
+            )
+        elif age_hours is None or age_hours < -0.08 or age_hours > 24:
+            problems.append(f"{node.name}: 환경 점검 결과가 24시간을 초과했으므로 다시 점검하세요")
+        else:
+            backend = report.get("backend")
+            if isinstance(backend, dict):
+                backend_verified = bool(backend.get("verified")) and backend.get("kind") not in {
+                    "",
+                    "unknown",
+                    None,
+                }
+            else:
+                backend_verified = backend not in {"", "unknown", None}
+            if not backend_verified:
+                problems.append(f"{node.name}: LLM 백엔드 검증 결과가 없습니다")
+            detected_platform = report.get("platform")
+            if node.platform != "auto" and detected_platform != node.platform:
+                problems.append(
+                    f"{node.name}: 인벤토리 플랫폼 {node.platform}와 실제 보드 "
+                    f"{detected_platform or 'unknown'}이 다릅니다"
+                )
+        if checked_at:
+            try:
+                worker_time = datetime.fromisoformat(str(checked_at).replace("Z", "+00:00"))
+                if worker_time.tzinfo is None:
+                    worker_time = worker_time.replace(tzinfo=timezone.utc)
+                if (worker_time.astimezone(timezone.utc) - now).total_seconds() > 300:
+                    problems.append(f"{node.name}: 노드 시계가 head보다 5분 이상 빠릅니다 (NTP를 확인하세요)")
+            except ValueError:
+                pass
+
+        live = live_status.get(node.name) or {}
+        if live.get("api") is not True:
+            problems.append(f"{node.name}: 워커 API가 오프라인입니다 (노드 시작 후 다시 시도하세요)")
+
+        # RPC model-parallel loads the GGUF only on its head coordinator. All
+        # replicated strategies require every selected node to have every model.
+        requires_models = execution_strategy != "model_parallel_rpc" or node.role == "head"
+        if requires_models and live.get("api") is True:
+            available = set(live.get("model_ids") or [])
+            missing_models = [model_id for model_id in model_ids if model_id not in available]
+            if missing_models:
+                problems.append(
+                    f"{node.name}: 모델 없음 - " + ", ".join(missing_models[:4])
+                    + (" 외" if len(missing_models) > 4 else "")
+                )
+    if problems:
+        raise ValueError("실험 환경 준비가 필요합니다: " + " / ".join(problems))
 
 
 def list_models() -> List[Dict[str, Any]]:
@@ -560,6 +851,7 @@ def probe_candidate(node: Node) -> Dict[str, Any]:
         discovery["ssh"]
         and detected in {"jetson", "raspberry-pi"}
         and discovery.get("architecture") in {"aarch64", "arm64"}
+        and (configured == "auto" or configured == detected)
     )
     if discovery["ssh"] and detected not in {"jetson", "raspberry-pi"}:
         warnings.append("only NVIDIA Jetson and Raspberry Pi are supported")
@@ -618,7 +910,20 @@ status_monitor = StatusMonitor()
 
 
 class ActionManager:
-    ALLOWED = {"doctor", "setup", "prepare", "prepare-rpc", "sync-code", "sync-models", "start", "stop", "restart", "select-model"}
+    ALLOWED = {
+        "doctor",
+        "setup",
+        "prepare",
+        "prepare-rpc",
+        "sync-code",
+        "sync-models",
+        "start",
+        "stop",
+        "restart",
+        "select-model",
+        "environment-check",
+        "environment-install",
+    }
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -648,11 +953,36 @@ class ActionManager:
             "exit_code": None,
             "log": [],
         }
+        if payload.action in {"environment-check", "environment-install"}:
+            record["inventory_fingerprints"] = {
+                node.name: _node_environment_fingerprint(node) for node in selected
+            }
         with self._lock:
             for action in self._actions.values():
                 if action.get("status") in {"queued", "running"} and selected_names.intersection(action.get("nodes") or []):
                     raise ValueError("A selected node already has a running control action")
             self._actions[action_id] = record
+        if payload.action in {"environment-check", "environment-install"}:
+            checking_reports = []
+            for node in selected:
+                pending = _environment_placeholder(node)
+                pending.update(
+                    {
+                        "status": "checking",
+                        "checked_at": None,
+                        "checks": [
+                            {
+                                "id": "environment_operation",
+                                "label": "Environment operation",
+                                "status": "checking",
+                                "detail": f"{payload.action} is running",
+                                "auto_fixable": False,
+                            }
+                        ],
+                    }
+                )
+                checking_reports.append(write_environment_report(pending))
+            events.publish("environment_changed", environment=read_environment_reports(), reports=checking_reports)
         thread = threading.Thread(
             target=self._run,
             args=(action_id, payload),
@@ -663,6 +993,43 @@ class ActionManager:
         return dict(record)
 
     def _run(self, action_id: str, payload: ActionPayload) -> None:
+        environment_reported_nodes: set[str] = set()
+        with self._lock:
+            expected_environment_fingerprints = dict(
+                self._actions[action_id].get("inventory_fingerprints") or {}
+            )
+
+        def persist_missing_environment_reports(detail: str) -> None:
+            if payload.action not in {"environment-check", "environment-install"}:
+                return
+            inventory = {node.name: node for node in read_all_nodes()}
+            for node_name in payload.node_names:
+                if node_name in environment_reported_nodes or node_name not in inventory:
+                    continue
+                raw = _environment_placeholder(inventory[node_name])
+                raw.update(
+                    {
+                        "status": "failed",
+                        "checked_at": utc_now(),
+                        "checks": [
+                            {
+                                "id": "environment_operation",
+                                "label": "Environment operation",
+                                "status": "fail",
+                                "detail": detail[-2000:] or "Environment process exited without a report",
+                                "auto_fixable": True,
+                            }
+                        ],
+                    }
+                )
+                report = write_environment_report(raw)
+                environment_reported_nodes.add(node_name)
+                events.publish(
+                    "environment_changed",
+                    environment=read_environment_reports(),
+                    report=report,
+                )
+
         command = [
             sys.executable,
             "-m",
@@ -689,6 +1056,8 @@ class ActionManager:
                     str(payload.options.get("n_gpu_layers", 30)),
                 ]
             )
+        elif payload.action == "environment-install":
+            command.append("--confirmed")
 
         with self._lock:
             self._actions[action_id]["status"] = "running"
@@ -705,6 +1074,31 @@ class ActionManager:
             assert process.stdout is not None
             for line in process.stdout:
                 clean = line.rstrip()
+                if clean.startswith(ENVIRONMENT_MARKER):
+                    try:
+                        raw_report = json.loads(clean[len(ENVIRONMENT_MARKER) :])
+                        if isinstance(raw_report, dict):
+                            report_node = str(raw_report.get("node") or "")
+                            current_nodes = {node.name: node for node in read_all_nodes()}
+                            expected_fingerprint = expected_environment_fingerprints.get(report_node)
+                            current_node = current_nodes.get(report_node)
+                            if (
+                                not expected_fingerprint
+                                or current_node is None
+                                or _node_environment_fingerprint(current_node) != expected_fingerprint
+                            ):
+                                raise ValueError(
+                                    f"inventory identity changed while checking {report_node or 'unknown node'}"
+                                )
+                            report = write_environment_report(raw_report)
+                            environment_reported_nodes.add(report["node"])
+                            events.publish(
+                                "environment_changed",
+                                environment=read_environment_reports(),
+                                report=report,
+                            )
+                    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                        clean = f"[environment-report-error] {exc}"
                 with self._lock:
                     log = self._actions[action_id]["log"]
                     log.append(clean)
@@ -712,12 +1106,16 @@ class ActionManager:
                         del log[:-500]
                 events.publish("action_log", action_id=action_id, line=clean)
             exit_code = process.wait()
+            persist_missing_environment_reports(
+                f"Environment process exited with code {exit_code} without a structured report"
+            )
             with self._lock:
                 record = self._actions[action_id]
                 record["exit_code"] = exit_code
                 record["status"] = "completed" if exit_code == 0 else "failed"
                 record["finished_at"] = utc_now()
         except Exception as exc:
+            persist_missing_environment_reports(str(exc))
             with self._lock:
                 record = self._actions[action_id]
                 record["status"] = "failed"
@@ -1522,6 +1920,7 @@ async def bootstrap() -> Dict[str, Any]:
         "suites": read_suite_summaries(),
         "experiment_groups": read_experiment_groups(),
         "actions": actions.list(),
+        "environment": read_environment_reports(),
         "settings": read_settings(),
         "experiment_strategies": experiment_strategy_catalog(),
         "onboarding": {
@@ -1610,6 +2009,9 @@ async def upsert_node(payload: NodePayload) -> Dict[str, Any]:
     with inventory_lock:
         nodes = read_all_nodes()
         existing_index = next((i for i, item in enumerate(nodes) if item.name == node.name), None)
+        if existing_index is not None and node.name in set(actions.busy_nodes()):
+            raise HTTPException(status_code=409, detail="Node has a running control action")
+        identity_changed = existing_index is None
         if existing_index is None:
             if node.role == "head":
                 raise HTTPException(status_code=400, detail="A head node already exists")
@@ -1618,9 +2020,12 @@ async def upsert_node(payload: NodePayload) -> Dict[str, Any]:
             existing = nodes[existing_index]
             if existing.role == "head" and node.role != "head":
                 raise HTTPException(status_code=400, detail="The head role cannot be changed")
+            identity_changed = _node_environment_fingerprint(existing) != _node_environment_fingerprint(node)
             nodes[existing_index] = node
         try:
             write_all_nodes(nodes)
+            if identity_changed:
+                _invalidate_environment_report(node.name)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     events.publish("inventory_changed", nodes=[serialize_node(item) for item in nodes])
@@ -1631,6 +2036,8 @@ async def upsert_node(payload: NodePayload) -> Dict[str, Any]:
 @app.delete("/api/nodes/{node_name}", dependencies=[Depends(verify_token)])
 async def delete_node(node_name: str) -> Dict[str, Any]:
     with inventory_lock:
+        if node_name in set(actions.busy_nodes()):
+            raise HTTPException(status_code=409, detail="Node has a running control action")
         nodes = read_all_nodes()
         target = next((node for node in nodes if node.name == node_name), None)
         if target is None:
@@ -1639,13 +2046,14 @@ async def delete_node(node_name: str) -> Dict[str, Any]:
             raise HTTPException(status_code=400, detail="The head node cannot be removed")
         nodes = [node for node in nodes if node.name != node_name]
         write_all_nodes(nodes)
+        _invalidate_environment_report(node_name)
     events.publish("inventory_changed", nodes=[serialize_node(item) for item in nodes])
     return {"ok": True}
 
 
 @app.post("/api/actions", dependencies=[Depends(verify_token)])
 async def start_action(payload: ActionPayload) -> Dict[str, Any]:
-    if payload.action in {"setup", "prepare", "prepare-rpc"} and payload.options.get("confirmed") is not True:
+    if payload.action in {"setup", "prepare", "prepare-rpc", "environment-install"} and payload.options.get("confirmed") is not True:
         raise HTTPException(status_code=400, detail="Worker setup requires explicit confirmation")
     try:
         record = actions.start(payload)
@@ -1657,6 +2065,11 @@ async def start_action(payload: ActionPayload) -> Dict[str, Any]:
 @app.get("/api/actions", dependencies=[Depends(verify_token)])
 async def list_actions() -> Dict[str, Any]:
     return {"actions": actions.list()}
+
+
+@app.get("/api/environment", dependencies=[Depends(verify_token)])
+async def get_environment() -> Dict[str, Any]:
+    return {"environment": read_environment_reports()}
 
 
 @app.post("/api/experiments", dependencies=[Depends(verify_token)])
@@ -1673,16 +2086,29 @@ async def start_experiment(payload: ExperimentPayload) -> Dict[str, Any]:
         selected_nodes = [inventory_by_name[name] for name in payload.node_names if name in inventory_by_name]
         strategy_config = ExperimentConfig.from_dict(payload.model_dump())
         validate_strategy(selected_nodes, strategy_config)
+        validate_experiment_environment(
+            selected_nodes,
+            status_by_name,
+            payload.model_ids,
+            payload.execution_strategy,
+        )
         if payload.execution_strategy == "model_parallel_rpc" and read_settings()["worker_api_auth"]:
             raise ValueError(
                 "워커 API 보안 모드에서는 인증 없는 llama.cpp RPC 포트를 열지 않습니다. "
                 "SSH 터널 모드가 추가되기 전에는 신뢰 LAN에서만 보안을 끄고 실행하세요."
             )
         pi_nodes = []
+        readiness_platforms = {
+            item.get("node"): item.get("platform") for item in read_environment_reports()
+        }
         for name in payload.node_names:
             detected = (status_by_name.get(name, {}).get("profile") or {}).get("platform_kind")
             configured = inventory_by_name.get(name).platform if inventory_by_name.get(name) else "auto"
-            if detected == "raspberry-pi" or configured == "raspberry-pi":
+            if (
+                detected == "raspberry-pi"
+                or configured == "raspberry-pi"
+                or readiness_platforms.get(name) == "raspberry-pi"
+            ):
                 pi_nodes.append(name)
         if pi_nodes and payload.n_gpu_layers != 0 and payload.execution_strategy != "model_parallel_rpc":
             raise ValueError(

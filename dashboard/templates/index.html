@@ -82,7 +82,8 @@
               <button type="button" data-preset="2">2대</button>
               <button type="button" data-preset="4">4대</button>
             </div>
-            <button class="button secondary compact" id="prepareButton" type="button">선택 워커 준비</button>
+            <button class="button ghost compact" id="checkEnvironmentButton" type="button">선택 노드 환경 점검</button>
+            <button class="button secondary compact" id="installEnvironmentButton" type="button">선택 노드 자동 구성</button>
           </div>
         </div>
         <div class="node-grid" id="nodeGrid">
@@ -97,6 +98,29 @@
             <button class="button ghost compact danger-text" data-cluster-action="stop" type="button">서버 중지</button>
           </div>
         </div>
+        <section class="environment-workbench" aria-labelledby="environmentWorkbenchTitle">
+          <div class="environment-workbench-head">
+            <div>
+              <span class="section-index">LLM RUNTIME READINESS</span>
+              <h3 id="environmentWorkbenchTitle">노드 실행 환경</h3>
+              <p>운영체제·가속기·백엔드·프로젝트 가상환경과 모델 접근 가능 여부를 노드별로 확인합니다.</p>
+            </div>
+            <div class="environment-summary" id="environmentSummary" aria-live="polite">
+              <span><strong>0</strong> READY</span><span><strong>0</strong> ACTION NEEDED</span>
+            </div>
+          </div>
+          <div class="environment-action-strip">
+            <div class="environment-progress-copy"><i id="environmentStateDot"></i><span id="environmentPhase">환경 점검 대기</span></div>
+            <div>
+              <button class="button ghost compact" id="environmentCheckAllButton" type="button">선택 노드 다시 점검</button>
+              <button class="button primary compact" id="environmentInstallAllButton" type="button">선택 노드 자동 구성</button>
+            </div>
+          </div>
+          <div class="environment-log" id="environmentLog" aria-live="polite" aria-label="노드 환경 작업 로그">
+            <p><time>READY</time>노드를 선택한 뒤 환경을 점검하세요. 설치 가능한 항목은 프로젝트 전용 가상환경에 구성합니다.</p>
+          </div>
+          <p class="environment-footnote">자동 구성은 비밀번호·토큰·SSH 키를 저장하지 않습니다. 시스템 패키지는 고정 허용 목록과 <code>sudo -n</code>에서만 설치하며, 승인이 필요하면 해당 노드에서 실행할 명령만 안내합니다.</p>
+        </section>
       </section>
 
       <section id="experiment" class="section experiment-section">

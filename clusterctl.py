@@ -8,6 +8,7 @@ import concurrent.futures
 import csv
 import json
 import os
+import re
 import secrets
 import shlex
 import socket
@@ -17,6 +18,7 @@ import threading
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -43,7 +45,37 @@ SYSTEM_PACKAGE_ALLOWLIST = {
     "python3-dev",
     "python3-venv",
     "libopenblas-dev",
+    "util-linux",
 }
+WORKER_READINESS_MARKER = "CLUSTER_READINESS_JSON="
+ENVIRONMENT_MARKER = "CLUSTER_ENVIRONMENT_JSON="
+READINESS_STATUSES = {
+    "ready",
+    "needs_setup",
+    "manual",
+    "unavailable",
+    "failed",
+    "not_checked",
+    "repairable",
+    "blocked",
+}
+
+
+def validate_project_dir(project_dir: str, user: str = "") -> str:
+    """Reject broad or ambiguous sync targets before any remote write."""
+    if (
+        not re.fullmatch(r"/(?:home|opt|srv)/[a-zA-Z0-9._/-]+", project_dir)
+        or ".." in Path(project_dir).parts
+    ):
+        raise ValueError("project_dir must be a safe path below /home, /opt or /srv")
+    normalized = str(Path(project_dir))
+    broad = {"/", "/home", "/opt", "/srv"}
+    if user:
+        broad.add(f"/home/{user}")
+    parts = Path(normalized).parts
+    if normalized in broad or (len(parts) >= 2 and parts[1] == "home" and len(parts) < 4):
+        raise ValueError(f"project_dir is too broad for code synchronization: {project_dir}")
+    return normalized
 
 DISCOVERY_SCRIPT = r"""
 set -eu
@@ -57,7 +89,7 @@ else
   platform_kind=unsupported
 fi
 pretty_os=$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | head -n 1 | sed 's/^"//;s/"$//')
-packages='ca-certificates curl git rsync openssh-client iproute2 build-essential cmake ninja-build pkg-config python3 python3-dev python3-venv'
+packages='ca-certificates curl git rsync openssh-client iproute2 build-essential cmake ninja-build pkg-config python3 python3-dev python3-venv util-linux'
 [ "$platform_kind" = raspberry-pi ] && packages="$packages libopenblas-dev"
 missing=''
 venv_works=false
@@ -189,8 +221,10 @@ def load_nodes(path: Path, include_disabled: bool = False) -> List[Node]:
                 raise ValueError(f"Invalid platform for {node.name}: {node.platform}")
             if not node.host:
                 raise ValueError(f"Host is empty for {node.name}")
-            if not node.project_dir.startswith("/"):
-                raise ValueError(f"project_dir must be absolute for {node.name}")
+            try:
+                validate_project_dir(node.project_dir, node.user)
+            except ValueError as exc:
+                raise ValueError(f"Invalid project_dir for {node.name}: {exc}") from exc
             if node.ssh_port < 1 or node.api_port < 1:
                 raise ValueError(f"Ports must be positive for {node.name}")
             nodes.append(node)
@@ -332,12 +366,15 @@ def bootstrap_system_one(node: Node) -> Dict[str, Any]:
             "discovery": discovery,
         }
     if not discovery["sudo_nopasswd"]:
-        manual = "sudo apt-get update && sudo apt-get install -y " + " ".join(missing)
+        manual = (
+            "sudo apt-get update && sudo apt-get install -y --no-install-recommends "
+            + " ".join(missing)
+        )
         return {
             "name": node.name,
             "ok": False,
             "stdout": "",
-            "stderr": "Passwordless sudo is unavailable. Run once on the worker: " + manual,
+            "stderr": "Passwordless sudo is unavailable. Run once on the node: " + manual,
             "discovery": discovery,
         }
     prefix: List[str] = []
@@ -358,6 +395,433 @@ def bootstrap_system_one(node: Node) -> Dict[str, Any]:
         "stdout": install.stdout.strip(),
         "stderr": install.stderr.strip(),
         "discovery": discovery,
+    }
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _readiness_check(
+    check_id: str,
+    label: str,
+    status: str,
+    detail: str,
+    auto_fixable: bool = False,
+) -> Dict[str, Any]:
+    return {
+        "id": check_id,
+        "label": label,
+        "status": status,
+        "detail": detail,
+        "auto_fixable": auto_fixable,
+    }
+
+
+def _expected_backend(platform_kind: str) -> str:
+    if platform_kind == "jetson":
+        return "cuda"
+    if platform_kind == "raspberry-pi":
+        return "openblas"
+    return "unknown"
+
+
+def _backend_report(kind: str, verified: bool = False) -> Dict[str, Any]:
+    return {"kind": kind[:64], "verified": bool(verified)}
+
+
+def _safe_missing_packages(values: Any) -> List[str]:
+    if not isinstance(values, list):
+        values = str(values or "").split()
+    return sorted(
+        {
+            str(value)
+            for value in values
+            if isinstance(value, str) and value in SYSTEM_PACKAGE_ALLOWLIST
+        }
+    )
+
+
+def _manual_commands_for(discovery: Dict[str, Any]) -> List[str]:
+    """Return only locally constructed commands from the fixed package allowlist."""
+    missing = _safe_missing_packages(discovery.get("missing_packages", []))
+    if missing and not discovery.get("sudo_nopasswd", False):
+        return [
+            "sudo apt-get update && sudo apt-get install -y --no-install-recommends "
+            + " ".join(missing)
+        ]
+    return []
+
+
+def _discovery_readiness(node: Node, discovery: Dict[str, Any]) -> Dict[str, Any]:
+    platform_kind = str(discovery.get("platform_kind") or "unknown")
+    architecture = str(discovery.get("architecture") or "unknown")
+    project_exists = bool(discovery.get("project", False))
+    missing = _safe_missing_packages(discovery.get("missing_packages", []))
+    ssh_ready = bool(discovery.get("ssh", False))
+    platform_ready = platform_kind in {"jetson", "raspberry-pi"}
+    architecture_ready = architecture in {"aarch64", "arm64"}
+    manual_commands = _manual_commands_for(discovery)
+
+    if not ssh_ready:
+        status = "unavailable"
+    elif not platform_ready or not architecture_ready:
+        status = "blocked"
+    elif manual_commands:
+        status = "manual"
+    else:
+        status = "repairable"
+
+    checks = [
+        _readiness_check(
+            "ssh",
+            "SSH connection",
+            "pass" if ssh_ready else "fail",
+            "Key-based SSH connection is available"
+            if ssh_ready
+            else str(discovery.get("error") or "SSH host is unreachable or key authentication failed"),
+        ),
+        _readiness_check(
+            "platform",
+            "Supported board",
+            "pass" if platform_ready else "fail",
+            str(discovery.get("board_model") or platform_kind),
+        ),
+        _readiness_check(
+            "architecture",
+            "64-bit ARM OS",
+            "pass" if architecture_ready else "fail",
+            architecture,
+        ),
+        _readiness_check(
+            "system_packages",
+            "System build packages",
+            "pass" if not missing else "missing",
+            "Installed" if not missing else "Missing: " + ", ".join(missing),
+            auto_fixable=bool(missing and discovery.get("sudo_nopasswd", False)),
+        ),
+        _readiness_check(
+            "project",
+            "Benchmark project",
+            "pass" if project_exists else "missing",
+            node.project_dir if project_exists else f"Project will be synchronized to {node.project_dir}",
+            auto_fixable=ssh_ready and node.role == "worker",
+        ),
+        _readiness_check(
+            "virtualenv",
+            "Project virtual environment",
+            "unknown",
+            "Run the project preflight after synchronizing the project",
+            auto_fixable=True,
+        ),
+        _readiness_check(
+            "llm_backend",
+            "LLM inference backend",
+            "unknown",
+            f"Expected backend: {_expected_backend(platform_kind)}",
+            auto_fixable=platform_ready,
+        ),
+    ]
+    return {
+        "schema_version": 1,
+        "node": node.name,
+        "status": status,
+        "checked_at": _utc_now(),
+        "platform": platform_kind,
+        "board_model": str(discovery.get("board_model") or "")[:240],
+        "architecture": architecture[:32],
+        "os": str(discovery.get("os") or "")[:240],
+        "python": str(discovery.get("python") or "")[:120],
+        "disk_free_gb": discovery.get("disk_free_gb"),
+        "project_dir": node.project_dir,
+        "venv_path": f"{node.project_dir}/.venv",
+        "checks": checks,
+        "missing_system_packages": missing,
+        "manual_commands": manual_commands,
+        "backend": _backend_report(_expected_backend(platform_kind)),
+        "model_count": 0,
+    }
+
+
+def _extract_marker_json(output: str, marker: str) -> Optional[Dict[str, Any]]:
+    for line in reversed(output.splitlines()):
+        if not line.startswith(marker):
+            continue
+        try:
+            value = json.loads(line[len(marker) :])
+        except (TypeError, ValueError):
+            return None
+        return value if isinstance(value, dict) else None
+    return None
+
+
+def _normalize_worker_report(
+    node: Node,
+    raw: Dict[str, Any],
+    discovery: Dict[str, Any],
+    returncode: int,
+    stdout: str,
+    stderr: str,
+) -> Dict[str, Any]:
+    schema_version = raw.get("schema_version")
+    structured_backend = raw.get("backend")
+    marker_valid = schema_version == 1 and isinstance(structured_backend, dict)
+    platform_kind = str(raw.get("platform") or discovery.get("platform_kind") or "unknown")
+    missing = _safe_missing_packages(
+        raw.get("missing_system_packages", discovery.get("missing_packages", []))
+    )
+    allowed_check_statuses = {"pass", "fail", "warn", "missing", "unknown"}
+    checks: List[Dict[str, Any]] = []
+    raw_checks = raw.get("checks")
+    if isinstance(raw_checks, list):
+        for index, item in enumerate(raw_checks[:40]):
+            if not isinstance(item, dict):
+                continue
+            check_id = re.sub(r"[^a-zA-Z0-9_-]", "_", str(item.get("id") or f"check_{index}"))[:64]
+            check_status = str(item.get("status") or "unknown")
+            checks.append(
+                _readiness_check(
+                    check_id,
+                    str(item.get("label") or check_id)[:120],
+                    check_status if check_status in allowed_check_statuses else "unknown",
+                    str(item.get("detail") or "")[:2000],
+                    bool(item.get("auto_fixable", False)),
+                )
+            )
+    if not checks:
+        detail = (stderr or stdout or "Worker preflight did not return a structured report").strip()
+        checks = [
+            _readiness_check(
+                "worker_preflight",
+                "Worker runtime preflight",
+                "pass" if returncode == 0 else "fail",
+                detail[-2000:],
+                auto_fixable=returncode != 0,
+            )
+        ]
+
+    raw_status = str(raw.get("status") or "needs_setup")
+    status = raw_status if raw_status in READINESS_STATUSES else ("ready" if returncode == 0 else "failed")
+    if not marker_valid:
+        status = "needs_setup"
+        checks.append(
+            _readiness_check(
+                "readiness_schema",
+                "Structured readiness schema",
+                "fail",
+                "worker_setup.sh schema v1 report is missing; synchronize the current project code",
+                auto_fixable=True,
+            )
+        )
+    if returncode != 0 and status == "ready":
+        status = "needs_setup"
+    manual_commands = _manual_commands_for({**discovery, "missing_packages": missing})
+    if manual_commands and status not in {"unavailable", "failed"}:
+        status = "manual"
+    try:
+        model_count = max(0, int(raw.get("model_count", 0)))
+    except (TypeError, ValueError):
+        model_count = 0
+    raw_backend = structured_backend
+    if isinstance(raw_backend, dict):
+        backend = _backend_report(
+            str(raw_backend.get("kind") or _expected_backend(platform_kind)),
+            bool(raw_backend.get("verified", False)),
+        )
+    else:
+        backend = _backend_report(_expected_backend(platform_kind), False)
+    try:
+        disk_free_gb: Optional[float] = round(float(raw.get("disk_free_gb")), 2)
+    except (TypeError, ValueError):
+        disk_free_gb = discovery.get("disk_free_gb")
+    return {
+        "schema_version": 1,
+        "node": node.name,
+        "status": status,
+        "checked_at": str(raw.get("checked_at") or _utc_now()),
+        "platform": platform_kind,
+        "board_model": str(raw.get("board_model") or discovery.get("board_model") or "")[:240],
+        "architecture": str(raw.get("architecture") or discovery.get("architecture") or "")[:32],
+        "os": str(raw.get("os") or discovery.get("os") or "")[:240],
+        "python": str(raw.get("python") or discovery.get("python") or "")[:120],
+        "disk_free_gb": disk_free_gb,
+        "project_dir": node.project_dir,
+        "venv_path": f"{node.project_dir}/.venv",
+        "checks": checks,
+        "missing_system_packages": missing,
+        # Never trust executable text returned by a remote node. Commands are
+        # reconstructed locally from the fixed package allowlist above.
+        "manual_commands": manual_commands,
+        "backend": backend,
+        "model_count": model_count,
+    }
+
+
+def check_environment_one(node: Node) -> Dict[str, Any]:
+    """Return a stable readiness report, including for a node without project files."""
+    discovery = discover_node(node, timeout=20)
+    if not discovery.get("ssh") or not discovery.get("project"):
+        return _discovery_readiness(node, discovery)
+
+    script = f"{node.project_dir}/cluster/worker_setup.sh"
+    try:
+        proc = run_on_node(
+            node,
+            [script, "--check-only", "--project-dir", node.project_dir],
+            timeout=600,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        report = _discovery_readiness(node, discovery)
+        report["status"] = "failed"
+        report["checks"].append(
+            _readiness_check("worker_preflight", "Worker runtime preflight", "fail", str(exc))
+        )
+        return report
+    raw = _extract_marker_json(
+        "\n".join(part for part in (proc.stdout, proc.stderr) if part),
+        WORKER_READINESS_MARKER,
+    ) or {}
+    return _normalize_worker_report(
+        node,
+        raw,
+        discovery,
+        proc.returncode,
+        proc.stdout,
+        proc.stderr,
+    )
+
+
+def _append_install_failure(report: Dict[str, Any], detail: str) -> Dict[str, Any]:
+    if report.get("status") == "ready":
+        report["status"] = "failed"
+    report.setdefault("checks", []).append(
+        _readiness_check(
+            "environment_install",
+            "Environment installation",
+            "fail",
+            detail[-2000:] or "Installation failed",
+        )
+    )
+    return report
+
+
+def install_environment_one(node: Node) -> Dict[str, Any]:
+    """Install only the fixed cluster runtime, then always run a fresh check."""
+    discovery = discover_node(node, timeout=20)
+    if not discovery.get("ssh"):
+        return check_environment_one(node)
+
+    # Bootstrap every node before worker_setup. In particular, a minimal head
+    # may not have util-linux/flock yet, which worker_setup needs to serialize
+    # installation safely. Only remote workers need a project code sync.
+    bootstrap = bootstrap_system_one(node)
+    if not bootstrap.get("ok"):
+        return _append_install_failure(
+            check_environment_one(node),
+            str(bootstrap.get("stderr") or bootstrap.get("stdout") or "System bootstrap failed"),
+        )
+    if node.role == "worker":
+        sync = sync_code_one(node)
+        if not sync.get("ok"):
+            return _append_install_failure(
+                check_environment_one(node),
+                str(sync.get("stderr") or sync.get("stdout") or "Project synchronization failed"),
+            )
+
+    setup = _setup_one(node)
+    lifecycle: Optional[Dict[str, Any]] = None
+    if setup.get("ok"):
+        # A running API has imported the old Python/native libraries. Restart it
+        # so live execution matches the freshly verified environment report.
+        lifecycle = _lifecycle_one(node, "restart")
+    report = check_environment_one(node)
+    if not setup.get("ok"):
+        return _append_install_failure(
+            report,
+            str(setup.get("stderr") or setup.get("stdout") or "Runtime setup failed"),
+        )
+    if lifecycle is not None and not lifecycle.get("ok"):
+        return _append_install_failure(
+            report,
+            str(
+                lifecycle.get("stderr")
+                or lifecycle.get("stdout")
+                or "Worker API restart failed after environment installation"
+            ),
+        )
+    return report
+
+
+def _print_environment_reports(reports: Sequence[Dict[str, Any]]) -> None:
+    for report in reports:
+        print(f"[{report['node']}] {str(report['status']).upper()}", flush=True)
+        print(
+            ENVIRONMENT_MARKER + json.dumps(report, ensure_ascii=False, separators=(",", ":")),
+            flush=True,
+        )
+
+
+def command_environment_check(nodes: Sequence[Node], _args: argparse.Namespace) -> int:
+    if not nodes:
+        reports: List[Dict[str, Any]] = []
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
+            futures = {executor.submit(check_environment_one, node): node for node in nodes}
+            reports = []
+            for future in concurrent.futures.as_completed(futures):
+                node = futures[future]
+                try:
+                    reports.append(future.result())
+                except Exception as exc:
+                    reports.append(_exception_environment_report(node, "Environment check", exc))
+        order = {node.name: index for index, node in enumerate(nodes)}
+        reports.sort(key=lambda report: order[report["node"]])
+    _print_environment_reports(reports)
+    return 0 if all(report["status"] == "ready" for report in reports) else 1
+
+
+def command_environment_install(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    if not getattr(args, "confirmed", False):
+        print("Environment installation requires --confirmed", file=sys.stderr)
+        return 2
+    # Installation can include apt and a native llama-cpp-python build. Keep it
+    # serial so a small head does not build several remote nodes at once.
+    reports = []
+    for node in nodes:
+        print(f"[{node.name}] installing the fixed benchmark environment", flush=True)
+        try:
+            report = install_environment_one(node)
+        except Exception as exc:
+            report = _exception_environment_report(node, "Environment installation", exc)
+        reports.append(report)
+        # Persist partial progress immediately through the dashboard parser.
+        _print_environment_reports([report])
+    return 0 if all(report["status"] == "ready" for report in reports) else 1
+
+
+def _exception_environment_report(
+    node: Node, label: str, exc: BaseException
+) -> Dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "node": node.name,
+        "status": "failed",
+        "checked_at": _utc_now(),
+        "platform": node.platform,
+        "project_dir": node.project_dir,
+        "venv_path": f"{node.project_dir}/.venv",
+        "checks": [
+            _readiness_check(
+                "environment_operation",
+                label,
+                "fail",
+                str(exc)[-2000:] or type(exc).__name__,
+            )
+        ],
+        "missing_system_packages": [],
+        "manual_commands": [],
+        "backend": _backend_report(_expected_backend(node.platform), False),
+        "model_count": 0,
     }
 
 
@@ -923,6 +1387,19 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser = subparsers.add_parser("status", help="Check SSH, project and API status")
     status_parser.add_argument("--json-out")
     subparsers.add_parser("doctor", help="Run environment checks on enabled nodes")
+    subparsers.add_parser(
+        "environment-check",
+        help="Emit structured LLM environment readiness for selected nodes",
+    )
+    environment_install_parser = subparsers.add_parser(
+        "environment-install",
+        help="Install the fixed project runtime, then recheck readiness",
+    )
+    environment_install_parser.add_argument(
+        "--confirmed",
+        action="store_true",
+        help="Confirm fixed package, virtualenv and native backend installation",
+    )
     subparsers.add_parser("discover", help="Discover platform and bootstrap prerequisites")
     subparsers.add_parser("setup", help="Install the worker Python/CUDA runtime")
 
@@ -979,6 +1456,10 @@ def main() -> int:
         return command_status(nodes, args)
     if args.command == "doctor":
         return command_doctor(nodes, args)
+    if args.command == "environment-check":
+        return command_environment_check(nodes, args)
+    if args.command == "environment-install":
+        return command_environment_install(nodes, args)
     if args.command == "discover":
         discovered = run_parallel(nodes, discover_node)
         print(json.dumps(discovered, ensure_ascii=False, indent=2))

@@ -71,6 +71,212 @@ class InventoryTests(unittest.TestCase):
                 load_nodes(path)
 
 
+class EnvironmentReadinessTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.worker = Node(
+            "worker-01",
+            "worker",
+            "192.168.0.27",
+            "jetson",
+            22,
+            8000,
+            "/opt/llm",
+            True,
+            platform="auto",
+        )
+
+    def test_missing_project_is_reported_as_auto_fixable(self) -> None:
+        discovery = {
+            "ssh": True,
+            "project": False,
+            "platform_kind": "jetson",
+            "architecture": "aarch64",
+            "board_model": "NVIDIA Jetson Orin Nano",
+            "missing_packages": [],
+            "sudo_nopasswd": False,
+        }
+        with mock.patch.object(clusterctl, "discover_node", return_value=discovery):
+            report = clusterctl.check_environment_one(self.worker)
+        self.assertEqual(report["status"], "repairable")
+        self.assertEqual(report["backend"]["kind"], "cuda")
+        self.assertFalse(report["backend"]["verified"])
+        project = next(item for item in report["checks"] if item["id"] == "project")
+        self.assertEqual(project["status"], "missing")
+        self.assertTrue(project["auto_fixable"])
+
+    def test_manual_package_command_uses_only_allowlisted_packages(self) -> None:
+        discovery = {
+            "ssh": True,
+            "project": False,
+            "platform_kind": "raspberry-pi",
+            "architecture": "aarch64",
+            "board_model": "Raspberry Pi 5",
+            "missing_packages": ["python3-venv", "evil-package;id"],
+            "sudo_nopasswd": False,
+        }
+        report = clusterctl._discovery_readiness(self.worker, discovery)
+        self.assertEqual(report["status"], "manual")
+        self.assertEqual(report["missing_system_packages"], ["python3-venv"])
+        self.assertEqual(len(report["manual_commands"]), 1)
+        self.assertNotIn("evil", report["manual_commands"][0])
+
+    def test_worker_marker_is_normalized_to_inventory_identity(self) -> None:
+        raw = {
+            "schema_version": 1,
+            "node": "spoofed",
+            "status": "ready",
+            "platform": "jetson",
+            "project_dir": "/tmp/spoofed",
+            "venv_path": "/tmp/spoofed/.venv",
+            "checks": [
+                {
+                    "id": "backend",
+                    "label": "Backend",
+                    "status": "pass",
+                    "detail": "CUDA verified",
+                    "auto_fixable": False,
+                }
+            ],
+            "backend": {"kind": "cuda", "verified": True},
+            "model_count": 2,
+        }
+        marker = clusterctl.WORKER_READINESS_MARKER + json.dumps(raw)
+        process = subprocess.CompletedProcess([], 0, stdout=marker + "\n", stderr="")
+        discovery = {
+            "ssh": True,
+            "project": True,
+            "platform_kind": "jetson",
+            "architecture": "aarch64",
+            "missing_packages": [],
+            "sudo_nopasswd": False,
+        }
+        with mock.patch.object(clusterctl, "discover_node", return_value=discovery), mock.patch.object(
+            clusterctl, "run_on_node", return_value=process
+        ):
+            report = clusterctl.check_environment_one(self.worker)
+        self.assertEqual(report["node"], "worker-01")
+        self.assertEqual(report["project_dir"], "/opt/llm")
+        self.assertEqual(report["venv_path"], "/opt/llm/.venv")
+        self.assertEqual(report["status"], "ready")
+
+    def test_install_bootstraps_syncs_sets_up_then_rechecks_worker(self) -> None:
+        ready = {
+            "node": self.worker.name,
+            "status": "ready",
+            "checked_at": "2026-08-13T00:00:00+00:00",
+            "platform": "jetson",
+            "project_dir": self.worker.project_dir,
+            "venv_path": f"{self.worker.project_dir}/.venv",
+            "checks": [],
+            "missing_system_packages": [],
+            "manual_commands": [],
+            "backend": "cuda",
+            "model_count": 1,
+        }
+        calls = []
+        with mock.patch.object(
+            clusterctl,
+            "discover_node",
+            return_value={"ssh": True, "project": False},
+        ), mock.patch.object(
+            clusterctl,
+            "bootstrap_system_one",
+            side_effect=lambda _node: calls.append("bootstrap") or {"ok": True},
+        ), mock.patch.object(
+            clusterctl,
+            "sync_code_one",
+            side_effect=lambda _node: calls.append("sync") or {"ok": True},
+        ), mock.patch.object(
+            clusterctl,
+            "_setup_one",
+            side_effect=lambda _node: calls.append("setup") or {"ok": True},
+        ), mock.patch.object(
+            clusterctl,
+            "_lifecycle_one",
+            side_effect=lambda _node, action: calls.append(action) or {"ok": True},
+        ), mock.patch.object(
+            clusterctl,
+            "check_environment_one",
+            side_effect=lambda _node: calls.append("recheck") or ready,
+        ):
+            report = clusterctl.install_environment_one(self.worker)
+        self.assertEqual(calls, ["bootstrap", "sync", "setup", "restart", "recheck"])
+        self.assertEqual(report["status"], "ready")
+
+    def test_install_bootstraps_head_before_setup_without_code_sync(self) -> None:
+        head = Node(
+            "edge-head",
+            "head",
+            "127.0.0.1",
+            "jetson",
+            22,
+            8000,
+            "/opt/llm",
+            True,
+            platform="jetson",
+        )
+        ready = {
+            "node": head.name,
+            "status": "ready",
+            "backend": {"kind": "cuda", "verified": True},
+        }
+        calls = []
+        with mock.patch.object(
+            clusterctl, "discover_node", return_value={"ssh": True, "project": True}
+        ), mock.patch.object(
+            clusterctl,
+            "bootstrap_system_one",
+            side_effect=lambda _node: calls.append("bootstrap") or {"ok": True},
+        ), mock.patch.object(
+            clusterctl,
+            "sync_code_one",
+            side_effect=lambda _node: calls.append("sync") or {"ok": True},
+        ), mock.patch.object(
+            clusterctl,
+            "_setup_one",
+            side_effect=lambda _node: calls.append("setup") or {"ok": True},
+        ), mock.patch.object(
+            clusterctl,
+            "_lifecycle_one",
+            side_effect=lambda _node, action: calls.append(action) or {"ok": True},
+        ), mock.patch.object(
+            clusterctl,
+            "check_environment_one",
+            side_effect=lambda _node: calls.append("recheck") or ready,
+        ):
+            report = clusterctl.install_environment_one(head)
+        self.assertEqual(calls, ["bootstrap", "setup", "restart", "recheck"])
+        self.assertEqual(report["status"], "ready")
+
+    def test_legacy_success_without_structured_marker_is_not_ready(self) -> None:
+        discovery = {
+            "ssh": True,
+            "project": True,
+            "platform_kind": "jetson",
+            "architecture": "aarch64",
+            "missing_packages": [],
+            "sudo_nopasswd": False,
+        }
+        legacy = subprocess.CompletedProcess([], 0, stdout="[OK] worker is ready\n", stderr="")
+        with mock.patch.object(clusterctl, "discover_node", return_value=discovery), mock.patch.object(
+            clusterctl, "run_on_node", return_value=legacy
+        ):
+            report = clusterctl.check_environment_one(self.worker)
+        self.assertEqual(report["status"], "needs_setup")
+        self.assertFalse(report["backend"]["verified"])
+
+    def test_inventory_rejects_broad_project_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "nodes.csv"
+            path.write_text(
+                "name,role,host,user,ssh_port,api_port,project_dir,enabled,identity_file,platform\n"
+                "head,head,127.0.0.1,pi,22,8000,/home/pi,true,,raspberry-pi\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "too broad"):
+                clusterctl.load_nodes(path)
+
+
 class ExperimentTests(unittest.TestCase):
     def test_validates_reproducible_config(self) -> None:
         config = ExperimentConfig(node_names=["jetson-head"])
@@ -449,8 +655,6 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
     def _load_dashboard(root: Path):
         inventory = root / "nodes.csv"
         inventory.write_text(INVENTORY, encoding="utf-8")
-        if "cluster.dashboard.app" in sys.modules:
-            return sys.modules["cluster.dashboard.app"]
         with mock.patch.dict(
             os.environ,
             {
@@ -459,6 +663,8 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
                 "CLUSTER_RUNTIME_DIR": str(root / "runtime"),
             },
         ), mock.patch.object(threading.Thread, "start", return_value=None):
+            if "cluster.dashboard.app" in sys.modules:
+                return importlib.reload(sys.modules["cluster.dashboard.app"])
             return importlib.import_module("cluster.dashboard.app")
 
     def test_run_list_merges_persisted_suite_status_and_unrun_models(self) -> None:
@@ -699,6 +905,161 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
                 self.assertIn('"type": "auth_required"', next(stream))
                 with self.assertRaises(StopIteration):
                     next(stream)
+
+    def test_environment_report_is_atomic_private_and_exposed_by_bootstrap(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self._load_dashboard(root)
+            environment_dir = root / "environment"
+            raw = {
+                "node": "jetson-head",
+                "status": "ready",
+                "checked_at": "2026-08-13T00:00:00+00:00",
+                "platform": "jetson",
+                "project_dir": "/untrusted",
+                "venv_path": "/untrusted/.venv",
+                "checks": [
+                    {
+                        "id": "backend",
+                        "label": "Backend",
+                        "status": "pass",
+                        "detail": "CUDA verified",
+                        "auto_fixable": False,
+                    }
+                ],
+                "missing_system_packages": [],
+                "manual_commands": [],
+                "backend": "cuda",
+                "model_count": 2,
+            }
+            with mock.patch.object(dashboard, "ENVIRONMENT_DIR", environment_dir):
+                report = dashboard.write_environment_report(raw)
+                target = environment_dir / "jetson-head.json"
+                self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(environment_dir.stat().st_mode & 0o777, 0o700)
+                self.assertEqual(report["project_dir"], "/opt/llm")
+                client = TestClient(dashboard.app)
+                environment = client.get("/api/environment").json()["environment"]
+                bootstrap = client.get("/api/bootstrap").json()["environment"]
+            self.assertEqual(environment[0]["status"], "ready")
+            self.assertEqual(bootstrap[0]["backend"]["kind"], "cuda")
+            self.assertEqual(bootstrap[1]["status"], "not_checked")
+
+    def test_environment_install_action_requires_explicit_confirmation(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self._load_dashboard(Path(directory))
+            client = TestClient(dashboard.app)
+            response = client.post(
+                "/api/actions",
+                json={
+                    "action": "environment-install",
+                    "node_names": ["jetson-head"],
+                    "options": {},
+                },
+            )
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("confirmation", response.json()["detail"])
+
+    def test_experiment_environment_requires_fresh_ready_report_api_and_model(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self._load_dashboard(Path(directory))
+            head = dashboard.read_all_nodes()[0]
+            ready = {
+                "node": head.name,
+                "status": "ready",
+                "checked_at": dashboard.utc_now(),
+                "received_at": dashboard.utc_now(),
+                "platform": "jetson",
+                "project_dir": head.project_dir,
+                "venv_path": f"{head.project_dir}/.venv",
+                "checks": [],
+                "missing_system_packages": [],
+                "manual_commands": [],
+                "backend": {"kind": "cuda", "verified": True},
+                "model_count": 1,
+            }
+            with mock.patch.object(dashboard, "read_environment_reports", return_value=[ready]):
+                dashboard.validate_experiment_environment(
+                    [head],
+                    {head.name: {"api": True, "model_ids": ["models/a.gguf"]}},
+                    ["models/a.gguf"],
+                    "single_node",
+                )
+                with self.assertRaisesRegex(ValueError, "모델 없음"):
+                    dashboard.validate_experiment_environment(
+                        [head],
+                        {head.name: {"api": True, "model_ids": []}},
+                        ["models/a.gguf"],
+                        "single_node",
+                    )
+                with self.assertRaisesRegex(ValueError, "오프라인"):
+                    dashboard.validate_experiment_environment(
+                        [head],
+                        {head.name: {"api": False, "model_ids": ["models/a.gguf"]}},
+                        ["models/a.gguf"],
+                        "single_node",
+                    )
+                mismatched_head = Node(
+                    head.name,
+                    head.role,
+                    head.host,
+                    head.user,
+                    head.ssh_port,
+                    head.api_port,
+                    head.project_dir,
+                    head.enabled,
+                    head.identity_file,
+                    "raspberry-pi",
+                )
+                with self.assertRaisesRegex(ValueError, "플랫폼"):
+                    dashboard.validate_experiment_environment(
+                        [mismatched_head],
+                        {head.name: {"api": True, "model_ids": ["models/a.gguf"]}},
+                        ["models/a.gguf"],
+                        "single_node",
+                    )
+            missing_timestamp = {**ready, "checked_at": None, "received_at": None}
+            with mock.patch.object(
+                dashboard, "read_environment_reports", return_value=[missing_timestamp]
+            ), self.assertRaisesRegex(ValueError, "24시간"):
+                dashboard.validate_experiment_environment(
+                    [head],
+                    {head.name: {"api": True, "model_ids": ["models/a.gguf"]}},
+                    ["models/a.gguf"],
+                    "single_node",
+                )
+
+    def test_busy_node_cannot_be_changed_or_deleted(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self._load_dashboard(Path(directory))
+            client = TestClient(dashboard.app)
+            dashboard.actions._actions["busy"] = {
+                "id": "busy",
+                "action": "environment-check",
+                "nodes": ["jetson-worker-01"],
+                "status": "running",
+                "log": [],
+            }
+            payload = {
+                "name": "jetson-worker-01",
+                "role": "worker",
+                "host": "192.168.0.27",
+                "user": "jetson",
+                "ssh_port": 22,
+                "api_port": 8000,
+                "project_dir": "/opt/llm",
+                "enabled": True,
+                "identity_file": "",
+                "platform": "auto",
+            }
+            self.assertEqual(client.post("/api/nodes", json=payload).status_code, 409)
+            self.assertEqual(client.delete("/api/nodes/jetson-worker-01").status_code, 409)
 
 
 class PlatformPlanTests(unittest.TestCase):
