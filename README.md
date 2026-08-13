@@ -172,6 +172,28 @@ RPC 결과의 `cluster_tokens_per_s`는 여러 노드가 함께 만든 단일 �
 
 ## CLI
 
+### Head 서비스 관리
+
+Head 장비에서는 설치 후 어느 디렉터리에서든 다음 명령으로 대시보드를
+관리한다. `llm-cluster`는 프로젝트의 고정된 대시보드 프로세스만 PID, 실행 사용자, 실행 파일,
+작업 디렉터리, 전체 명령행과 Linux 프로세스 시작 시각까지 확인한 뒤 제어한다.
+
+```bash
+llm-cluster start
+llm-cluster stop
+llm-cluster restart
+llm-cluster status
+llm-cluster logs
+```
+
+실행 파일은 프로젝트의 `scripts/llm-cluster`이며 사용자 전용
+`~/.local/bin/llm-cluster` 심볼릭 링크로 노출한다. systemd unit이나 재부팅 자동 실행은
+만들지 않는다. `logs`는 고정된 대시보드 로그의 최근 200줄만 보여준다. 워커 API(8000)는
+노드 준비·시작·중지 기능이 별도로 관리하므로 이 명령이 신호를 보내지 않는다. 런타임 설정,
+토큰, 인벤토리와 실험 결과는 기존 `.run/cluster` 위치에 그대로 보존한다.
+
+### 클러스터 제어 및 실험
+
 ```bash
 python -m cluster.clusterctl inventory
 python -m cluster.clusterctl status
