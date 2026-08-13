@@ -67,7 +67,8 @@ def utc_now() -> str:
 
 
 def ensure_runtime() -> None:
-    RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    RUNTIME_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    RUNTIME_DIR.chmod(0o700)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     (RESULTS_DIR / "_suites").mkdir(parents=True, exist_ok=True)
     EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -76,21 +77,41 @@ def ensure_runtime() -> None:
             f"Cluster inventory is missing: {INVENTORY_PATH}. "
             "Run ./cluster/setup_head.sh before starting the dashboard."
         )
-    if not TOKEN_PATH.exists():
-        TOKEN_PATH.write_text(secrets.token_urlsafe(24) + "\n", encoding="utf-8")
-        TOKEN_PATH.chmod(0o600)
+    try:
+        token = TOKEN_PATH.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        token = ""
+    if not token:
+        temporary = TOKEN_PATH.with_suffix(f".tmp.{uuid.uuid4().hex}")
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(secrets.token_urlsafe(24) + "\n")
+        os.replace(temporary, TOKEN_PATH)
+    TOKEN_PATH.chmod(0o600)
     if not SETTINGS_PATH.exists():
-        SETTINGS_PATH.write_text('{\n  "worker_api_auth": false\n}\n', encoding="utf-8")
-        SETTINGS_PATH.chmod(0o600)
+        SETTINGS_PATH.write_text(
+            '{\n  "worker_api_auth": false,\n  "dashboard_token_auth": false\n}\n',
+            encoding="utf-8",
+        )
+    SETTINGS_PATH.chmod(0o600)
 
 
 ensure_runtime()
 DASHBOARD_TOKEN = TOKEN_PATH.read_text(encoding="utf-8").strip()
 
 
+def supplied_dashboard_token(request: Request) -> str:
+    return request.headers.get("X-Cluster-Token") or request.query_params.get("token", "")
+
+
+def dashboard_token_is_valid(supplied: str) -> bool:
+    return bool(supplied) and secrets.compare_digest(supplied, DASHBOARD_TOKEN)
+
+
 def verify_token(request: Request) -> None:
-    supplied = request.headers.get("X-Cluster-Token") or request.query_params.get("token", "")
-    if not supplied or not secrets.compare_digest(supplied, DASHBOARD_TOKEN):
+    if not read_settings()["dashboard_token_auth"]:
+        return
+    if not dashboard_token_is_valid(supplied_dashboard_token(request)):
         raise HTTPException(status_code=401, detail="Dashboard access token is missing or invalid")
 
 
@@ -113,7 +134,7 @@ class EventBus:
                 except (queue.Empty, queue.Full):
                     pass
 
-    def stream(self) -> Generator[str, None, None]:
+    def stream(self, supplied_token: str = "") -> Generator[str, None, None]:
         subscriber: queue.Queue[Dict[str, Any]] = queue.Queue(maxsize=100)
         with self._lock:
             self._subscribers.append(subscriber)
@@ -122,8 +143,20 @@ class EventBus:
             while True:
                 try:
                     event = subscriber.get(timeout=15.0)
+                    if (
+                        read_settings()["dashboard_token_auth"]
+                        and not dashboard_token_is_valid(supplied_token)
+                    ):
+                        yield f"data: {json.dumps({'type': 'auth_required', 'at': utc_now()})}\n\n"
+                        return
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 except queue.Empty:
+                    if (
+                        read_settings()["dashboard_token_auth"]
+                        and not dashboard_token_is_valid(supplied_token)
+                    ):
+                        yield f"data: {json.dumps({'type': 'auth_required', 'at': utc_now()})}\n\n"
+                        return
                     yield ": keepalive\n\n"
         finally:
             with self._lock:
@@ -241,7 +274,9 @@ class ExperimentPayload(BaseModel):
 
 
 class ClusterSettingsPayload(BaseModel):
-    worker_api_auth: bool = False
+    worker_api_auth: Optional[bool] = None
+    dashboard_token_auth: Optional[bool] = None
+    dashboard_token: str = Field("", max_length=256)
 
 
 inventory_lock = threading.RLock()
@@ -252,9 +287,24 @@ def read_settings() -> Dict[str, Any]:
     with settings_lock:
         try:
             raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            if not isinstance(raw, dict):
+                raise ValueError("settings must be a JSON object")
+        except FileNotFoundError:
             raw = {}
-        return {"worker_api_auth": bool(raw.get("worker_api_auth", False))}
+        except (OSError, ValueError):
+            # A damaged existing settings file must not silently disable a
+            # dashboard protection that may previously have been enabled.
+            return {"worker_api_auth": False, "dashboard_token_auth": True}
+        worker_value = raw.get("worker_api_auth", False)
+        dashboard_value = raw.get("dashboard_token_auth", False)
+        return {
+            "worker_api_auth": worker_value if isinstance(worker_value, bool) else False,
+            "dashboard_token_auth": (
+                dashboard_value
+                if isinstance(dashboard_value, bool)
+                else "dashboard_token_auth" in raw
+            ),
+        }
 
 
 def write_settings(settings: Dict[str, Any]) -> None:
@@ -825,43 +875,47 @@ def reconcile_interrupted_suites() -> int:
     for path in suites_dir.glob("*.json"):
         try:
             suite = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        if (
-            suite.get("artifact_type") != "experiment_suite"
-            or suite.get("status") not in {"queued", "running", "cancelling"}
-        ):
-            continue
-        error = {
-            "stage": "dashboard_restart",
-            "error": "Suite was interrupted by a dashboard restart",
-        }
-        errors = list(suite.get("errors") or [])
-        errors.append(error)
-        suite.update(
-            {
-                "status": "failed",
-                "interrupted": True,
-                "interrupted_from_status": suite.get("status"),
-                "finished_at": utc_now(),
-                "errors": errors,
+            suite_id = str(suite.get("suite_id") or "")
+            if (
+                suite.get("artifact_type") != "experiment_suite"
+                or suite.get("status") not in {"queued", "running", "cancelling"}
+                or path.stem != suite_id
+                or not suite_id.replace("-", "").replace("_", "").isalnum()
+            ):
+                continue
+            error = {
+                "stage": "dashboard_restart",
+                "error": "Suite was interrupted by a dashboard restart",
             }
-        )
-        suite["updated_at"] = suite["finished_at"]
-        suite["models"] = _suite_model_records(
-            suite.get("model_ids") or [],
-            suite.get("summaries") or [],
-            errors,
-            int(suite.get("attempted_models") or 0),
-            "failed",
-            {
-                int(model["model_index"]): str(model.get("cleanup_status") or "pending")
-                for model in suite.get("models") or []
-                if str(model.get("model_index", "")).isdigit()
-            },
-        )
-        write_suite_summary(suite)
-        reconciled += 1
+            errors = list(suite.get("errors") or [])
+            errors.append(error)
+            suite.update(
+                {
+                    "status": "failed",
+                    "interrupted": True,
+                    "interrupted_from_status": suite.get("status"),
+                    "finished_at": utc_now(),
+                    "errors": errors,
+                }
+            )
+            suite["updated_at"] = suite["finished_at"]
+            suite["models"] = _suite_model_records(
+                suite.get("model_ids") or [],
+                suite.get("summaries") or [],
+                errors,
+                int(suite.get("attempted_models") or 0),
+                "failed",
+                {
+                    int(model["model_index"]): str(model.get("cleanup_status") or "pending")
+                    for model in suite.get("models") or []
+                    if isinstance(model, dict)
+                    and str(model.get("model_index", "")).isdigit()
+                },
+            )
+            write_suite_summary(suite)
+            reconciled += 1
+        except (OSError, TypeError, ValueError):
+            continue
     return reconciled
 
 
@@ -1477,9 +1531,9 @@ async def bootstrap() -> Dict[str, Any]:
 
 
 @app.get("/api/events", dependencies=[Depends(verify_token)])
-async def event_stream() -> StreamingResponse:
+async def event_stream(request: Request) -> StreamingResponse:
     return StreamingResponse(
-        events.stream(),
+        events.stream(supplied_dashboard_token(request)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -1491,20 +1545,37 @@ async def get_settings() -> Dict[str, Any]:
 
 
 @app.put("/api/settings", dependencies=[Depends(verify_token)])
-async def update_settings(payload: ClusterSettingsPayload) -> Dict[str, Any]:
-    previous = read_settings()
-    updated = payload.model_dump()
-    write_settings(updated)
+async def update_settings(payload: ClusterSettingsPayload, request: Request) -> Dict[str, Any]:
     action: Optional[Dict[str, Any]] = None
-    if previous != updated:
-        try:
-            enabled_names = [node.name for node in load_nodes(INVENTORY_PATH)]
-            action = actions.start(
-                ActionPayload(action="restart", node_names=enabled_names, options={})
+    with settings_lock:
+        previous = read_settings()
+        supplied = payload.dashboard_token or supplied_dashboard_token(request)
+        if previous["dashboard_token_auth"] and not dashboard_token_is_valid(supplied):
+            raise HTTPException(
+                status_code=401,
+                detail="Dashboard access token is missing or invalid",
             )
-        except ValueError as exc:
-            write_settings(previous)
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        updated = dict(previous)
+        if payload.worker_api_auth is not None:
+            updated["worker_api_auth"] = payload.worker_api_auth
+        if payload.dashboard_token_auth is not None:
+            updated["dashboard_token_auth"] = payload.dashboard_token_auth
+        if not previous["dashboard_token_auth"] and updated["dashboard_token_auth"]:
+            if not dashboard_token_is_valid(supplied):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Enabling dashboard token auth requires the current dashboard token",
+                )
+        write_settings(updated)
+        if previous["worker_api_auth"] != updated["worker_api_auth"]:
+            try:
+                enabled_names = [node.name for node in load_nodes(INVENTORY_PATH)]
+                action = actions.start(
+                    ActionPayload(action="restart", node_names=enabled_names, options={})
+                )
+            except ValueError as exc:
+                write_settings(previous)
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
     events.publish("settings_changed", settings=updated, action=action)
     return {"ok": True, "settings": updated, "action": action}
 

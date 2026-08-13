@@ -323,14 +323,25 @@
   <dialog id="settingsDialog" class="modal settings-modal">
     <form id="settingsForm" method="dialog">
       <div class="modal-head"><div><span class="section-index">CLUSTER SETTINGS</span><h2>클러스터 설정</h2></div><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div>
-      <p class="modal-intro">신뢰할 수 있는 로컬 네트워크에서는 워커 API 인증을 꺼둘 수 있습니다. 여러 사용자가 같은 LAN을 쓰거나 외부 접근 가능성이 있으면 켜세요.</p>
+      <p class="modal-intro">신뢰할 수 있는 로컬 네트워크에서는 대시보드와 워커 API 인증을 모두 꺼둘 수 있습니다. 여러 사용자가 같은 LAN을 쓰거나 외부 접근 가능성이 있으면 필요한 보호 기능을 켜세요.</p>
+      <label class="settings-toggle">
+        <input id="dashboardAuthInput" type="checkbox">
+        <span></span>
+        <div><strong>대시보드 토큰 인증</strong><small>대시보드의 상태 조회, 노드 관리와 실험 API 접근을 토큰으로 보호</small></div>
+      </label>
+      <div class="settings-notice" id="dashboardAuthNotice">현재 꺼짐 · 토큰 없이 대시보드 접속</div>
+      <div class="field settings-token-field" id="dashboardTokenField" hidden>
+        <label for="dashboardTokenInput">현재 대시보드 토큰</label>
+        <input id="dashboardTokenInput" type="password" maxlength="256" autocomplete="off" placeholder=".run/cluster/dashboard.token 값">
+        <small>보안을 켜는 순간 브라우저가 잠기지 않도록 기존 토큰을 한 번 확인합니다. 설정 파일에는 저장하지 않습니다.</small>
+      </div>
       <label class="settings-toggle">
         <input id="workerAuthInput" type="checkbox">
         <span></span>
         <div><strong>워커 API 토큰 인증</strong><small>상태 조회, 모델 변경, 추론 요청을 head/worker 공유 토큰으로 보호</small></div>
       </label>
       <div class="settings-notice" id="workerAuthNotice">현재 꺼짐 · 신뢰 LAN 전용 모드</div>
-      <p class="settings-help">변경을 저장하면 연결된 노드 API가 현재 설정으로 자동 재시작됩니다. 대시보드 접근 토큰은 이 설정과 별개로 유지됩니다. 보안이 켜진 동안에는 인증되지 않은 llama.cpp RPC 모델 분할 실험이 차단됩니다.</p>
+      <p class="settings-help">워커 API 인증을 변경할 때만 연결된 노드 API가 자동 재시작됩니다. 대시보드 인증은 즉시 적용되며 기본값은 꺼짐입니다. 워커 보안이 켜진 동안에는 인증되지 않은 llama.cpp RPC 모델 분할 실험이 차단됩니다.</p>
       <div class="modal-actions"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="submit" class="button primary">설정 저장 및 적용</button></div>
     </form>
   </dialog>

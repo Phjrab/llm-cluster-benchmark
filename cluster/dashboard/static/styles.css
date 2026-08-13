@@ -401,6 +401,8 @@ footer { display: flex; justify-content: space-between; padding: 25px 5vw; backg
 .settings-toggle div { min-width: 0; }.settings-toggle strong, .settings-toggle small { display: block; }.settings-toggle strong { font-size: 12px; }.settings-toggle small { margin-top: 5px; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .settings-notice { margin-top: 10px; padding: 11px 13px; border-left: 3px solid var(--orange); background: rgba(255,107,61,.08); color: var(--muted); font: 600 9px/1.4 var(--mono); }
 .settings-notice.enabled { border-left-color: #769c17; background: rgba(199,242,91,.13); color: #587408; }
+.settings-token-field { margin-top: 14px; padding: 15px; border: 1px solid var(--line); background: rgba(199,242,91,.08); }
+.settings-token-field[hidden] { display: none; }
 .settings-help { color: var(--muted); font-size: 9px; line-height: 1.7; }
 .publication-modal { width: min(760px, calc(100vw - 30px)); }
 .publication-source { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; align-items: baseline; margin: 22px 0 0; padding: 14px 16px; border-left: 3px solid var(--lime); background: var(--forest); color: var(--paper); }

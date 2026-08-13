@@ -9,7 +9,7 @@ const state = {
   actions: [],
   activeExperiment: null,
   onboarding: {},
-  settings: { worker_api_auth: false },
+  settings: { worker_api_auth: false, dashboard_token_auth: false },
   onboardingProbe: null,
   devices: [],
   eventSource: null,
@@ -37,13 +37,18 @@ function getToken() {
 }
 
 async function api(path, options = {}) {
-  const headers = { ...(options.headers || {}), "X-Cluster-Token": state.token };
+  const headers = { ...(options.headers || {}) };
+  if (state.token) headers["X-Cluster-Token"] = state.token;
   if (options.body && typeof options.body !== "string") {
     headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(options.body);
   }
   const response = await fetch(path, { ...options, headers });
   const data = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    const dialog = $("#authDialog");
+    if (dialog && !dialog.open) dialog.showModal();
+  }
   if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
   return data;
 }
@@ -430,13 +435,31 @@ function renderModels(defaults = {}) {
 }
 
 function renderSettings() {
-  const enabled = Boolean(state.settings.worker_api_auth);
-  $("#workerAuthInput").checked = enabled;
-  const notice = $("#workerAuthNotice");
-  notice.classList.toggle("enabled", enabled);
-  notice.textContent = enabled
+  const workerEnabled = Boolean(state.settings.worker_api_auth);
+  const dashboardEnabled = Boolean(state.settings.dashboard_token_auth);
+  $("#workerAuthInput").checked = workerEnabled;
+  $("#dashboardAuthInput").checked = dashboardEnabled;
+  $("#dashboardTokenInput").value = "";
+  const workerNotice = $("#workerAuthNotice");
+  workerNotice.classList.toggle("enabled", workerEnabled);
+  workerNotice.textContent = workerEnabled
     ? "현재 켜짐 · worker API 토큰 인증 모드"
     : "현재 꺼짐 · 신뢰 LAN 전용 모드";
+  updateDashboardAuthGuidance();
+}
+
+function updateDashboardAuthGuidance() {
+  const current = Boolean(state.settings.dashboard_token_auth);
+  const desired = $("#dashboardAuthInput").checked;
+  const enabling = desired && !current;
+  const field = $("#dashboardTokenField");
+  field.hidden = !enabling;
+  $("#dashboardTokenInput").required = enabling;
+  const notice = $("#dashboardAuthNotice");
+  notice.classList.toggle("enabled", desired);
+  notice.textContent = current === desired
+    ? desired ? "현재 켜짐 · 접속 시 대시보드 토큰 필요" : "현재 꺼짐 · 토큰 없이 대시보드 접속"
+    : desired ? "저장 후 켜짐 · 현재 대시보드 토큰 확인 필요" : "저장 후 꺼짐 · 토큰 없이 접속";
 }
 
 function applyConfig(defaults, includeName = true) {
@@ -1307,7 +1330,11 @@ async function bootstrap() {
     state.experimentGroups = data.experiment_groups || [];
     state.actions = data.actions || [];
     state.onboarding = data.onboarding || {};
-    state.settings = data.settings || { worker_api_auth: false };
+    state.settings = data.settings || { worker_api_auth: false, dashboard_token_auth: false };
+    if (!state.settings.dashboard_token_auth && state.token) {
+      state.token = "";
+      sessionStorage.removeItem("clusterToken");
+    }
     ingestStatus(state.status);
     applyDefaults(data.defaults || {});
     renderExperimentGroups();
@@ -1319,7 +1346,9 @@ async function bootstrap() {
     connectEvents();
     if (!location.hash) requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
   } catch (error) {
-    if (/401|token|invalid|missing/i.test(error.message)) $("#authDialog").showModal();
+    if (/401|token|invalid|missing/i.test(error.message)) {
+      if (!$("#authDialog").open) $("#authDialog").showModal();
+    }
     else toast("대시보드 초기화 실패", error.message, "error");
   }
 }
@@ -1335,7 +1364,8 @@ async function refreshExperimentData() {
 
 function connectEvents() {
   if (state.eventSource) state.eventSource.close();
-  state.eventSource = new EventSource(`/api/events?token=${encodeURIComponent(state.token)}`);
+  const eventUrl = state.token ? `/api/events?token=${encodeURIComponent(state.token)}` : "/api/events";
+  state.eventSource = new EventSource(eventUrl);
   state.eventSource.onopen = () => {
     $(".live-indicator").classList.add("connected");
     $("#streamLabel").textContent = "실시간 연결됨";
@@ -1343,6 +1373,7 @@ function connectEvents() {
   state.eventSource.onerror = () => {
     $(".live-indicator").classList.remove("connected");
     $("#streamLabel").textContent = "재연결 중";
+    if (state.settings.dashboard_token_auth && !$("#authDialog").open) $("#authDialog").showModal();
   };
   state.eventSource.onmessage = event => {
     const message = JSON.parse(event.data);
@@ -1358,7 +1389,17 @@ function connectEvents() {
     } else if (message.type === "settings_changed") {
       state.settings = message.settings || state.settings;
       renderSettings();
-      toast("보안 설정 적용 중", "연결된 worker API를 재시작합니다.");
+      if (state.settings.dashboard_token_auth && !state.token && !$("#authDialog").open) {
+        $("#authDialog").showModal();
+      } else if (!state.settings.dashboard_token_auth && state.token) {
+        state.token = "";
+        sessionStorage.removeItem("clusterToken");
+        setTimeout(connectEvents, 0);
+      }
+      if (message.action) toast("보안 설정 적용 중", "연결된 worker API를 재시작합니다.");
+    } else if (message.type === "auth_required") {
+      state.eventSource?.close();
+      if (!$("#authDialog").open) $("#authDialog").showModal();
     } else if (message.type === "action_log") {
       logLine("TASK", message.line);
     } else if (message.type === "action_finished") {
@@ -1602,19 +1643,40 @@ function bindEvents() {
       ? "저장 후 켜짐 · 연결 노드 재시작 필요"
       : "저장 후 꺼짐 · 신뢰 LAN 전용 모드";
   });
+  $("#dashboardAuthInput").addEventListener("change", updateDashboardAuthGuidance);
   $("#settingsForm").addEventListener("submit", async event => {
     event.preventDefault();
     try {
+      const dashboardAuth = $("#dashboardAuthInput").checked;
+      const enablingDashboardAuth = dashboardAuth && !state.settings.dashboard_token_auth;
+      const dashboardToken = enablingDashboardAuth ? $("#dashboardTokenInput").value.trim() : state.token;
+      if (enablingDashboardAuth && !dashboardToken) {
+        return toast("대시보드 토큰 필요", "head의 .run/cluster/dashboard.token 값을 입력하세요.", "error");
+      }
       const data = await api("/api/settings", {
         method: "PUT",
-        body: { worker_api_auth: $("#workerAuthInput").checked },
+        body: {
+          worker_api_auth: $("#workerAuthInput").checked,
+          dashboard_token_auth: dashboardAuth,
+          dashboard_token: dashboardToken,
+        },
       });
+      if (dashboardAuth) {
+        state.token = dashboardToken;
+        sessionStorage.setItem("clusterToken", dashboardToken);
+        if ($("#authDialog").open) $("#authDialog").close();
+      } else {
+        state.token = "";
+        sessionStorage.removeItem("clusterToken");
+      }
       state.settings = data.settings;
       renderSettings();
+      connectEvents();
       $("#settingsDialog").close();
-      toast("설정 저장 완료", data.action ? "노드 API 재시작 작업을 시작했습니다." : "변경 사항이 없습니다.");
+      toast("설정 저장 완료", data.action ? "워커 API 재시작 작업을 시작했습니다." : "보안 설정을 즉시 적용했습니다.");
     } catch (error) {
       renderSettings();
+      connectEvents();
       toast("설정 적용 실패", error.message, "error");
     }
   });
@@ -1752,5 +1814,5 @@ document.addEventListener("DOMContentLoaded", () => {
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   state.token = getToken();
   bindEvents();
-  if (!state.token) $("#authDialog").showModal(); else bootstrap();
+  bootstrap();
 });

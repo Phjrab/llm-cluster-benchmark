@@ -615,6 +615,91 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
             self.assertEqual(suite["models"][1]["cleanup_status"], "failed")
             self.assertEqual(suite["errors"][0]["stage"], "unload")
 
+    def test_dashboard_token_auth_defaults_off_and_toggles_without_lockout(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self._load_dashboard(root)
+            settings = root / "settings.json"
+            settings.write_text(
+                '{"worker_api_auth": false, "dashboard_token_auth": false}\n',
+                encoding="utf-8",
+            )
+            with mock.patch.object(dashboard, "SETTINGS_PATH", settings), mock.patch.object(
+                dashboard, "DASHBOARD_TOKEN", "test-dashboard-token"
+            ):
+                client = TestClient(dashboard.app)
+                response = client.get("/api/settings")
+                self.assertEqual(response.status_code, 200)
+                self.assertFalse(response.json()["settings"]["dashboard_token_auth"])
+
+                rejected = client.put(
+                    "/api/settings",
+                    json={"dashboard_token_auth": True, "dashboard_token": "wrong"},
+                )
+                self.assertEqual(rejected.status_code, 403)
+                self.assertFalse(dashboard.read_settings()["dashboard_token_auth"])
+
+                enabled = client.put(
+                    "/api/settings",
+                    json={
+                        "dashboard_token_auth": True,
+                        "dashboard_token": "test-dashboard-token",
+                    },
+                )
+                self.assertEqual(enabled.status_code, 200)
+                self.assertTrue(enabled.json()["settings"]["dashboard_token_auth"])
+                self.assertEqual(client.get("/api/settings").status_code, 401)
+
+                authenticated_headers = {
+                    "X-Cluster-Token": "test-dashboard-token"
+                }
+                preserved = client.put(
+                    "/api/settings", json={}, headers=authenticated_headers
+                )
+                self.assertEqual(preserved.status_code, 200)
+                self.assertTrue(preserved.json()["settings"]["dashboard_token_auth"])
+
+                disabled = client.put(
+                    "/api/settings",
+                    json={"dashboard_token_auth": False},
+                    headers=authenticated_headers,
+                )
+                self.assertEqual(disabled.status_code, 200)
+                self.assertFalse(disabled.json()["settings"]["dashboard_token_auth"])
+                self.assertEqual(client.get("/api/settings").status_code, 200)
+
+    def test_dashboard_settings_corruption_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self._load_dashboard(root)
+            settings = root / "settings.json"
+            with mock.patch.object(dashboard, "SETTINGS_PATH", settings):
+                self.assertFalse(dashboard.read_settings()["dashboard_token_auth"])
+                settings.write_text("{broken", encoding="utf-8")
+                self.assertTrue(dashboard.read_settings()["dashboard_token_auth"])
+                settings.write_text(
+                    '{"dashboard_token_auth": "false"}\n', encoding="utf-8"
+                )
+                self.assertTrue(dashboard.read_settings()["dashboard_token_auth"])
+
+    def test_existing_tokenless_event_stream_closes_when_auth_is_enabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self._load_dashboard(Path(directory))
+            settings = {"worker_api_auth": False, "dashboard_token_auth": False}
+            bus = dashboard.EventBus()
+            with mock.patch.object(
+                dashboard, "read_settings", side_effect=lambda: dict(settings)
+            ):
+                stream = bus.stream("")
+                self.assertIn('"type": "connected"', next(stream))
+                settings["dashboard_token_auth"] = True
+                bus.publish("cluster_status", nodes=[])
+                self.assertIn('"type": "auth_required"', next(stream))
+                with self.assertRaises(StopIteration):
+                    next(stream)
+
 
 class PlatformPlanTests(unittest.TestCase):
     def test_platform_plans_select_distinct_backends(self) -> None:

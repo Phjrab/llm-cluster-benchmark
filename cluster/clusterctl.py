@@ -408,7 +408,10 @@ def worker_auth_headers() -> Dict[str, str]:
 
 
 def cluster_settings() -> Dict[str, Any]:
-    defaults: Dict[str, Any] = {"worker_api_auth": False}
+    defaults: Dict[str, Any] = {
+        "worker_api_auth": False,
+        "dashboard_token_auth": False,
+    }
     try:
         stored = json.loads(DEFAULT_SETTINGS.read_text(encoding="utf-8"))
         if isinstance(stored, dict):

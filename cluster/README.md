@@ -35,14 +35,17 @@ cd <project-dir>
 
 - `.run/cluster/nodes.local.csv`: 실제 노드 인벤토리
 - `~/.ssh/id_ed25519_llm_cluster`: head 전용 SSH 키
-- `.run/cluster/dashboard.token`: 대시보드 접근 토큰
-- `.run/cluster/settings.json`: 선택형 보안 설정(기본 worker API 인증 꺼짐)
+- `.run/cluster/dashboard.token`: 선택형 대시보드 인증을 켤 때 사용하는 접근 토큰
+- `.run/cluster/settings.json`: 선택형 보안 설정(대시보드·worker API 인증 모두 기본 꺼짐)
 - `.run/cluster/worker.token`: 인증을 켤 때 생성되는 비공개 head/worker 공유 토큰
 - `.run/cluster/experiments/`: 실험 정의 카탈로그
 - `.run/cluster/results/`: 실행별 원시 결과와 요약
 
 대시보드는 기본적으로 `http://HEAD_IP:8080`에서 실행한다. 내부 LAN 전용이며 인터넷에
-직접 공개하지 않는다.
+직접 공개하지 않는다. 기본 상태에서는 토큰 없이 접속하며, `설정 → 대시보드 토큰 인증`을
+켠 경우에만 `.run/cluster/dashboard.token` 값을 요구한다.
+토큰 인증을 켜더라도 기본 HTTP 연결 자체가 암호화되는 것은 아니므로, 신뢰하지 않는 네트워크나
+인터넷에서는 그대로 노출하지 말고 별도의 TLS/VPN 구간 안에서 사용한다.
 
 ## 대시보드에서 워커 찾기와 자동 준비
 
@@ -198,6 +201,9 @@ python -m cluster.benchmark.runner \
 - SSH는 전용 키와 `BatchMode`로만 실행한다.
 - LAN 검색 범위는 head가 연결된 RFC1918 네트워크의 최대 `/24`로 제한한다.
 - 브라우저에서 임의 SSH identity 파일이나 공인 IP를 등록할 수 없다.
+- 대시보드 토큰 인증은 기본적으로 꺼져 있다. 필요할 때 `설정 → 대시보드 토큰 인증`에서
+  켤 수 있으며, 활성화할 때 현재 `.run/cluster/dashboard.token` 값을 한 번 확인한다.
+  토큰 파일은 인증을 꺼도 삭제하지 않아 나중에 같은 토큰으로 다시 보호할 수 있다.
 - Worker API 인증은 기본적으로 꺼져 있어 신뢰 LAN에서 간단히 사용할 수 있다. 대시보드
   `설정 → 워커 API 토큰 인증`을 켜면 브라우저에 노출하지 않는 head/worker 공유 토큰으로
   상태, 모델 변경과 추론 요청을 보호하고 모든 활성 노드 API를 자동 재시작한다.
