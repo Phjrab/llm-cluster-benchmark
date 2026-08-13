@@ -116,8 +116,14 @@
               <input id="experimentName" name="name" value="cluster-load-test" required>
             </div>
             <div class="field full-field">
-              <label for="modelSelect">모델</label>
-              <div class="select-wrap"><select id="modelSelect" name="model_id" required></select></div>
+              <label for="modelSearchInput">모델 · 여러 개 선택 시 순서대로 실행</label>
+              <div class="model-picker" id="modelPicker">
+                <div class="model-picker-search"><input id="modelSearchInput" type="search" autocomplete="off" placeholder="설치된 GGUF 모델 검색" aria-controls="modelChecklist"><span id="modelSelectionCount">0개 선택</span></div>
+                <div class="model-chips" id="modelChips" aria-live="polite"></div>
+                <div class="model-picker-tools"><button type="button" id="selectAllModelsButton">검색 결과 전체 선택</button><button type="button" id="clearModelsButton">선택 해제</button></div>
+                <div class="model-checklist" id="modelChecklist" role="group" aria-label="벤치마크할 모델 선택"></div>
+              </div>
+              <select id="modelSelect" name="model_id" hidden aria-hidden="true"></select>
               <small id="modelHint">head 노드에 설치된 GGUF 모델</small>
             </div>
             <fieldset class="strategy-fieldset">
@@ -186,11 +192,13 @@
             </div>
             <section class="strategy-formula" aria-live="polite" aria-atomic="true">
               <div class="strategy-formula-head"><span>EXECUTION PLAN</span><strong id="strategyFormulaTitle">복제 · 요청 분산</strong></div>
-              <div class="strategy-formula-grid">
+              <div class="strategy-formula-grid suite-formula-grid">
+                <div><small>MODELS</small><strong id="formulaModels">1</strong></div>
                 <div><small>MODEL COPIES</small><strong id="formulaModelCopies">1</strong></div>
                 <div><small>NODES / ANSWER</small><strong id="formulaNodesPerAnswer">1</strong></div>
                 <div><small>LOGICAL REQUESTS</small><strong id="formulaLogicalRequests">20</strong></div>
                 <div><small>PHYSICAL CALLS</small><strong id="formulaPhysicalCalls">20</strong></div>
+                <div><small>TOTAL CALLS</small><strong id="formulaTotalCalls">20</strong></div>
               </div>
               <p id="strategyFormulaExplanation">모델을 노드마다 복제하고 사용자 요청은 한 노드씩 분배합니다.</p>
             </section>
@@ -204,7 +212,9 @@
               <div class="field range-field"><label for="temperatureInput">Temperature <output id="temperatureValue">0.0</output></label><input id="temperatureInput" name="temperature" type="range" min="0" max="2" step="0.1" value="0"></div>
               <div class="field range-field"><label for="topPInput">Top-p <output id="topPValue">0.9</output></label><input id="topPInput" name="top_p" type="range" min="0" max="1" step="0.05" value="0.9"></div>
               <div class="field"><label for="seedInput">Seed</label><input id="seedInput" name="seed" type="number" min="-1" max="2147483647" value="42"></div>
+              <div class="field"><label for="modelCooldownInput">모델 교체 대기</label><input id="modelCooldownInput" name="model_cooldown_s" type="number" min="0" max="300" step="1" value="3"><small>모델 사이 정리 시간 · 초</small></div>
               <label class="toggle-field"><input id="uniformInput" name="require_uniform_config" type="checkbox" checked><span></span><div><strong>동일 구성 강제</strong><small>자동 하향 조정 시 실험 중단</small></div></label>
+              <label class="toggle-field"><input id="continueModelErrorInput" name="continue_on_model_error" type="checkbox" checked><span></span><div><strong>모델 실패 후 계속</strong><small>다음 모델 벤치마크 진행</small></div></label>
             </div>
             <div class="field full-field prompt-field">
               <label for="promptInput">테스트 프롬프트</label>
@@ -242,14 +252,26 @@
           <div class="empty-result"><strong>아직 완료된 클러스터 실험이 없습니다.</strong><span>첫 실험을 실행하면 처리량과 지연 지표가 여기에 표시됩니다.</span></div>
         </div>
         <div class="chart-grid" id="chartGrid" hidden>
-          <article class="chart-card chart-wide"><div><span>THROUGHPUT TREND</span><strong>반복 실행 처리량</strong></div><canvas id="throughputChart" height="240" aria-label="실행별 클러스터 토큰 처리량 그래프"></canvas></article>
-          <article class="chart-card"><div><span>LATENCY</span><strong>TTFT / E2E 비교</strong></div><canvas id="latencyChart" height="240" aria-label="실행별 TTFT와 E2E 지연 그래프"></canvas></article>
-          <article class="chart-card"><div><span>LATEST RUN</span><strong id="nodeChartTitle">노드별 기여도</strong></div><canvas id="nodeChart" height="240" aria-label="최근 실행의 전략별 상세 처리량 그래프"></canvas></article>
+          <article class="chart-card chart-wide" data-chart-card="throughputChart">
+            <div class="chart-card-head"><div class="chart-heading"><span>THROUGHPUT TREND</span><strong>반복 실행 처리량</strong></div><div class="chart-actions"><button type="button" data-chart-png="throughputChart" title="대시보드 테마 PNG 다운로드">PNG <b>↓</b></button><button type="button" data-paper-export="throughputChart" title="논문용 SVG 또는 고해상도 PNG 만들기">논문용 <b>↗</b></button></div></div>
+            <div class="chart-stage"><canvas id="throughputChart" height="260" tabindex="0" role="img" aria-label="실행별 클러스터 토큰 처리량 그래프. 화살표 키로 데이터 지점을 탐색할 수 있습니다." aria-describedby="throughputChartHint"></canvas><div class="chart-tooltip" id="throughputChartTooltip" role="status" hidden></div></div>
+            <div class="chart-footer"><div class="chart-legend" id="throughputChartLegend" aria-label="처리량 그래프 범례"></div><small id="throughputChartHint">포인터를 올리거나 ← → 키로 값을 확인하세요.</small></div>
+          </article>
+          <article class="chart-card" data-chart-card="latencyChart">
+            <div class="chart-card-head"><div class="chart-heading"><span>LATENCY</span><strong>TTFT / E2E 비교</strong></div><div class="chart-actions"><button type="button" data-chart-png="latencyChart" title="대시보드 테마 PNG 다운로드">PNG <b>↓</b></button><button type="button" data-paper-export="latencyChart" title="논문용 SVG 또는 고해상도 PNG 만들기">논문용 <b>↗</b></button></div></div>
+            <div class="chart-stage"><canvas id="latencyChart" height="260" tabindex="0" role="img" aria-label="실행별 TTFT와 E2E 지연 그래프. 화살표 키로 막대를 탐색할 수 있습니다." aria-describedby="latencyChartHint"></canvas><div class="chart-tooltip" id="latencyChartTooltip" role="status" hidden></div></div>
+            <div class="chart-footer"><div class="chart-legend" id="latencyChartLegend" aria-label="지연 그래프 범례"></div><small id="latencyChartHint">범례를 눌러 지표를 숨기거나 다시 표시할 수 있습니다.</small></div>
+          </article>
+          <article class="chart-card" data-chart-card="nodeChart">
+            <div class="chart-card-head"><div class="chart-heading"><span>LATEST RUN</span><strong id="nodeChartTitle">노드별 기여도</strong></div><div class="chart-actions"><button type="button" data-chart-png="nodeChart" title="대시보드 테마 PNG 다운로드">PNG <b>↓</b></button><button type="button" data-paper-export="nodeChart" title="논문용 SVG 또는 고해상도 PNG 만들기">논문용 <b>↗</b></button></div></div>
+            <div class="chart-stage"><canvas id="nodeChart" height="260" tabindex="0" role="img" aria-label="최근 실행의 전략별 상세 처리량 그래프. 화살표 키로 막대를 탐색할 수 있습니다." aria-describedby="nodeChartHint"></canvas><div class="chart-tooltip" id="nodeChartTooltip" role="status" hidden></div></div>
+            <div class="chart-footer"><div class="chart-legend" id="nodeChartLegend" aria-label="상세 그래프 범례"></div><small id="nodeChartHint">최근 실행의 동일 전략 측정값만 표시합니다.</small></div>
+          </article>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>실험</th><th>실행 방식</th><th>노드</th><th>성공률</th><th>TTFT p50</th><th>E2E p95</th><th>처리량</th><th>상태</th></tr></thead>
-            <tbody id="runsTable"><tr><td colspan="8" class="empty-cell">실행 기록 없음</td></tr></tbody>
+            <thead><tr><th>실험</th><th>모델 / Suite</th><th>실행 방식</th><th>노드</th><th>성공률</th><th>TTFT p50</th><th>E2E p95</th><th>처리량</th><th>상태</th></tr></thead>
+            <tbody id="runsTable"><tr><td colspan="9" class="empty-cell">실행 기록 없음</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -310,6 +332,25 @@
       <div class="settings-notice" id="workerAuthNotice">현재 꺼짐 · 신뢰 LAN 전용 모드</div>
       <p class="settings-help">변경을 저장하면 연결된 노드 API가 현재 설정으로 자동 재시작됩니다. 대시보드 접근 토큰은 이 설정과 별개로 유지됩니다. 보안이 켜진 동안에는 인증되지 않은 llama.cpp RPC 모델 분할 실험이 차단됩니다.</p>
       <div class="modal-actions"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="submit" class="button primary">설정 저장 및 적용</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="publicationDialog" class="modal publication-modal">
+    <form id="publicationForm" method="dialog">
+      <div class="modal-head"><div><span class="section-index">PUBLICATION EXPORT</span><h2>논문용 그래프 만들기</h2></div><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div>
+      <p class="modal-intro">대시보드 장식을 제거하고 흰 배경, 색각 이상 친화 팔레트, 명확한 축과 단위로 다시 그립니다. SVG는 벡터 편집에, PNG는 원고에 바로 삽입할 때 적합합니다.</p>
+      <div class="publication-source"><span>선택 그래프</span><strong id="publicationChartName">—</strong><small id="publicationStrategy">—</small></div>
+      <div class="modal-grid publication-grid">
+        <div class="field full-field"><label for="publicationTitleInput">그림 제목</label><input id="publicationTitleInput" maxlength="140"></div>
+        <div class="field"><label for="publicationFormatSelect">파일 형식</label><select id="publicationFormatSelect"><option value="svg">SVG · 벡터 권장</option><option value="png">PNG · 고해상도</option></select></div>
+        <div class="field"><label for="publicationSizeSelect">논문 지면 폭</label><select id="publicationSizeSelect"><option value="one">1단 · 85 mm</option><option value="two">2단 · 180 mm</option></select></div>
+        <div class="field" id="publicationDpiField"><label for="publicationDpiSelect">PNG 해상도</label><select id="publicationDpiSelect"><option value="300">300 DPI · 표준</option><option value="600">600 DPI · 인쇄용</option></select></div>
+        <label class="publication-check"><input id="publicationIncludeTitle" type="checkbox" checked><span></span><div><strong>그림 안에 제목 포함</strong><small>저널 지침이 캡션만 요구하면 해제하세요.</small></div></label>
+        <label class="publication-check"><input id="publicationShowValues" type="checkbox"><span></span><div><strong>측정값 직접 표시</strong><small>데이터 포인트 위에 수치를 표기합니다.</small></div></label>
+      </div>
+      <div class="publication-spec"><div><span>PALETTE</span><strong>Okabe–Ito</strong><small>색각 이상 친화</small></div><div><span>BACKGROUND</span><strong>#FFFFFF</strong><small>인쇄 최적화</small></div><div><span>OUTPUT</span><strong id="publicationOutputSpec">85 mm · SVG</strong><small id="publicationPixelSpec">벡터 해상도</small></div></div>
+      <p class="publication-note">현재 선택된 실험 방식의 결과만 사용합니다. 서로 의미가 다른 실행 방식은 한 그림에 합치지 않습니다.</p>
+      <div class="modal-actions"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="submit" class="button primary">논문용 파일 다운로드</button></div>
     </form>
   </dialog>
 

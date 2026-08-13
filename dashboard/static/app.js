@@ -15,6 +15,11 @@ const state = {
   eventSource: null,
   metricHistory: new Map(),
   detailNode: "",
+  selectedModels: [],
+  suites: [],
+  chartModels: new Map(),
+  chartInteraction: new Map(),
+  publicationChartId: "",
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -61,6 +66,8 @@ function finite(value) {
 
 const fmt = (value, digits = 1, fallback = "—") => finite(value) ? Number(value).toFixed(digits) : fallback;
 const pct = value => finite(value) ? `${fmt(value, 0)}%` : "—";
+const DASHBOARD_COLORS = ["#718f17", "#e57c38", "#163126", "#0072b2", "#cc79a7", "#f0e442"];
+const PUBLICATION_COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#000000"];
 const platformName = value => ({ jetson: "NVIDIA Jetson", "raspberry-pi": "Raspberry Pi 5", auto: "자동 감지", "generic-linux": "Linux" }[value] || value || "미확인");
 const STRATEGIES = {
   single_node: { label: "단일 노드 기준선", short: "SINGLE" },
@@ -81,6 +88,45 @@ function plannedNodeNames() {
 
 function runStrategy(run) {
   return run.execution_strategy || run.strategy || run.config?.execution_strategy || run.definition?.default_config?.execution_strategy || "legacy";
+}
+
+function runModelId(run) {
+  const actual = Array.isArray(run.actual_model_config) ? run.actual_model_config[0] : run.actual_model_config;
+  return run.benchmark_parameters?.model_id || run.model_id || actual?.model_id || actual?.model || "unknown-model";
+}
+
+function shortModelName(value) {
+  return String(value || "unknown-model").split("/").pop().replace(/\.gguf$/i, "");
+}
+
+function runSuiteLabel(run) {
+  if (!run.suite_id) return "";
+  const position = finite(run.model_index) && finite(run.model_count) ? ` · ${run.model_index}/${run.model_count}` : "";
+  return `${String(run.suite_id).slice(-10)}${position}`;
+}
+
+function sweepIsCumulative(scenarios) {
+  if (!scenarios?.length) return false;
+  if (scenarios.some(item => String(item.scenario_id || "").startsWith("nodes-") || String(item.label || "").startsWith("누적"))) return true;
+  if (scenarios.some(item => String(item.scenario_id || "").startsWith("node-") || String(item.label || "").startsWith("개별"))) return false;
+  const counts = scenarios.map(item => (item.nodes || []).length);
+  return counts.some((count, index) => index > 0 && count > counts[index - 1]) && counts.every((count, index) => index === 0 || count >= counts[index - 1]);
+}
+
+function runDisplayThroughput(run) {
+  if (runStrategy(run) !== "node_sweep") return run.cluster_tokens_per_s;
+  const scenarios = Array.isArray(run.scenario_summaries) ? run.scenario_summaries.filter(item => finite(item.cluster_tokens_per_s)) : [];
+  if (!scenarios.length) return null;
+  const cumulative = sweepIsCumulative(scenarios);
+  return cumulative ? scenarios.at(-1).cluster_tokens_per_s : Math.max(...scenarios.map(item => Number(item.cluster_tokens_per_s)));
+}
+
+function runThroughputCell(run) {
+  const value = runDisplayThroughput(run);
+  if (!finite(value)) return "—";
+  if (runStrategy(run) === "broadcast_compare") return `${fmt(value)} replica tok/s<br><small>복제본 합산</small>`;
+  if (runStrategy(run) === "node_sweep") return `${fmt(value)} tok/s<br><small>대표 시나리오</small>`;
+  return `${fmt(value)} tok/s`;
 }
 
 function strategyMeta(value) {
@@ -264,6 +310,7 @@ function updateStrategyGuidance() {
   const strategy = selectedStrategy();
   const meta = strategyMeta(strategy);
   const nodeCount = Math.max(1, state.selectedNodes.size);
+  const modelCount = Math.max(1, selectedModelIds().length);
   const requests = Math.max(0, Number($("#requestsInput").value) || 0);
   const sweepMode = $("#sweepModeSelect").value;
   const splitPolicy = $("#rpcSplitPolicySelect").value;
@@ -300,22 +347,56 @@ function updateStrategyGuidance() {
     explanation = `모델 하나를 ${nodeCount}대에 나누고 한 답변 계산에 모두 참여시킵니다. 물리 호출 수에는 내부 텐서 RPC 통신을 포함하지 않습니다.`;
   }
   $("#formulaModelCopies").textContent = modelCopies;
+  $("#formulaModels").textContent = modelCount;
   $("#formulaNodesPerAnswer").textContent = nodesPerAnswer;
   $("#formulaLogicalRequests").textContent = logicalRequests;
   $("#formulaPhysicalCalls").textContent = physicalCalls;
+  $("#formulaTotalCalls").textContent = physicalCalls * modelCount;
   $("#strategyFormulaExplanation").textContent = explanation;
 }
 
+function selectedModelIds() {
+  return state.selectedModels.filter(id => state.models.some(model => model.id === id));
+}
+
+function syncLegacyModelSelect() {
+  const select = $("#modelSelect");
+  const ids = selectedModelIds();
+  select.innerHTML = ids.map(id => `<option value="${escapeHtml(id)}">${escapeHtml(id)}</option>`).join("");
+  if (ids.length) select.value = ids[0];
+}
+
+function setSelectedModels(ids) {
+  state.selectedModels = [...new Set(ids)].filter(id => state.models.some(model => model.id === id));
+  syncLegacyModelSelect();
+  renderModelPicker();
+  updateModelAvailability();
+  updateStrategyGuidance();
+}
+
+function renderModelPicker() {
+  const query = ($("#modelSearchInput")?.value || "").trim().toLowerCase();
+  const ids = selectedModelIds();
+  const visible = state.models.filter(model => !query || `${model.id} ${model.size_gb}`.toLowerCase().includes(query));
+  $("#modelSelectionCount").textContent = `${ids.length}개 선택`;
+  $("#modelChips").innerHTML = ids.map(id => `<span class="model-chip"><span title="${escapeHtml(id)}">${escapeHtml(id)}</span><button type="button" data-remove-model="${escapeHtml(id)}" aria-label="${escapeHtml(id)} 선택 해제">×</button></span>`).join("");
+  $("#modelChecklist").innerHTML = visible.length ? visible.map(model => `<label class="model-option"><input type="checkbox" data-model-option="${escapeHtml(model.id)}" ${ids.includes(model.id) ? "checked" : ""}><span title="${escapeHtml(model.id)}">${escapeHtml(model.id)}</span><small>${fmt(model.size_gb, 2)} GB</small></label>`).join("") : `<div class="model-empty">검색 결과가 없습니다.</div>`;
+}
+
 function updateModelAvailability() {
-  const modelId = $("#modelSelect")?.value;
-  if (!modelId) return;
+  const modelIds = selectedModelIds();
+  if (!modelIds.length) {
+    $("#modelHint").textContent = "벤치마크할 모델을 한 개 이상 선택하세요.";
+    $("#modelHint").style.color = "var(--orange)";
+    return;
+  }
   const plannedNames = plannedNodeNames();
   const placementNames = selectedStrategy() === "model_parallel_rpc"
     ? plannedNames.filter(name => state.nodes.find(node => node.name === name)?.role === "head")
     : plannedNames;
   const missing = placementNames.filter(name => {
     const live = statusFor(name);
-    return live.api && Array.isArray(live.model_ids) && !live.model_ids.includes(modelId);
+    return live.api && Array.isArray(live.model_ids) && modelIds.some(id => !live.model_ids.includes(id));
   });
   const selectedKinds = plannedNames.map(name => {
     const node = state.nodes.find(item => item.name === name);
@@ -323,26 +404,28 @@ function updateModelAvailability() {
   });
   const hint = $("#modelHint");
   if (missing.length) {
-    hint.textContent = `${missing.join(", ")}에 모델이 없습니다. 실행 전에 모델 동기화가 필요합니다.`;
+    hint.textContent = `${missing.join(", ")}에 선택 모델 일부가 없습니다. 실행 전에 모델 동기화가 필요합니다.`;
     hint.style.color = "var(--orange)";
   } else {
-    const model = state.models.find(item => item.id === modelId);
+    const totalSize = modelIds.reduce((sum, id) => sum + Number(state.models.find(item => item.id === id)?.size_gb || 0), 0);
     const piNote = selectedKinds.includes("raspberry-pi")
       ? selectedStrategy() === "model_parallel_rpc" ? " · Pi는 RPC CPU 장치로 참여" : " · Pi CPU/OpenBLAS · GPU 레이어 0"
       : "";
     const placementNote = selectedStrategy() === "model_parallel_rpc"
       ? " · GGUF는 head에만 필요, worker는 텐서 수신"
       : " · 선택 노드 모델 상태 정상";
-    hint.textContent = model ? `${model.size_gb} GB${placementNote}${piNote}` : "head 노드에 설치된 GGUF 모델";
+    hint.textContent = `${modelIds.length}개 · 합계 ${fmt(totalSize, 2)} GB${placementNote}${piNote}`;
     hint.style.color = "";
   }
 }
 
 function renderModels(defaults = {}) {
-  const select = $("#modelSelect");
-  const current = select.value || defaults.model_id;
-  select.innerHTML = state.models.map(model => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.id)} · ${model.size_gb} GB</option>`).join("");
-  if (state.models.some(model => model.id === current)) select.value = current;
+  const requested = Array.isArray(defaults.model_ids) && defaults.model_ids.length
+    ? defaults.model_ids
+    : state.selectedModels.length ? state.selectedModels : [defaults.model_id || state.models[0]?.id].filter(Boolean);
+  state.selectedModels = [...new Set(requested)].filter(id => state.models.some(model => model.id === id));
+  syncLegacyModelSelect();
+  renderModelPicker();
   updateModelAvailability();
 }
 
@@ -373,7 +456,11 @@ function applyConfig(defaults, includeName = true) {
   if (defaults.rpc_split_policy !== undefined) $("#rpcSplitPolicySelect").value = defaults.rpc_split_policy;
   if (Array.isArray(defaults.rpc_tensor_split)) $("#rpcTensorSplitInput").value = defaults.rpc_tensor_split.join(", ");
   if (defaults.acknowledge_experimental_rpc !== undefined) $("#rpcAcknowledgeInput").checked = Boolean(defaults.acknowledge_experimental_rpc);
-  if (defaults.model_id && state.models.some(model => model.id === defaults.model_id)) $("#modelSelect").value = defaults.model_id;
+  const configModels = Array.isArray(defaults.model_ids) && defaults.model_ids.length ? defaults.model_ids : [defaults.model_id].filter(Boolean);
+  if (configModels.length) state.selectedModels = configModels.filter(id => state.models.some(model => model.id === id));
+  if (defaults.model_cooldown_s !== undefined) $("#modelCooldownInput").value = defaults.model_cooldown_s;
+  if (defaults.continue_on_model_error !== undefined) $("#continueModelErrorInput").checked = defaults.continue_on_model_error !== false;
+  syncLegacyModelSelect(); renderModelPicker();
   if (Array.isArray(defaults.node_names)) {
     const available = defaults.node_names.filter(name => state.nodes.some(node => node.name === name && node.enabled));
     if (available.length) state.selectedNodes = new Set(available.slice(0, 4));
@@ -422,8 +509,68 @@ function filteredRuns() {
   return group?.runs || state.runs.filter(run => runExperimentId(run) === filter);
 }
 
+function filteredSuites() {
+  const filter = $("#resultExperimentFilter").value;
+  return state.suites.filter(suite => filter === "all" || suite.experiment_id === filter);
+}
+
+function artifactTimestamp(item) {
+  const value = item?.finished_at || item?.updated_at || item?.started_at || item?.run_id || "";
+  const parsed = Date.parse(value);
+  if (Number.isFinite(parsed)) return parsed;
+  const compact = String(value).match(/(20\d{2})(\d{2})(\d{2})[_T-]?(\d{2})(\d{2})(\d{2})/);
+  return compact ? Date.UTC(...compact.slice(1).map(Number).map((part, index) => index === 1 ? part - 1 : part)) : 0;
+}
+
+function latestResultArtifact(runs, suites) {
+  const newestRun = runs[0];
+  const newestSuite = suites[0];
+  if (!newestSuite) return { run: newestRun, suite: null };
+  if (!newestRun) return { run: null, suite: newestSuite };
+  return artifactTimestamp(newestSuite) >= artifactTimestamp(newestRun)
+    ? { run: runs.find(run => run.suite_id === newestSuite.suite_id) || null, suite: newestSuite }
+    : { run: newestRun, suite: null };
+}
+
+function suiteOutcomeRuns(suite, actualRuns) {
+  const persisted = Array.isArray(suite?.models) ? suite.models : [];
+  if (!persisted.length) return actualRuns;
+  return persisted.map(record => {
+    const actual = actualRuns.find(run => Number(run.model_index) === Number(record.model_index))
+      || actualRuns.find(run => runModelId(run) === record.model_id);
+    const errors = Array.isArray(record.errors) ? record.errors : [];
+    if (actual) return {
+      ...actual,
+      suite_status: suite.status,
+      cleanup_status: record.cleanup_status,
+      suite_model_errors: errors,
+    };
+    return {
+      suite_id: suite.suite_id,
+      suite_status: suite.status,
+      experiment_id: suite.experiment_id,
+      name: suite.name,
+      model_id: record.model_id,
+      model_index: record.model_index,
+      model_count: persisted.length,
+      status: record.status || "unrun",
+      cleanup_status: record.cleanup_status,
+      error: errors.map(item => item.error).filter(Boolean).join("; "),
+      suite_model_placeholder: true,
+    };
+  });
+}
+
+function omittedModelLabel(run) {
+  const status = String(run.status || "unknown").toUpperCase();
+  const cleanup = run.cleanup_status === "failed" ? " · unload 실패" : "";
+  const reason = run.error ? ` · ${ellipsis(run.error, 36)}` : "";
+  return `${shortModelName(runModelId(run))} (${status}${cleanup}${reason})`;
+}
+
 function renderRuns() {
   const runs = filteredRuns();
+  const suites = filteredSuites();
   const filter = $("#resultExperimentFilter").value;
   const group = state.experimentGroups.find(item => item.experiment_id === filter);
   const completedStrategies = new Set(runs.filter(run => run.status === "completed" && finite(run.cluster_tokens_per_s)).map(runStrategy));
@@ -435,41 +582,68 @@ function renderRuns() {
     ? `${baseContext} · 서로 다른 실행 방식이 섞여 있어 그래프를 숨겼습니다. 방식별 실험 묶음을 따로 만들어 비교하세요.`
     : baseContext;
   const table = $("#runsTable");
-  if (!runs.length) {
-    table.innerHTML = `<tr><td colspan="8" class="empty-cell">이 실험의 실행 기록 없음</td></tr>`;
+  if (!runs.length && !suites.length) {
+    table.innerHTML = `<tr><td colspan="9" class="empty-cell">이 실험의 실행 기록 없음</td></tr>`;
     $("#resultHighlight").innerHTML = `<div class="empty-result"><strong>연결된 벤치마크 결과가 없습니다.</strong><span>이 실험을 실행하면 결과가 같은 experiment_id에 누적됩니다.</span></div>`;
     $("#chartGrid").hidden = true;
     updateSummary();
     return;
   }
-  table.innerHTML = runs.slice(0, 30).map(run => `
+  table.innerHTML = runs.length ? runs.slice(0, 30).map(run => `
     <tr data-run-experiment="${escapeHtml(runExperimentId(run))}">
       <td><strong>${escapeHtml(run.name || run.run_id)}</strong><br><small>${escapeHtml(run.run_id || "")}</small></td>
+      <td class="model-cell"><strong title="${escapeHtml(runModelId(run))}">${escapeHtml(shortModelName(runModelId(run)))}</strong>${run.suite_id ? `<span class="suite-badge">SUITE ${escapeHtml(runSuiteLabel(run))}</span>` : ""}</td>
       <td><span class="strategy-badge ${strategyMeta(runStrategy(run)).experimental ? "experimental" : ""}">${escapeHtml(strategyMeta(runStrategy(run)).label)}</span></td>
       <td>${Array.isArray(run.nodes) ? run.nodes.length : "—"}</td>
-      <td>${run.success_rate !== undefined ? pct(Number(run.success_rate) * 100) : "—"}</td>
+      <td title="${runStrategy(run) === "broadcast_compare" ? "모든 복제본이 성공한 논리 요청 비율" : "성공한 실제 호출 비율"}">${runStrategy(run) === "broadcast_compare" && run.all_replicas_success_rate !== undefined ? `${pct(Number(run.all_replicas_success_rate) * 100)}<br><small>all replicas</small>` : run.success_rate !== undefined ? pct(Number(run.success_rate) * 100) : "—"}</td>
       <td>${run.ttft_p50_s != null ? `${fmt(run.ttft_p50_s, 2)}s` : "—"}</td>
       <td>${run.e2e_p95_s != null ? `${fmt(run.e2e_p95_s, 2)}s` : "—"}</td>
-      <td>${run.cluster_tokens_per_s != null ? `${fmt(run.cluster_tokens_per_s)} tok/s` : "—"}</td>
-      <td><span class="run-status ${run.status === "failed" ? "failed" : ""}">${escapeHtml((run.status || "unknown").toUpperCase())}</span></td>
-    </tr>`).join("");
-  const latest = runs.find(run => run.status === "completed") || runs[0];
+      <td>${runThroughputCell(run)}</td>
+      <td><span class="run-status ${run.status === "failed" || ["failed", "partial", "cancelled"].includes(run.suite_status) ? "failed" : ""}">${escapeHtml((run.status || "unknown").toUpperCase())}</span>${run.suite_status && run.suite_status !== "completed" ? `<br><small>SUITE ${escapeHtml(run.suite_status.toUpperCase())}</small>` : ""}</td>
+    </tr>`).join("") : `<tr><td colspan="9" class="empty-cell">최근 suite는 모델 실행 전 종료되었습니다.</td></tr>`;
+  const latestArtifact = latestResultArtifact(runs, suites);
+  const newestSuite = latestArtifact.suite;
+  const newest = newestSuite
+    ? runs.find(run => run.suite_id === newestSuite.suite_id) || { suite_id: newestSuite.suite_id, suite_status: newestSuite.status, experiment_id: newestSuite.experiment_id, name: newestSuite.name, status: newestSuite.status }
+    : latestArtifact.run;
+  const newestSuiteActualRuns = newest?.suite_id
+    ? runs.filter(run => run.suite_id === newest.suite_id).sort((a, b) => Number(a.model_index || 0) - Number(b.model_index || 0))
+    : [newest];
+  const newestSuiteRuns = newestSuite ? suiteOutcomeRuns(newestSuite, newestSuiteActualRuns) : newestSuiteActualRuns;
+  const latest = newestSuiteRuns.filter(run => run?.status === "completed" && finite(run.cluster_tokens_per_s)).at(-1);
   if (latest && latest.cluster_tokens_per_s != null) {
     const latestStrategy = strategyMeta(runStrategy(latest));
-    const throughputTitle = runStrategy(latest) === "model_parallel_rpc" ? "SHARDED MODEL THROUGHPUT" : "CLUSTER THROUGHPUT";
-    const successDetail = runStrategy(latest) === "broadcast_compare" && latest.answer_agreement_rate != null
-      ? `답변 일치 ${pct(Number(latest.answer_agreement_rate) * 100)}`
+    const strategy = runStrategy(latest);
+    let displayedThroughput = runDisplayThroughput(latest);
+    let throughputTitle = strategy === "model_parallel_rpc" ? "SHARDED MODEL THROUGHPUT" : "CLUSTER THROUGHPUT";
+    let throughputDetail = shortModelName(runModelId(latest));
+    if (strategy === "broadcast_compare") {
+      throughputTitle = "REPLICA TOKEN AGGREGATE";
+      throughputDetail = "사용자 처리량 아님 · 복제본 합산 생성량";
+    } else if (strategy === "node_sweep") {
+      const scenarios = (latest.scenario_summaries || []).filter(item => finite(item.cluster_tokens_per_s));
+      const chosen = scenarios.find(item => Number(item.cluster_tokens_per_s) === Number(displayedThroughput)) || scenarios.at(-1);
+      throughputTitle = "SWEEP SCENARIO THROUGHPUT";
+      throughputDetail = `${chosen?.label || chosen?.scenario_id || "측정 단계"} · 순차 전체 평균 아님`;
+    }
+    const successValue = strategy === "broadcast_compare" && latest.all_replicas_success_rate != null
+      ? Number(latest.all_replicas_success_rate)
+      : Number(latest.success_rate);
+    const successDetail = strategy === "broadcast_compare" && latest.answer_agreement_rate != null
+      ? `모든 복제본 성공 · 답변 일치 ${pct(Number(latest.answer_agreement_rate) * 100)}`
       : `${latest.successful || 0} / ${latest.requests || 0} physical calls`;
     $("#resultHighlight").innerHTML = `<div class="result-cards">
-      <article class="result-card primary-result"><span>${throughputTitle}</span><strong>${fmt(latest.cluster_tokens_per_s)}<small> tok/s</small></strong><small>${escapeHtml(latest.name || latest.run_id)}</small><i class="result-strategy">${escapeHtml(latestStrategy.label)}</i></article>
-      <article class="result-card"><span>TTFT · P50</span><strong>${fmt(latest.ttft_p50_s, 2)}s</strong><small>첫 토큰 지연</small></article>
-      <article class="result-card"><span>E2E · P95</span><strong>${fmt(latest.e2e_p95_s, 2)}s</strong><small>요청 완료 지연</small></article>
-      <article class="result-card"><span>SUCCESS</span><strong>${pct(Number(latest.success_rate) * 100)}</strong><small>${successDetail}</small></article>
+      <article class="result-card primary-result"><span>${throughputTitle}</span><strong>${fmt(displayedThroughput)}<small> tok/s</small></strong><small>${escapeHtml(throughputDetail)}</small><i class="result-strategy">${escapeHtml(latestStrategy.label)}</i></article>
+      <article class="result-card"><span>TTFT · P50</span><strong>${fmt(latest.ttft_p50_s, 2)}s</strong><small>${strategy === "broadcast_compare" ? "복제본 응답별 첫 토큰 지연" : "첫 토큰 지연"}</small></article>
+      <article class="result-card"><span>E2E · P95</span><strong>${fmt(latest.e2e_p95_s, 2)}s</strong><small>${strategy === "broadcast_compare" ? "복제본 응답별 완료 지연" : "요청 완료 지연"}</small></article>
+      <article class="result-card"><span>${strategy === "broadcast_compare" ? "ALL-REPLICA SUCCESS" : "SUCCESS"}</span><strong>${pct(successValue * 100)}</strong><small>${successDetail}</small></article>
     </div>`;
   } else {
-    $("#resultHighlight").innerHTML = `<div class="empty-result"><strong>완료된 측정값이 없습니다.</strong><span>최근 실행 상태: ${escapeHtml((latest?.status || "unknown").toUpperCase())}${latest?.error ? ` · ${escapeHtml(latest.error)}` : ""}</span></div>`;
+    const statuses = newestSuiteRuns.filter(Boolean).map(run => `${shortModelName(runModelId(run))}: ${(run.status || "unknown").toUpperCase()}`);
+    $("#resultHighlight").innerHTML = `<div class="empty-result"><strong>최근 ${newest?.suite_id ? "모델 suite에 " : "실행에 "}완료된 측정값이 없습니다.</strong><span>${escapeHtml(statuses.join(" · ") || "실행 기록 없음")}${newest?.error ? ` · ${escapeHtml(newest.error)}` : ""}</span></div>`;
   }
-  const hasCompletedMetrics = runs.some(run => run.status === "completed" && finite(run.cluster_tokens_per_s));
+  const newestMetricScope = newest?.suite_id ? newestSuiteRuns : [newest];
+  const hasCompletedMetrics = newestMetricScope.some(run => run?.status === "completed" && finite(run.cluster_tokens_per_s));
   $("#chartGrid").hidden = !hasCompletedMetrics || mixedAllStrategies;
   if (hasCompletedMetrics && !mixedAllStrategies) requestAnimationFrame(() => drawResultCharts(runs));
   $$('[data-run-experiment]').forEach(row => row.addEventListener("click", () => {
@@ -479,133 +653,526 @@ function renderRuns() {
   updateSummary();
 }
 
-function setupCanvas(canvas) {
-  const ratio = window.devicePixelRatio || 1;
-  const width = Math.max(canvas.clientWidth, 280);
-  const height = Number(canvas.getAttribute("height")) || 240;
+function setupCanvas(canvas, options = {}) {
+  const ratio = options.ratio || window.devicePixelRatio || 1;
+  const width = options.width || Math.max(canvas.clientWidth, 280);
+  const height = options.height || Number(canvas.getAttribute("height")) || 260;
   canvas.width = Math.round(width * ratio);
   canvas.height = Math.round(height * ratio);
+  canvas.style.width = options.cssWidth || "100%";
+  canvas.style.height = options.cssHeight || `${height}px`;
   const context = canvas.getContext("2d");
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, width, height);
-  return { context, width, height };
+  return { context, width, height, ratio };
 }
 
 function drawEmptyChart(canvas, message) {
   const { context, width, height } = setupCanvas(canvas);
+  context.fillStyle = "#f8f7f1";
+  context.fillRect(0, 0, width, height);
   context.fillStyle = "#92968f";
   context.font = "11px ui-monospace, monospace";
   context.textAlign = "center";
   context.fillText(message, width / 2, height / 2);
+  state.chartModels.delete(canvas.id);
+  const card = canvas.closest(".chart-card");
+  if (card) $$('[data-chart-png], [data-paper-export]', card).forEach(button => { button.disabled = true; });
+  const legend = $(`#${canvas.id}Legend`);
+  if (legend) legend.innerHTML = "";
 }
 
-function drawLineChart(canvas, values, labels, color = "#718f17", suffix = "") {
-  if (!values.length || !values.some(finite)) return drawEmptyChart(canvas, "표시할 측정값 없음");
-  const { context: ctx, width, height } = setupCanvas(canvas);
-  const pad = { left: 42, right: 16, top: 18, bottom: 34 };
-  const numeric = values.filter(finite).map(Number);
-  const max = Math.max(...numeric, 1) * 1.12;
-  ctx.strokeStyle = "#d9d6ca";
-  ctx.fillStyle = "#858980";
-  ctx.font = "9px ui-monospace, monospace";
-  ctx.lineWidth = 1;
-  for (let index = 0; index <= 4; index += 1) {
-    const y = pad.top + (height - pad.top - pad.bottom) * index / 4;
-    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
-    ctx.fillText(`${fmt(max * (4 - index) / 4, 1)}${suffix}`, 2, y + 3);
-  }
-  const step = values.length > 1 ? (width - pad.left - pad.right) / (values.length - 1) : 0;
-  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
-  values.forEach((value, index) => {
-    if (!finite(value)) return;
-    const x = values.length > 1 ? pad.left + step * index : width / 2;
-    const y = height - pad.bottom - Number(value) / max * (height - pad.top - pad.bottom);
-    if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-  values.forEach((value, index) => {
-    if (!finite(value)) return;
-    const x = values.length > 1 ? pad.left + step * index : width / 2;
-    const y = height - pad.bottom - Number(value) / max * (height - pad.top - pad.bottom);
-    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#858980"; ctx.textAlign = "center";
-    ctx.fillText(String(labels[index] || "").slice(0, 9), x, height - 12);
-  });
-  ctx.textAlign = "left";
+function chartInteraction(chartId) {
+  if (!state.chartInteraction.has(chartId)) state.chartInteraction.set(chartId, { hidden: new Set(), hits: [], focusIndex: -1 });
+  return state.chartInteraction.get(chartId);
 }
 
-function drawBarChart(canvas, groups, series) {
-  if (!groups.length || !series.some(item => item.values.some(finite))) return drawEmptyChart(canvas, "표시할 측정값 없음");
-  const { context: ctx, width, height } = setupCanvas(canvas);
-  const pad = { left: 38, right: 12, top: 25, bottom: 42 };
-  const all = series.flatMap(item => item.values).filter(finite).map(Number);
-  const max = Math.max(...all, 1) * 1.15;
+function chartValue(value, unit = "") {
+  if (!finite(value)) return "—";
+  const digits = Math.abs(Number(value)) < 10 ? 2 : 1;
+  return `${Number(value).toFixed(digits)}${unit ? ` ${unit}` : ""}`;
+}
+
+function ellipsis(text, limit) {
+  const value = String(text || "");
+  return value.length > limit ? `${value.slice(0, Math.max(1, limit - 1))}…` : value;
+}
+
+function drawChartCanvas(canvas, model, options = {}) {
+  const { context: ctx, width, height } = setupCanvas(canvas, options);
+  const hidden = options.hidden || new Set();
+  const activeSeries = model.series.filter(series => !hidden.has(series.label));
+  const header = options.header || 0;
+  const pad = { left: width < 430 ? 50 : 62, right: 18, top: 16 + header, bottom: 48 };
   const plotWidth = width - pad.left - pad.right;
-  const groupWidth = plotWidth / groups.length;
-  const barWidth = Math.min(26, groupWidth * 0.72 / series.length);
-  ctx.strokeStyle = "#d9d6ca"; ctx.fillStyle = "#858980"; ctx.font = "9px ui-monospace, monospace";
-  for (let index = 0; index <= 4; index += 1) {
-    const y = pad.top + (height - pad.top - pad.bottom) * index / 4;
-    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
-    ctx.fillText(fmt(max * (4 - index) / 4, 1), 2, y + 3);
-  }
-  series.forEach((item, seriesIndex) => {
-    item.values.forEach((value, groupIndex) => {
-      if (!finite(value)) return;
-      const x = pad.left + groupWidth * groupIndex + groupWidth / 2 + (seriesIndex - (series.length - 1) / 2) * barWidth;
-      const barHeight = Number(value) / max * (height - pad.top - pad.bottom);
-      ctx.fillStyle = item.color;
-      ctx.fillRect(x - barWidth * 0.42, height - pad.bottom - barHeight, barWidth * 0.84, barHeight);
+  const plotHeight = height - pad.top - pad.bottom;
+  const all = activeSeries.flatMap(series => series.values).filter(finite).map(Number);
+  const maximum = Math.max(...all, 1) * 1.12;
+  const hits = [];
+  ctx.fillStyle = options.background || "#f8f7f1";
+  ctx.fillRect(0, 0, width, height);
+  if (header) {
+    ctx.fillStyle = "#16251e"; ctx.fillRect(0, 0, width, header - 4);
+    ctx.fillStyle = "#c7f25b"; ctx.font = `700 ${Math.max(16, width / 52)}px ${getComputedStyle(document.documentElement).getPropertyValue("--sans")}`;
+    ctx.fillText(model.title, 28, 34);
+    ctx.fillStyle = "rgba(255,255,255,.58)"; ctx.font = `500 ${Math.max(10, width / 105)}px ui-monospace, monospace`;
+    ctx.fillText(ellipsis(model.subtitle || strategyMeta(model.strategy).label, 120), 28, 55);
+    let legendX = 28; let legendY = 79;
+    activeSeries.forEach(series => {
+      const label = ellipsis(series.label, 22); const itemWidth = 32 + ctx.measureText(label).width;
+      if (legendX + itemWidth > width - 24) { legendX = 28; legendY += 16; }
+      ctx.fillStyle = series.color; ctx.fillRect(legendX, legendY - 7, 16, 3);
+      ctx.fillStyle = "rgba(255,255,255,.76)"; ctx.fillText(label, legendX + 22, legendY);
+      legendX += itemWidth + 16;
     });
+  }
+  ctx.strokeStyle = "#dedbd0"; ctx.fillStyle = "#747a72"; ctx.font = "9px ui-monospace, monospace"; ctx.lineWidth = 1;
+  for (let tick = 0; tick <= 4; tick += 1) {
+    const y = pad.top + plotHeight * tick / 4;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
+    ctx.textAlign = "right"; ctx.fillText(chartValue(maximum * (4 - tick) / 4), pad.left - 8, y + 3);
+  }
+  ctx.save(); ctx.translate(13, pad.top + plotHeight / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#5d645d"; ctx.font = "600 8px ui-monospace, monospace"; ctx.fillText(`${model.yLabel}${model.unit ? ` (${model.unit})` : ""}`, 0, 0); ctx.restore();
+  if (!activeSeries.length || !all.length) {
+    ctx.fillStyle = "#92968f"; ctx.textAlign = "center"; ctx.fillText("표시할 계열을 범례에서 선택하세요", pad.left + plotWidth / 2, pad.top + plotHeight / 2);
+    return { hits, width, height };
+  }
+  const groupWidth = plotWidth / Math.max(1, model.labels.length);
+  if (model.type === "line") {
+    activeSeries.forEach(series => {
+      ctx.strokeStyle = series.color; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
+      let drawing = false; ctx.beginPath();
+      series.values.forEach((value, index) => {
+        if (!finite(value)) { drawing = false; return; }
+        const x = model.labels.length > 1 ? pad.left + plotWidth * index / (model.labels.length - 1) : pad.left + plotWidth / 2;
+        const y = pad.top + plotHeight - Number(value) / maximum * plotHeight;
+        if (!drawing) { ctx.moveTo(x, y); drawing = true; } else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      series.values.forEach((value, index) => {
+        if (!finite(value)) return;
+        const x = model.labels.length > 1 ? pad.left + plotWidth * index / (model.labels.length - 1) : pad.left + plotWidth / 2;
+        const y = pad.top + plotHeight - Number(value) / maximum * plotHeight;
+        ctx.fillStyle = series.color; ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+        hits.push({ x, y, radius: 13, label: model.labels[index], series: series.label, value: Number(value), unit: model.unit, detail: series.details?.[index], color: series.color });
+      });
+    });
+  } else {
+    const barWidth = Math.min(42, groupWidth * .72 / activeSeries.length);
+    activeSeries.forEach((series, seriesIndex) => series.values.forEach((value, groupIndex) => {
+      if (!finite(value)) return;
+      const center = pad.left + groupWidth * groupIndex + groupWidth / 2 + (seriesIndex - (activeSeries.length - 1) / 2) * barWidth;
+      const barHeight = Number(value) / maximum * plotHeight;
+      const x = center - barWidth * .40; const y = pad.top + plotHeight - barHeight; const barRenderWidth = barWidth * .80;
+      ctx.fillStyle = series.color; ctx.fillRect(x, y, barRenderWidth, barHeight);
+      hits.push({ x: center, y, width: Math.max(barRenderWidth, 16), height: Math.max(barHeight, 12), label: model.labels[groupIndex], series: series.label, value: Number(value), unit: model.unit, detail: series.details?.[groupIndex], color: series.color });
+    }));
+  }
+  const labelEvery = Math.max(1, Math.ceil(model.labels.length / Math.max(3, Math.floor(plotWidth / 75))));
+  ctx.fillStyle = "#747a72"; ctx.font = "8px ui-monospace, monospace"; ctx.textAlign = "center";
+  model.labels.forEach((label, index) => {
+    if (index % labelEvery && index !== model.labels.length - 1) return;
+    const x = model.type === "line" && model.labels.length > 1 ? pad.left + plotWidth * index / (model.labels.length - 1) : pad.left + groupWidth * index + groupWidth / 2;
+    ctx.fillText(ellipsis(label, width < 500 ? 9 : 14), x, height - 25);
   });
-  ctx.textAlign = "center"; ctx.fillStyle = "#858980";
-  groups.forEach((label, index) => ctx.fillText(String(label).slice(0, 10), pad.left + groupWidth * index + groupWidth / 2, height - 18));
-  ctx.textAlign = "left";
-  series.forEach((item, index) => {
-    const x = pad.left + index * 86;
-    ctx.fillStyle = item.color; ctx.fillRect(x, 8, 9, 9);
-    ctx.fillStyle = "#5f645d"; ctx.fillText(item.label, x + 13, 16);
+  if (model.xLabel) { ctx.fillStyle = "#5d645d"; ctx.font = "600 8px ui-monospace, monospace"; ctx.fillText(model.xLabel, pad.left + plotWidth / 2, height - 6); }
+  return { hits, width, height };
+}
+
+function renderChartLegend(canvas, model) {
+  const target = $(`#${canvas.id}Legend`);
+  if (!target) return;
+  const interaction = chartInteraction(canvas.id);
+  target.innerHTML = model.series.map(series => `<button type="button" style="--series-color:${series.color}" data-chart-series="${escapeHtml(series.label)}" aria-pressed="${interaction.hidden.has(series.label) ? "false" : "true"}" title="${escapeHtml(series.label)} 계열 표시 전환">${escapeHtml(series.label)}</button>`).join("");
+}
+
+function showChartTooltip(canvas, hit, keyboard = false) {
+  const tooltip = $(`#${canvas.id}Tooltip`);
+  if (!tooltip || !hit) return;
+  const left = Math.max(70, Math.min(canvas.clientWidth - 70, hit.x));
+  const top = Math.max(66, hit.y);
+  tooltip.style.left = `${left}px`; tooltip.style.top = `${top}px`;
+  tooltip.innerHTML = `<strong>${escapeHtml(hit.label)}</strong><span>${escapeHtml(hit.series)} · ${escapeHtml(chartValue(hit.value, hit.unit))}</span>${hit.detail ? `<span>${escapeHtml(hit.detail)}</span>` : ""}`;
+  tooltip.hidden = false;
+  if (keyboard) canvas.setAttribute("aria-label", `${hit.label}, ${hit.series}, ${chartValue(hit.value, hit.unit)}${hit.detail ? `, ${hit.detail}` : ""}. 화살표 키로 다음 값을 탐색하세요.`);
+}
+
+function hideChartTooltip(canvas) {
+  const tooltip = $(`#${canvas.id}Tooltip`);
+  if (tooltip) tooltip.hidden = true;
+}
+
+function bindChartInteraction(canvas) {
+  if (canvas.dataset.interactiveBound) return;
+  canvas.dataset.interactiveBound = "true";
+  const findHit = event => {
+    const interaction = chartInteraction(canvas.id);
+    const rect = canvas.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * ((interaction.width || rect.width) / rect.width);
+    const y = (event.clientY - rect.top) * ((interaction.height || rect.height) / rect.height);
+    return interaction.hits.reduce((best, hit) => {
+      const distance = Math.hypot(hit.x - x, Math.max(0, hit.y - y));
+      return !best || distance < best.distance ? { hit, distance } : best;
+    }, null);
+  };
+  canvas.addEventListener("pointermove", event => { const match = findHit(event); if (match && match.distance < 45) showChartTooltip(canvas, match.hit); else hideChartTooltip(canvas); });
+  canvas.addEventListener("pointerdown", event => { const match = findHit(event); if (match && match.distance < 55) showChartTooltip(canvas, match.hit); });
+  canvas.addEventListener("pointerleave", () => hideChartTooltip(canvas));
+  canvas.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "Escape"].includes(event.key)) return;
+    const interaction = chartInteraction(canvas.id);
+    if (event.key === "Escape") { hideChartTooltip(canvas); return; }
+    if (!interaction.hits.length) return;
+    event.preventDefault();
+    if (event.key === "Home") interaction.focusIndex = 0;
+    else if (event.key === "End") interaction.focusIndex = interaction.hits.length - 1;
+    else interaction.focusIndex = (interaction.focusIndex + (["ArrowRight", "ArrowDown"].includes(event.key) ? 1 : -1) + interaction.hits.length) % interaction.hits.length;
+    showChartTooltip(canvas, interaction.hits[interaction.focusIndex], true);
   });
+}
+
+function setChartModel(chartId, model) {
+  const canvas = $(`#${chartId}`);
+  if (!canvas || !model?.series?.some(series => series.values.some(finite))) return drawEmptyChart(canvas, model?.emptyMessage || "표시할 측정값 없음");
+  model.series = model.series.map((series, index) => ({ ...series, color: series.color || DASHBOARD_COLORS[index % DASHBOARD_COLORS.length] }));
+  state.chartModels.set(chartId, model);
+  const interaction = chartInteraction(chartId);
+  const rendered = drawChartCanvas(canvas, model, { hidden: interaction.hidden });
+  interaction.hits = rendered.hits; interaction.width = rendered.width; interaction.height = rendered.height;
+  renderChartLegend(canvas, model); bindChartInteraction(canvas);
+  const card = canvas.closest(".chart-card");
+  if (card) $$('[data-chart-png], [data-paper-export]', card).forEach(button => { button.disabled = false; });
+}
+
+function scenarioModelsForRuns(runs) {
+  const modelNames = runs.map(run => shortModelName(runModelId(run)));
+  const labels = [...new Set(runs.flatMap(run => (run.scenario_summaries || []).map(item => item.label || item.scenario_id)))];
+  return {
+    labels,
+    series: runs.map((run, index) => ({
+      label: modelNames[index], color: DASHBOARD_COLORS[index % DASHBOARD_COLORS.length],
+      values: labels.map(label => (run.scenario_summaries || []).find(item => (item.label || item.scenario_id) === label)?.cluster_tokens_per_s),
+      details: labels.map(label => { const item = (run.scenario_summaries || []).find(entry => (entry.label || entry.scenario_id) === label); return item ? `${(item.nodes || []).length} nodes${finite(item.speedup_vs_baseline) ? ` · ${fmt(item.speedup_vs_baseline, 2)}×` : ""}` : ""; }),
+    })),
+  };
 }
 
 function drawResultCharts(runs) {
-  const completed = runs.filter(run => run.status === "completed").slice(0, 10).reverse();
-  drawLineChart(
-    $("#throughputChart"),
-    completed.map(run => run.cluster_tokens_per_s),
-    completed.map(run => String(run.run_id || "").slice(9, 15)),
-    "#718f17",
-  );
-  const latencyRuns = completed.slice(-6);
-  drawBarChart(
-    $("#latencyChart"),
-    latencyRuns.map(run => String(run.run_id || "").slice(9, 15)),
-    [
-      { label: "TTFT p50", color: "#718f17", values: latencyRuns.map(run => run.ttft_p50_s) },
-      { label: "E2E p95", color: "#e57c38", values: latencyRuns.map(run => run.e2e_p95_s) },
-    ],
-  );
-  const latest = [...completed].reverse().find(run => run.per_node && Object.keys(run.per_node).length);
-  if (!latest) return drawEmptyChart($("#nodeChart"), "노드별 지표가 있는 새 실행이 필요합니다");
-  if (runStrategy(latest) === "model_parallel_rpc") {
+  const latestArtifact = latestResultArtifact(runs, filteredSuites());
+  const newestSuite = latestArtifact.suite;
+  const newestRun = newestSuite
+    ? runs.find(run => run.suite_id === newestSuite.suite_id) || { suite_id: newestSuite.suite_id, model_count: newestSuite.model_count }
+    : latestArtifact.run;
+  if (!newestRun) return;
+  const latestSuiteActual = newestRun.suite_id
+    ? runs.filter(run => run.suite_id === newestRun.suite_id).sort((a, b) => Number(a.model_index || 0) - Number(b.model_index || 0))
+    : [newestRun];
+  const latestSuiteAll = newestSuite ? suiteOutcomeRuns(newestSuite, latestSuiteActual) : latestSuiteActual;
+  const latestSuiteCompleted = latestSuiteActual.filter(run => run.status === "completed" && finite(run.cluster_tokens_per_s));
+  const allCompleted = runs.filter(run => run.status === "completed" && finite(run.cluster_tokens_per_s));
+  if (!latestSuiteCompleted.length) return;
+  const latestRun = latestSuiteCompleted.at(-1);
+  const strategy = runStrategy(latestRun);
+  const completed = allCompleted.slice(0, 18).reverse();
+  const isSuiteComparison = Boolean(newestRun.suite_id) && Number(newestRun.model_count || latestSuiteAll.length) > 1;
+  const comparisonRuns = isSuiteComparison ? latestSuiteCompleted : [];
+  const omittedModels = isSuiteComparison ? latestSuiteAll.filter(run => run.status !== "completed" || !finite(run.cluster_tokens_per_s)) : [];
+  const strategyLabel = strategyMeta(strategy).label;
+  const cleanupWarnings = latestSuiteAll.filter(run => run.cleanup_status === "failed");
+  const omittedSuffix = `${omittedModels.length ? ` · 미완료 ${omittedModels.length}개 제외: ${omittedModels.map(omittedModelLabel).join(", ")}` : ""}${cleanupWarnings.length ? ` · 정리 실패: ${cleanupWarnings.map(run => shortModelName(runModelId(run))).join(", ")}` : ""}`;
+  const throughputMeaning = strategy === "broadcast_compare" ? "복제본 합산 생성량 (사용자 처리량 아님)" : strategy === "node_sweep" ? "스윕 시나리오 처리량" : strategy === "model_parallel_rpc" ? "분할 모델 공동 처리량" : "클러스터 처리량";
+
+  if (strategy === "node_sweep") {
+    const scenarioSource = comparisonRuns.length ? comparisonRuns : [latestRun];
+    const scenarioData = scenarioModelsForRuns(scenarioSource);
+    setChartModel("throughputChart", { type: "bar", title: comparisonRuns.length ? "모델별 노드 스케일링" : "노드 수 스윕 처리량", subtitle: `${strategyLabel} · 순차 전체 평균 제외${omittedSuffix}`, xLabel: "Sweep scenario", yLabel: "Throughput", unit: "tok/s", strategy, labels: scenarioData.labels, series: scenarioData.series, runs: scenarioSource });
+    const latencyLabels = scenarioData.labels;
+    const latestScenarios = latestRun.scenario_summaries || [];
+    setChartModel("latencyChart", { type: "bar", title: "스윕 단계별 지연", subtitle: shortModelName(runModelId(latestRun)), xLabel: "Sweep scenario", yLabel: "Latency", unit: "s", strategy, labels: latencyLabels, series: [
+      { label: "TTFT p50", values: latencyLabels.map(label => latestScenarios.find(item => (item.label || item.scenario_id) === label)?.ttft_p50_s) },
+      { label: "E2E p95", values: latencyLabels.map(label => latestScenarios.find(item => (item.label || item.scenario_id) === label)?.e2e_p95_s) },
+    ], runs: [latestRun] });
+    const cumulative = sweepIsCumulative(latestScenarios);
+    $("#nodeChartTitle").textContent = cumulative ? "스케일링 속도 향상" : "개별 노드 처리량";
+    if (cumulative) setChartModel("nodeChart", { type: "line", title: "기준 대비 속도 향상", subtitle: "첫 단계 = 1.0× · 효율은 툴팁에 표시", xLabel: "Sweep scenario", yLabel: "Speedup", unit: "×", strategy, labels: latencyLabels, series: [{ label: "Speedup", values: latestScenarios.map(item => item.speedup_vs_baseline), details: latestScenarios.map(item => finite(item.scaling_efficiency) ? `scaling efficiency ${fmt(Number(item.scaling_efficiency) * 100, 1)}%` : "") }], runs: [latestRun] });
+    else setChartModel("nodeChart", { type: "bar", title: "개별 노드 처리량", subtitle: "개별 모드는 scaling efficiency를 표시하지 않음", xLabel: "Node", yLabel: "Throughput", unit: "tok/s", strategy, labels: latencyLabels, series: [{ label: "Node throughput", values: latestScenarios.map(item => item.cluster_tokens_per_s) }], runs: [latestRun] });
+    return;
+  }
+
+  if (comparisonRuns.length) {
+    const labels = comparisonRuns.map(run => shortModelName(runModelId(run)));
+    setChartModel("throughputChart", { type: "bar", title: `모델별 ${throughputMeaning}`, subtitle: `${strategyLabel} · suite ${latestRun.suite_id}${omittedSuffix}`, xLabel: "Model", yLabel: throughputMeaning, unit: "tok/s", strategy, labels, series: [{ label: throughputMeaning, values: comparisonRuns.map(runDisplayThroughput) }], runs: comparisonRuns });
+    setChartModel("latencyChart", { type: "bar", title: "모델별 응답 지연", subtitle: `${strategyLabel} · 동일 suite${strategy === "broadcast_compare" ? " · 복제본 응답별 분포" : ""}${omittedSuffix}`, xLabel: "Model", yLabel: "Latency", unit: "s", strategy, labels, series: [
+      { label: "TTFT p50", values: comparisonRuns.map(run => run.ttft_p50_s) }, { label: "E2E p95", values: comparisonRuns.map(run => run.e2e_p95_s) },
+    ], runs: comparisonRuns });
+  } else {
+    const labels = completed.map(run => String(run.run_id || "").slice(9, 15));
+    const modelNames = [...new Set(completed.map(run => shortModelName(runModelId(run))))];
+    setChartModel("throughputChart", { type: "line", title: throughputMeaning, subtitle: `${strategyLabel} · 실행별 추이`, xLabel: "Run", yLabel: throughputMeaning, unit: "tok/s", strategy, labels, series: modelNames.map(name => ({ label: name, values: completed.map(run => shortModelName(runModelId(run)) === name ? runDisplayThroughput(run) : null), details: completed.map(run => run.run_id) })), runs: completed });
+    const latencyRuns = completed.slice(-8);
+    setChartModel("latencyChart", { type: "bar", title: "TTFT / E2E 지연", subtitle: `${strategyLabel} · 최근 실행`, xLabel: "Run", yLabel: "Latency", unit: "s", strategy, labels: latencyRuns.map(run => String(run.run_id || "").slice(9, 15)), series: [
+      { label: "TTFT p50", values: latencyRuns.map(run => run.ttft_p50_s), details: latencyRuns.map(run => shortModelName(runModelId(run))) },
+      { label: "E2E p95", values: latencyRuns.map(run => run.e2e_p95_s), details: latencyRuns.map(run => shortModelName(runModelId(run))) },
+    ], runs: latencyRuns });
+  }
+
+  if (strategy === "model_parallel_rpc") {
     $("#nodeChartTitle").textContent = "분할 모델 공동 처리량";
-    return drawEmptyChart($("#nodeChart"), "RPC 분할은 워커별 tok/s를 계산하지 않습니다");
+    const source = comparisonRuns.length ? comparisonRuns : [latestRun];
+    setChartModel("nodeChart", { type: "bar", title: "RPC coordinator 공동 처리량", subtitle: "워커별 tok/s는 계산하지 않음", xLabel: "Sharded model", yLabel: "Coordinator throughput", unit: "tok/s", strategy, labels: source.map(run => shortModelName(runModelId(run))), series: [{ label: "Sharded model", values: source.map(run => run.cluster_tokens_per_s), details: source.map(run => `${run.topology?.participants?.length || run.nodes?.length || "—"} participants`) }], runs: source });
+    return;
   }
-  if (runStrategy(latest) === "node_sweep" && Array.isArray(latest.scenario_summaries)) {
-    $("#nodeChartTitle").textContent = "스윕 단계별 처리량";
-    return drawBarChart(
-      $("#nodeChart"),
-      latest.scenario_summaries.map(item => item.label || item.scenario_id),
-      [{ label: "cluster tok/s", color: "#163126", values: latest.scenario_summaries.map(item => item.cluster_tokens_per_s) }],
-    );
+  const detailRun = latestRun.per_node && Object.keys(latestRun.per_node).length ? latestRun : [...completed].reverse().find(run => run.per_node && Object.keys(run.per_node).length);
+  if (!detailRun) return drawEmptyChart($("#nodeChart"), "노드별 지표가 있는 새 실행이 필요합니다");
+  const nodeNames = Object.keys(detailRun.per_node);
+  const broadcast = strategy === "broadcast_compare";
+  $("#nodeChartTitle").textContent = broadcast ? "복제본별 생성률" : "노드별 기여도";
+  setChartModel("nodeChart", { type: "bar", title: broadcast ? "복제본별 토큰 생성률" : "노드별 유효 처리량", subtitle: broadcast ? `답변 일치 ${pct(Number(detailRun.answer_agreement_rate || 0) * 100)} · 사용자 처리량 아님` : shortModelName(runModelId(detailRun)), xLabel: "Node", yLabel: broadcast ? "Replica generation rate" : "Effective throughput", unit: "tok/s", strategy, labels: nodeNames, series: [{ label: broadcast ? "Replica tok/s" : "Effective tok/s", values: nodeNames.map(name => detailRun.per_node[name].effective_tokens_per_s) }], runs: [detailRun] });
+}
+
+function safeFilename(value) {
+  return String(value || "chart").normalize("NFKD").replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 90) || "chart";
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = filename; document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function pngBytesWithDpi(arrayBuffer, dpi) {
+  const source = new Uint8Array(arrayBuffer);
+  if (source.length < 33 || String.fromCharCode(...source.slice(1, 4)) !== "PNG") return source;
+  const type = new TextEncoder().encode("pHYs");
+  const data = new Uint8Array(9); const view = new DataView(data.buffer); const pixelsPerMeter = Math.round(Number(dpi) / .0254);
+  view.setUint32(0, pixelsPerMeter); view.setUint32(4, pixelsPerMeter); data[8] = 1;
+  const crcInput = new Uint8Array(13); crcInput.set(type); crcInput.set(data, 4);
+  let crc = 0xffffffff;
+  for (const byte of crcInput) { crc ^= byte; for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0); }
+  crc = (crc ^ 0xffffffff) >>> 0;
+  const chunk = new Uint8Array(21); const chunkView = new DataView(chunk.buffer); chunkView.setUint32(0, 9); chunk.set(type, 4); chunk.set(data, 8); chunkView.setUint32(17, crc);
+  const ihdrEnd = 8 + 4 + 4 + 13 + 4;
+  let insertAt = ihdrEnd; let existingEnd = -1;
+  while (insertAt + 12 <= source.length) {
+    const length = new DataView(source.buffer, source.byteOffset + insertAt, 4).getUint32(0);
+    const kind = String.fromCharCode(...source.slice(insertAt + 4, insertAt + 8));
+    if (kind === "pHYs") { existingEnd = insertAt + 12 + length; break; }
+    if (kind === "IDAT" || kind === "IEND") break;
+    insertAt += 12 + length;
   }
-  $("#nodeChartTitle").textContent = "노드별 기여도";
-  const nodeNames = Object.keys(latest.per_node);
-  drawBarChart(
-    $("#nodeChart"),
-    nodeNames,
-    [{ label: "effective tok/s", color: "#163126", values: nodeNames.map(name => latest.per_node[name].effective_tokens_per_s) }],
-  );
+  const removed = existingEnd > 0 ? existingEnd - insertAt : 0;
+  const output = new Uint8Array(source.length + chunk.length - removed); output.set(source.slice(0, insertAt)); output.set(chunk, insertAt); output.set(source.slice(existingEnd > 0 ? existingEnd : insertAt), insertAt + chunk.length);
+  return output;
+}
+
+function xmlEscape(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[char]));
+}
+
+function canonicalExperimentId(run) {
+  return run.experiment_id || `legacy-${String(run.name || "unnamed").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "experiment"}`;
+}
+
+function publicationComparisonSignature(run) {
+  const parameters = run.benchmark_parameters || {};
+  const actual = (Array.isArray(run.actual_model_config) ? run.actual_model_config : [run.actual_model_config || {}])
+    .map(item => ({ node: item.node || "", n_ctx: item.n_ctx, n_gpu_layers: item.n_gpu_layers, n_batch: item.n_batch, inference_threads: item.inference_threads }))
+    .sort((a, b) => a.node.localeCompare(b.node));
+  const topology = run.topology || {};
+  return JSON.stringify({
+    strategy: runStrategy(run),
+    prompt_sha256: parameters.prompt_sha256 || "legacy-unknown",
+    n_ctx: parameters.n_ctx,
+    effective_model_config: actual,
+    requests: parameters.requests_per_scenario ?? parameters.requests,
+    concurrency: parameters.concurrency,
+    max_tokens: parameters.max_tokens,
+    temperature: parameters.temperature,
+    top_p: parameters.top_p,
+    seed: parameters.seed,
+    warmup_requests: parameters.warmup_requests,
+    nodes: [...(run.nodes || [])].sort(),
+    topology: {
+      engine: topology.engine,
+      runtime_commit: topology.runtime_commit,
+      split_mode: topology.split_mode,
+      split_policy: topology.split_policy,
+      tensor_split: topology.tensor_split,
+      resolved_device_order: topology.resolved_device_order,
+    },
+  });
+}
+
+function publicationMetadata(model) {
+  const run = model.runs?.[0] || {};
+  const parameters = run.benchmark_parameters || {};
+  const actualConfigs = Array.isArray(run.actual_model_config) ? run.actual_model_config : [run.actual_model_config || {}];
+  const actualValues = key => [...new Set(actualConfigs.map(item => item?.[key]).filter(value => value !== undefined && value !== null))];
+  const actualLabel = (key, requested) => {
+    const values = actualValues(key);
+    if (values.length === 1) return String(values[0]);
+    if (values.length > 1) return `${Math.min(...values.map(Number))}–${Math.max(...values.map(Number))}`;
+    return requested !== undefined && requested !== null ? `${requested} requested` : "";
+  };
+  const modelId = parameters.model_id || runModelId(run);
+  const ctxLabel = actualLabel("n_ctx", parameters.n_ctx);
+  const gpuLayerLabel = runStrategy(run) === "model_parallel_rpc"
+    ? String(parameters.effective_n_gpu_layers || run.topology?.requested_gpu_layers || "all")
+    : actualLabel("n_gpu_layers", parameters.requested_n_gpu_layers ?? parameters.n_gpu_layers);
+  const fields = [
+    model.runs?.length > 1 ? `${model.runs.length} models/runs` : shortModelName(modelId),
+    ctxLabel ? `ctx ${ctxLabel}` : "",
+    gpuLayerLabel ? `GPU layers ${gpuLayerLabel}` : "",
+    finite(parameters.requests_per_scenario ?? parameters.requests) ? `n=${parameters.requests_per_scenario ?? parameters.requests}` : "",
+    finite(parameters.concurrency) ? `concurrency ${parameters.concurrency}` : "",
+    finite(parameters.max_tokens) ? `max ${parameters.max_tokens} tokens` : "",
+    finite(parameters.seed) ? `seed ${parameters.seed}` : "",
+  ].filter(Boolean);
+  return fields.join(" · ") || `${strategyMeta(model.strategy).label} · 이전 결과(상세 실행 파라미터 미기록)`;
+}
+
+function buildPublicationSvg(model, options = {}) {
+  const width = Math.max(640, Math.round(Number(options.width) || 1004));
+  const sizeMm = Number(options.sizeMm) || 0;
+  const physicalWidthMm = sizeMm || 85;
+  const unitsPerPoint = width / (physicalWidthMm / 25.4 * 72);
+  const pointSize = points => (points * unitsPerPoint).toFixed(2);
+  const baseHeight = Math.round(width * (options.aspectRatio || .64));
+  const series = model.series.map((item, index) => ({ ...item, color: PUBLICATION_COLORS[index % PUBLICATION_COLORS.length] }));
+  const legendFontSize = Number(pointSize(7.5));
+  const legendAvailable = width * .86;
+  const legendEntries = series.map(item => {
+    const label = ellipsis(item.label, 28);
+    return { item, label, width: Math.min(legendAvailable, width * .05 + label.length * legendFontSize * .58) };
+  });
+  let legendRows = 1; let legendCursor = 0;
+  legendEntries.forEach(entry => {
+    if (legendCursor > 0 && legendCursor + entry.width > legendAvailable) { legendRows += 1; legendCursor = 0; }
+    legendCursor += entry.width;
+  });
+  const legendRowHeight = Number(pointSize(10));
+  const legendExtraHeight = Math.max(0, legendRows - 1) * legendRowHeight;
+  const height = Math.round(baseHeight + legendExtraHeight);
+  const svgWidth = sizeMm ? `${sizeMm}mm` : String(width);
+  const svgHeight = sizeMm ? `${(sizeMm * height / width).toFixed(2)}mm` : String(height);
+  const includeTitle = options.includeTitle !== false;
+  const showValues = Boolean(options.showValues);
+  const title = options.title || model.title;
+  const subtitle = options.subtitle || publicationMetadata(model);
+  const pad = { left: Math.round(width * .105), right: Math.round(width * .035), top: (includeTitle ? Math.round(baseHeight * .18) : Math.round(baseHeight * .08)) + legendExtraHeight, bottom: Math.round(baseHeight * .16) };
+  const plotWidth = width - pad.left - pad.right; const plotHeight = height - pad.top - pad.bottom;
+  const all = series.flatMap(item => item.values).filter(finite).map(Number);
+  const maximum = Math.max(...all, 1) * 1.12;
+  const font = "Arial, Noto Sans CJK KR, Noto Sans KR, sans-serif";
+  const elements = [`<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="figure-title figure-desc">`, `<title id="figure-title">${xmlEscape(title)}</title>`, `<desc id="figure-desc">${xmlEscape(`${subtitle}. ${model.yLabel} by ${model.xLabel}.`)}</desc>`, `<rect width="100%" height="100%" fill="#ffffff"/>`];
+  if (includeTitle) {
+    elements.push(`<text x="${pad.left}" y="${Math.round(baseHeight * .07)}" font-family="${font}" font-size="${pointSize(11)}" font-weight="700" fill="#111111">${xmlEscape(title)}</text>`);
+    elements.push(`<text x="${pad.left}" y="${Math.round(baseHeight * .115)}" font-family="${font}" font-size="${pointSize(7.5)}" fill="#444444">${xmlEscape(ellipsis(subtitle, width < 900 ? 120 : 180))}</text>`);
+  }
+  for (let tick = 0; tick <= 5; tick += 1) {
+    const y = pad.top + plotHeight * tick / 5; const value = maximum * (5 - tick) / 5;
+    elements.push(`<line x1="${pad.left}" y1="${y.toFixed(2)}" x2="${width - pad.right}" y2="${y.toFixed(2)}" stroke="${tick === 5 ? "#333333" : "#dddddd"}" stroke-width="${tick === 5 ? 1.4 : 1}"/>`);
+    elements.push(`<text x="${pad.left - 12}" y="${(y + 4).toFixed(2)}" text-anchor="end" font-family="${font}" font-size="${pointSize(7.5)}" fill="#222222">${xmlEscape(chartValue(value))}</text>`);
+  }
+  elements.push(`<text transform="translate(${Math.round(width * .026)},${pad.top + plotHeight / 2}) rotate(-90)" text-anchor="middle" font-family="${font}" font-size="${pointSize(8)}" font-weight="600" fill="#111111">${xmlEscape(`${model.yLabel}${model.unit ? ` (${model.unit})` : ""}`)}</text>`);
+  const groupWidth = plotWidth / Math.max(1, model.labels.length);
+  if (model.type === "line") {
+    series.forEach((item, seriesIndex) => {
+      let path = ""; let active = false;
+      item.values.forEach((value, index) => {
+        if (!finite(value)) { active = false; return; }
+        const x = model.labels.length > 1 ? pad.left + plotWidth * index / (model.labels.length - 1) : pad.left + plotWidth / 2;
+        const y = pad.top + plotHeight - Number(value) / maximum * plotHeight;
+        path += `${active ? " L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`; active = true;
+      });
+      elements.push(`<path d="${path}" fill="none" stroke="${item.color}" stroke-width="${Math.max(2, width * .003)}"/>`);
+      item.values.forEach((value, index) => {
+        if (!finite(value)) return;
+        const x = model.labels.length > 1 ? pad.left + plotWidth * index / (model.labels.length - 1) : pad.left + plotWidth / 2;
+        const y = pad.top + plotHeight - Number(value) / maximum * plotHeight;
+        elements.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${Math.max(3, width * .005)}" fill="${item.color}" stroke="#ffffff" stroke-width="1.5"/>`);
+        if (showValues) elements.push(`<text x="${x.toFixed(2)}" y="${(y - 10).toFixed(2)}" text-anchor="middle" font-family="${font}" font-size="${pointSize(7.5)}" fill="#111111">${xmlEscape(chartValue(value))}</text>`);
+      });
+    });
+  } else {
+    const barWidth = Math.min(width * .065, groupWidth * .72 / series.length);
+    series.forEach((item, seriesIndex) => item.values.forEach((value, groupIndex) => {
+      if (!finite(value)) return;
+      const center = pad.left + groupWidth * groupIndex + groupWidth / 2 + (seriesIndex - (series.length - 1) / 2) * barWidth;
+      const barHeight = Number(value) / maximum * plotHeight; const x = center - barWidth * .4; const y = pad.top + plotHeight - barHeight;
+      elements.push(`<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${(barWidth * .8).toFixed(2)}" height="${barHeight.toFixed(2)}" fill="${item.color}"/>`);
+      if (showValues) elements.push(`<text x="${center.toFixed(2)}" y="${(y - 9).toFixed(2)}" text-anchor="middle" font-family="${font}" font-size="${pointSize(7.5)}" fill="#111111">${xmlEscape(chartValue(value))}</text>`);
+    }));
+  }
+  const every = Math.max(1, Math.ceil(model.labels.length / Math.max(3, Math.floor(plotWidth / (width * .11)))));
+  model.labels.forEach((label, index) => {
+    if (index % every && index !== model.labels.length - 1) return;
+    const x = model.type === "line" && model.labels.length > 1 ? pad.left + plotWidth * index / (model.labels.length - 1) : pad.left + groupWidth * index + groupWidth / 2;
+    elements.push(`<text x="${x.toFixed(2)}" y="${height - pad.bottom + Math.round(baseHeight * .045)}" text-anchor="middle" font-family="${font}" font-size="${pointSize(7)}" fill="#222222">${xmlEscape(ellipsis(label, width < 900 ? 11 : 18))}</text>`);
+  });
+  elements.push(`<text x="${pad.left + plotWidth / 2}" y="${height - Math.round(baseHeight * .025)}" text-anchor="middle" font-family="${font}" font-size="${pointSize(8)}" font-weight="600" fill="#111111">${xmlEscape(model.xLabel || "")}</text>`);
+  const legendStartY = includeTitle ? Math.round(baseHeight * .147) : Math.round(baseHeight * .038); let legendX = pad.left; let legendY = legendStartY;
+  legendEntries.forEach(entry => {
+    if (legendX > pad.left && legendX + entry.width > width - pad.right) { legendX = pad.left; legendY += legendRowHeight; }
+    elements.push(`<rect x="${legendX}" y="${legendY - width * .008}" width="${width * .022}" height="${width * .006}" fill="${entry.item.color}"/><text x="${legendX + width * .028}" y="${legendY}" font-family="${font}" font-size="${pointSize(7.5)}" fill="#222222">${xmlEscape(entry.label)}</text>`);
+    legendX += entry.width;
+  });
+  elements.push(`<metadata>${xmlEscape(JSON.stringify({ strategy: model.strategy, title, subtitle, generated_at: options.generatedAt || "", models: model.runs?.map(runModelId) || [] }))}</metadata>`, `</svg>`);
+  return { svg: elements.join(""), width, height, sizeMm };
+}
+
+function downloadDashboardPng(chartId) {
+  const model = state.chartModels.get(chartId); if (!model) return;
+  const source = $(`#${chartId}`); const width = Math.max(1000, Math.round(source.clientWidth * 2)); const height = Math.round(width * .52);
+  const canvas = document.createElement("canvas");
+  drawChartCanvas(canvas, model, { width, height, ratio: 1, header: 104, background: "#f8f7f1", hidden: chartInteraction(chartId).hidden, cssWidth: `${width}px`, cssHeight: `${height}px` });
+  canvas.toBlob(blob => blob && downloadBlob(blob, `${safeFilename(model.title)}-dashboard.png`), "image/png");
+}
+
+function updatePublicationSpec() {
+  const sizeMm = $("#publicationSizeSelect").value === "two" ? 180 : 85;
+  const format = $("#publicationFormatSelect").value;
+  const dpi = Number($("#publicationDpiSelect").value);
+  const pixels = Math.round(sizeMm / 25.4 * dpi);
+  $("#publicationDpiField").hidden = format !== "png";
+  $("#publicationOutputSpec").textContent = `${sizeMm} mm · ${format.toUpperCase()}`;
+  $("#publicationPixelSpec").textContent = format === "png" ? `${pixels} px · ${dpi} DPI` : "벡터 해상도";
+}
+
+function openPublicationDialog(chartId) {
+  const model = state.chartModels.get(chartId); if (!model) return;
+  if ($("#resultExperimentFilter").value === "all") return toast("실험 선택 필요", "논문 그래프는 한 실험 묶음만 선택한 뒤 다운로드하세요.", "error");
+  const strategies = new Set((model.runs || []).map(runStrategy));
+  const experiments = new Set((model.runs || []).map(canonicalExperimentId));
+  if (strategies.size > 1 || experiments.size > 1) return toast("결과 의미가 섞여 있음", "동일 experiment_id와 실행 방식의 결과만 논문 그래프로 만들 수 있습니다.", "error");
+  const signatures = new Set((model.runs || []).map(publicationComparisonSignature));
+  if (signatures.size > 1) return toast("비교 조건이 서로 다름", "프롬프트·노드·컨텍스트·동시성·생성·샘플링·실제 런타임 구성이 같은 결과만 논문 그래프로 내보낼 수 있습니다.", "error");
+  state.publicationChartId = chartId;
+  $("#publicationChartName").textContent = model.title;
+  $("#publicationStrategy").textContent = `${strategyMeta(model.strategy).label} · ${publicationMetadata(model)}`;
+  $("#publicationTitleInput").value = model.title;
+  updatePublicationSpec(); $("#publicationDialog").showModal();
+}
+
+async function exportPublicationChart() {
+  const model = state.chartModels.get(state.publicationChartId); if (!model) throw new Error("내보낼 그래프가 없습니다.");
+  const format = $("#publicationFormatSelect").value; const dpi = Number($("#publicationDpiSelect").value); const sizeMm = $("#publicationSizeSelect").value === "two" ? 180 : 85;
+  const width = format === "png" ? Math.round(sizeMm / 25.4 * dpi) : (sizeMm === 180 ? 1800 : 1004);
+  const built = buildPublicationSvg(model, { width, sizeMm, title: $("#publicationTitleInput").value.trim() || model.title, includeTitle: $("#publicationIncludeTitle").checked, showValues: $("#publicationShowValues").checked, generatedAt: new Date().toISOString() });
+  const base = `${safeFilename(sizeMm === 180 ? "two-column" : "one-column")}-${safeFilename(model.title)}-paper`;
+  if (format === "svg") return downloadBlob(new Blob([built.svg], { type: "image/svg+xml;charset=utf-8" }), `${base}.svg`);
+  const url = URL.createObjectURL(new Blob([built.svg], { type: "image/svg+xml;charset=utf-8" }));
+  const image = new Image();
+  await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = url; });
+  const canvas = document.createElement("canvas"); canvas.width = built.width; canvas.height = built.height;
+  const ctx = canvas.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  URL.revokeObjectURL(url);
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+  if (blob) {
+    const withDpi = pngBytesWithDpi(await blob.arrayBuffer(), dpi);
+    downloadBlob(new Blob([withDpi], { type: "image/png" }), `${base}-${dpi}dpi.png`);
+  }
 }
 
 function metricBar(label, value, detail = "") {
@@ -705,12 +1272,18 @@ function setRunState(active) {
   $("#runStateDot").classList.toggle("running", running);
   if (!active) return;
   if (active.execution_strategy || active.strategy) $("#runStrategyBadge").textContent = strategyMeta(active.execution_strategy || active.strategy).label;
+  if (active.current_model) $("#runStrategyBadge").textContent = `${strategyMeta(active.execution_strategy || active.strategy).label} · ${shortModelName(active.current_model)} ${finite(active.model_index) && Number(active.model_index) > 0 && finite(active.model_count) ? `${active.model_index}/${active.model_count}` : ""}`;
   const total = Number(active.total || 0);
   const completed = Number(active.completed || 0);
   const progress = total ? Math.min(100, Math.round(completed / total * 100)) : 0;
   $("#runProgressBar").style.width = `${progress}%`;
   $("#runProgressText").textContent = `${progress}%`;
-  $("#runPhase").textContent = ({ queued: "실행 준비", loading_model: "모델 로드", warmup: "워밍업", measurement: "부하 측정", cancelling: "취소 요청" })[active.phase] || active.status || "실행 중";
+  $("#runPhase").textContent = ({
+    queued: "실행 준비", suite: "모델 Suite 준비", model_starting: "다음 모델 준비",
+    loading_model: "모델 로드", warmup: "워밍업", measurement: "부하 측정",
+    model_cleanup: "모델 메모리 정리", model_cooldown: "모델 교체 대기",
+    cancelling: "취소 요청", finished: "Suite 종료",
+  })[active.phase] || active.status || "실행 중";
   if (active.error) logLine("ERROR", active.error);
 }
 
@@ -730,6 +1303,7 @@ async function bootstrap() {
     state.status = data.status || [];
     state.models = data.models || [];
     state.runs = data.runs || [];
+    state.suites = data.suites || [];
     state.experimentGroups = data.experiment_groups || [];
     state.actions = data.actions || [];
     state.onboarding = data.onboarding || {};
@@ -753,6 +1327,7 @@ async function bootstrap() {
 async function refreshExperimentData() {
   const data = await api("/api/experiments");
   state.runs = data.runs || [];
+  state.suites = data.suites || [];
   state.experimentGroups = data.experiment_groups || [];
   renderExperimentGroups();
   renderRuns();
@@ -793,12 +1368,27 @@ function connectEvents() {
       const inner = message.event || {};
       setRunState(message.active);
       if (inner.type === "phase") logLine("PHASE", inner.message || inner.phase);
+      if (inner.type === "suite_started") logLine("SUITE", `${inner.model_count || message.active?.model_count || "—"} models 시작`);
+      if (inner.type === "model_started") logLine("MODEL", `${shortModelName(inner.model_id)} · ${inner.model_index || "—"}/${inner.model_count || message.active?.model_count || "—"}`);
+      if (inner.type === "model_finished") logLine("MODEL", `${shortModelName(inner.model_id)} 완료 · ${fmt(runDisplayThroughput(inner.summary || {}))} tok/s`);
+      if (inner.type === "model_failed") logLine("ERROR", `${shortModelName(inner.model_id)} 실패 · ${inner.error || "unknown error"}`);
       if (inner.type === "node_model_loaded") logLine("MODEL", `${inner.node} · ${inner.actual?.model_id || "loaded"}`);
       if (inner.type === "request_completed") logLine("RUN", `${inner.completed}/${inner.total} · ${inner.result?.node} · ${inner.result?.ok ? "OK" : "FAIL"}`);
       if (inner.type === "warning") logLine("WARN", inner.message);
       if (inner.type === "run_finished") {
         refreshExperimentData().catch(error => toast("결과 갱신 실패", error.message, "error"));
-        toast("벤치마크 완료", `${fmt(inner.summary.cluster_tokens_per_s)} tok/s · ${inner.summary.nodes.length} nodes`);
+        if (!(message.active?.model_count > 1 || inner.summary?.suite_id)) toast("벤치마크 완료", `${fmt(inner.summary.cluster_tokens_per_s)} tok/s · ${inner.summary.nodes.length} nodes`);
+      }
+      if (inner.type === "suite_finished") {
+        refreshExperimentData().catch(error => toast("결과 갱신 실패", error.message, "error"));
+        const completedModels = inner.completed_models ?? message.active?.completed_models ?? 0;
+        const failedModels = Array.isArray(inner.errors) ? inner.errors.length : message.active?.errors?.length || 0;
+        const suiteStatus = inner.status || message.active?.status || "completed";
+        toast(
+          suiteStatus === "completed" ? "모델 Suite 완료" : `모델 Suite ${suiteStatus}`,
+          `${completedModels}개 완료 · ${failedModels}개 오류`,
+          suiteStatus === "completed" ? "success" : "error",
+        );
       }
     } else if (message.type === "experiment_failed") {
       setRunState(message.active);
@@ -828,6 +1418,8 @@ async function runAction(action, options = {}) {
 function experimentPayload() {
   const executionStrategy = selectedStrategy();
   const selectedNodeNames = [...state.selectedNodes];
+  const modelIds = selectedModelIds();
+  if (!modelIds.length) throw new Error("벤치마크할 모델을 한 개 이상 선택하세요.");
   if (executionStrategy === "single_node" && selectedNodeNames.length !== 1) {
     throw new Error("단일 노드 기준선은 정확히 한 대만 선택해야 합니다.");
   }
@@ -846,7 +1438,10 @@ function experimentPayload() {
     experiment_id: $("#experimentGroupSelect").value,
     name: $("#experimentName").value.trim(),
     node_names: plannedNodeNames(),
-    model_id: $("#modelSelect").value,
+    model_id: modelIds[0],
+    model_ids: modelIds,
+    continue_on_model_error: $("#continueModelErrorInput").checked,
+    model_cooldown_s: Number($("#modelCooldownInput").value),
     execution_strategy: executionStrategy,
     sweep_mode: $("#sweepModeSelect").value,
     rpc_split_mode: $("#rpcSplitModeSelect").value,
@@ -977,6 +1572,23 @@ function bindEvents() {
     bootstrap();
   });
   $$('[data-close-dialog]').forEach(button => button.addEventListener("click", () => button.closest("dialog").close()));
+  $$('[data-chart-png]').forEach(button => button.addEventListener("click", () => downloadDashboardPng(button.dataset.chartPng)));
+  $$('[data-paper-export]').forEach(button => button.addEventListener("click", () => openPublicationDialog(button.dataset.paperExport)));
+  $("#publicationFormatSelect").addEventListener("change", updatePublicationSpec);
+  $("#publicationSizeSelect").addEventListener("change", updatePublicationSpec);
+  $("#publicationDpiSelect").addEventListener("change", updatePublicationSpec);
+  $("#publicationForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    try { await exportPublicationChart(); $("#publicationDialog").close(); toast("논문용 그래프 다운로드", "선택한 규격으로 그래프를 생성했습니다."); }
+    catch (error) { toast("그래프 생성 실패", error.message, "error"); }
+  });
+  $$(".chart-legend").forEach(legend => legend.addEventListener("click", event => {
+    const button = event.target.closest("[data-chart-series]"); if (!button) return;
+    const chartId = legend.id.replace(/Legend$/, ""); const model = state.chartModels.get(chartId); if (!model) return;
+    const interaction = chartInteraction(chartId); const label = button.dataset.chartSeries;
+    if (interaction.hidden.has(label)) interaction.hidden.delete(label); else interaction.hidden.add(label);
+    setChartModel(chartId, model);
+  }));
   $("#addNodeButton").addEventListener("click", () => {
     $("#nodeDialog").showModal();
     scanNetwork();
@@ -1028,7 +1640,7 @@ function bindEvents() {
       renderNodes();
       $("#nodeDialog").close();
       resetNodeForm();
-      await runActionOnNodes("prepare", [result.node.name], { confirmed: true, models: [$("#modelSelect").value] });
+      await runActionOnNodes("prepare", [result.node.name], { confirmed: true, models: selectedModelIds() });
       toast("워커 등록 완료", "환경 구성, 모델 동기화와 API 시작 작업을 진행합니다.");
     } catch (error) { toast("워커 등록 실패", error.message, "error"); }
   });
@@ -1058,7 +1670,7 @@ function bindEvents() {
     const workers = [...state.selectedNodes].filter(name => state.nodes.find(node => node.name === name)?.role === "worker");
     if (!workers.length) return toast("워커 선택 필요", "준비할 worker 노드를 선택하세요.", "error");
     if (confirm("선택한 워커의 플랫폼을 감지하고 의존성, 코드, 선택 모델과 API를 준비합니다. 계속할까요?")) {
-      runActionOnNodes("prepare", workers, { confirmed: true, models: [$("#modelSelect").value] });
+      runActionOnNodes("prepare", workers, { confirmed: true, models: selectedModelIds() });
     }
   });
   $("#prepareRpcButton").addEventListener("click", () => {
@@ -1073,7 +1685,7 @@ function bindEvents() {
   });
   $$('[data-cluster-action]').forEach(button => button.addEventListener("click", () => {
     const action = button.dataset.clusterAction;
-    const options = action === "sync-models" ? { models: [$("#modelSelect").value] } : {};
+    const options = action === "sync-models" ? { models: selectedModelIds() } : {};
     runAction(action, options);
   }));
   $$('.segmented button').forEach(button => button.addEventListener("click", () => {
@@ -1093,7 +1705,18 @@ function bindEvents() {
   });
   $("#resultExperimentFilter").addEventListener("change", renderRuns);
   $("#experimentForm").addEventListener("input", updateFormMirrors);
-  $("#modelSelect").addEventListener("change", updateModelAvailability);
+  $("#modelSearchInput").addEventListener("input", renderModelPicker);
+  $("#modelChecklist").addEventListener("change", event => {
+    const input = event.target.closest("[data-model-option]");
+    if (!input) return;
+    setSelectedModels(input.checked ? [...selectedModelIds(), input.dataset.modelOption] : selectedModelIds().filter(id => id !== input.dataset.modelOption));
+  });
+  $("#modelChips").addEventListener("click", event => {
+    const button = event.target.closest("[data-remove-model]");
+    if (button) setSelectedModels(selectedModelIds().filter(id => id !== button.dataset.removeModel));
+  });
+  $("#selectAllModelsButton").addEventListener("click", () => setSelectedModels([...selectedModelIds(), ...$$('[data-model-option]').map(input => input.dataset.modelOption)]));
+  $("#clearModelsButton").addEventListener("click", () => setSelectedModels([]));
   $("#experimentForm").addEventListener("submit", async event => {
     event.preventDefault();
     const participatingNodes = plannedNodeNames();
