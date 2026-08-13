@@ -251,6 +251,7 @@ async function bootstrap() {
     setRunState(data.active_experiment);
     $("#publicKey").textContent = state.onboarding.public_key || "키가 아직 생성되지 않았습니다.";
     connectEvents();
+    if (!location.hash) requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
   } catch (error) {
     if (/401|token|invalid|missing/i.test(error.message)) {
       $("#authDialog").showModal();
@@ -415,6 +416,7 @@ function bindEvents() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
   state.token = getToken();
   bindEvents();
   if (!state.token) $("#authDialog").showModal(); else bootstrap();
