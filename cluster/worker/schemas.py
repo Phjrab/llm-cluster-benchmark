@@ -1,0 +1,34 @@
+"""Worker HTTP boundary schemas.
+
+These Pydantic models are intentionally separate from the inference backend so
+the backend remains usable in route tests without FastAPI application globals.
+"""
+
+from __future__ import annotations
+
+from typing import Dict, List
+
+from pydantic import BaseModel, Field
+
+
+DEFAULT_N_CTX = 1024
+DEFAULT_N_GPU_LAYERS = 8
+DEFAULT_MAX_TOKENS = 256
+
+
+class SelectModelRequest(BaseModel):
+    model_id: str = Field(..., description="Relative model path from the worker models directory")
+    n_ctx: int = Field(DEFAULT_N_CTX, ge=128, le=4096)
+    n_gpu_layers: int = Field(DEFAULT_N_GPU_LAYERS, ge=0, le=120)
+
+
+class ChatStreamRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    history: List[Dict[str, str]] = Field(default_factory=list)
+    max_tokens: int = Field(DEFAULT_MAX_TOKENS, ge=1, le=1024)
+    temperature: float = Field(0.7, ge=0.0, le=2.0)
+    top_p: float = Field(0.9, ge=0.0, le=1.0)
+
+
+class ClusterChatRequest(ChatStreamRequest):
+    seed: int = Field(42, ge=-1, le=2_147_483_647)
