@@ -1,4 +1,26 @@
+.venv/
 __pycache__/
 *.py[cod]
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# Local model assets
+models/
+*.gguf
+
+# Benchmark outputs
 results/
+outputs/comparison_results.csv
+outputs/comparison_results.png
+outputs/comparison_ranked.csv
+outputs/general_benchmark/
+outputs/medical_benchmark/
+
+# OS/editor artifacts
 .DS_Store
+.vscode/
+
+# Runtime server files
+.run/
