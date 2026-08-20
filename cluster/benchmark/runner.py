@@ -14,7 +14,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
@@ -28,20 +28,15 @@ from cluster.clusterctl import (
     select_nodes,
     worker_auth_headers,
 )
+# Keep these domain names importable from this legacy module while application
+# callers migrate to cluster.domain.
+from cluster.domain.experiment import ExperimentConfig, normalize_model_ids, validate_model_id
+from cluster.domain.strategy import EXECUTION_STRATEGIES
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RESULTS_DIR = PROJECT_ROOT / ".run" / "cluster" / "results"
 ProgressCallback = Callable[[Dict[str, Any]], None]
-
-EXECUTION_STRATEGIES = {
-    "single_node",
-    "replicated_round_robin",
-    "broadcast_compare",
-    "node_sweep",
-    "model_parallel_rpc",
-}
-
 
 def experiment_strategy_catalog() -> List[Dict[str, Any]]:
     """Return backend-owned descriptions used by the dashboard and reports."""
@@ -97,109 +92,6 @@ def experiment_strategy_catalog() -> List[Dict[str, Any]]:
             "summary": "한 모델의 가중치와 계산을 여러 노드 장치에 분할하고 각 토큰을 함께 계산합니다.",
         },
     ]
-
-
-@dataclass
-class ExperimentConfig:
-    experiment_id: str = ""
-    name: str = "cluster-load-test"
-    node_names: List[str] = field(default_factory=list)
-    model_id: str = "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
-    n_ctx: int = 1024
-    n_gpu_layers: int = 30
-    requests: int = 20
-    concurrency: int = 4
-    max_tokens: int = 128
-    temperature: float = 0.0
-    top_p: float = 0.9
-    seed: int = 42
-    warmup_requests: int = 1
-    prompt: str = "엣지 장치에서 의료 LLM을 실행할 때의 장점과 한계를 한 문단으로 설명해줘."
-    require_uniform_config: bool = True
-    request_timeout_s: float = 600.0
-    execution_strategy: str = "replicated_round_robin"
-    sweep_mode: str = "cumulative"
-    rpc_split_mode: str = "layer"
-    rpc_split_policy: str = "auto"
-    rpc_tensor_split: List[float] = field(default_factory=list)
-    acknowledge_experimental_rpc: bool = False
-    # The dashboard fills these fields when one user action expands into a
-    # sequence of independent per-model runs.  CLI configs that omit them keep
-    # the original single-run behaviour.
-    suite_id: str = ""
-    model_index: int = 1
-    model_count: int = 1
-
-    @classmethod
-    def from_dict(cls, raw: Dict[str, Any]) -> "ExperimentConfig":
-        known = {item.name for item in cls.__dataclass_fields__.values()}
-        return cls(**{key: value for key, value in raw.items() if key in known})
-
-    def validate(self) -> None:
-        if not self.name.strip():
-            raise ValueError("Experiment name cannot be empty")
-        if self.experiment_id and not self.experiment_id.replace("-", "").replace("_", "").isalnum():
-            raise ValueError("experiment_id contains unsupported characters")
-        if not self.node_names:
-            raise ValueError("Select at least one node")
-        validate_model_id(self.model_id)
-        if self.suite_id and not self.suite_id.replace("-", "").replace("_", "").isalnum():
-            raise ValueError("suite_id contains unsupported characters")
-        if self.model_count < 1 or not 1 <= self.model_index <= self.model_count:
-            raise ValueError("model_index must be between 1 and model_count")
-        if not 128 <= self.n_ctx <= 4096:
-            raise ValueError("n_ctx must be between 128 and 4096")
-        if not 0 <= self.n_gpu_layers <= 120:
-            raise ValueError("n_gpu_layers must be between 0 and 120")
-        if not 1 <= self.requests <= 10_000:
-            raise ValueError("requests must be between 1 and 10000")
-        if not 1 <= self.concurrency <= 256:
-            raise ValueError("concurrency must be between 1 and 256")
-        if not 1 <= self.max_tokens <= 1024:
-            raise ValueError("max_tokens must be between 1 and 1024")
-        if not 0.0 <= self.temperature <= 2.0:
-            raise ValueError("temperature must be between 0 and 2")
-        if not 0.0 <= self.top_p <= 1.0:
-            raise ValueError("top_p must be between 0 and 1")
-        if not 0 <= self.warmup_requests <= 10:
-            raise ValueError("warmup_requests must be between 0 and 10")
-        if not self.prompt.strip():
-            raise ValueError("prompt cannot be empty")
-        if self.execution_strategy not in EXECUTION_STRATEGIES:
-            raise ValueError(f"Unsupported execution_strategy: {self.execution_strategy}")
-        if self.sweep_mode not in {"cumulative", "individual"}:
-            raise ValueError("sweep_mode must be cumulative or individual")
-        if self.rpc_split_mode not in {"layer", "row"}:
-            raise ValueError("rpc_split_mode must be layer or row")
-        if self.rpc_split_policy not in {"auto", "equal", "custom"}:
-            raise ValueError("rpc_split_policy must be auto, equal or custom")
-        if any(not math.isfinite(float(value)) or float(value) <= 0 for value in self.rpc_tensor_split):
-            raise ValueError("rpc_tensor_split values must be positive finite numbers")
-
-
-def validate_model_id(model_id: str) -> str:
-    """Validate and return a repository-relative GGUF model identifier."""
-    if (
-        not isinstance(model_id, str)
-        or not model_id.endswith(".gguf")
-        or model_id.startswith("/")
-        or ".." in Path(model_id).parts
-    ):
-        raise ValueError("model_id must be a safe relative GGUF path")
-    return model_id
-
-
-def normalize_model_ids(model_id: str, model_ids: Sequence[str]) -> List[str]:
-    """Normalize legacy single-model and suite payloads without ambiguity."""
-    normalized = list(model_ids) if model_ids else ([model_id] if model_id else [])
-    if not normalized:
-        raise ValueError("Select at least one model")
-    for item in normalized:
-        validate_model_id(item)
-    if len(set(normalized)) != len(normalized):
-        raise ValueError("model_ids must not contain duplicates")
-    return normalized
-
 
 @dataclass(frozen=True)
 class RequestTask:
