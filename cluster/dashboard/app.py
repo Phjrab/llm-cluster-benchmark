@@ -282,6 +282,7 @@ class ExperimentPayload(BaseModel):
     seed: int = Field(42, ge=-1, le=2_147_483_647)
     warmup_requests: int = Field(1, ge=0, le=10)
     prompt: str = Field(min_length=1, max_length=20_000)
+    persist_prompt: bool = True
     require_uniform_config: bool = True
     execution_strategy: str = "replicated_round_robin"
     sweep_mode: str = "cumulative"

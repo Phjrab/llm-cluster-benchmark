@@ -10,6 +10,8 @@ from typing import Any, Dict, Iterable, Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
+from cluster.domain.failures import failure_from_exception, http_status_for_failure
+
 from .inference import InferenceBackend
 from .schemas import ChatStreamRequest, ClusterChatRequest, SelectModelRequest
 from .telemetry import TelemetryService
@@ -62,10 +64,15 @@ def mount_worker_routes(
     async def select_model(payload: SelectModelRequest) -> Dict[str, object]:
         try:
             current = backend.load_model(payload.model_id, payload.n_ctx, payload.n_gpu_layers)
-        except (FileNotFoundError, ValueError, RuntimeError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except Exception as exc:  # native backend failure remains an API 500 as before.
-            raise HTTPException(status_code=500, detail=f"Failed to load model: {exc}") from exc
+        except Exception as exc:
+            failure = failure_from_exception(
+                exc, stage="model_loading", model_id=payload.model_id
+            )
+            raise HTTPException(
+                status_code=http_status_for_failure(failure),
+                detail=str(exc),
+                headers={"X-Cluster-Error-Code": failure.code.value},
+            ) from exc
         return {"ok": True, "current": current}
 
     @app.post("/api/unload-model")
@@ -116,7 +123,11 @@ def mount_worker_routes(
                     },
                 )
             except Exception as exc:
-                yield as_sse("error", {"message": str(exc)})
+                failure = failure_from_exception(exc, stage="inference")
+                yield as_sse(
+                    "error",
+                    {"message": str(exc), "failure": failure.to_dict()},
+                )
 
         return StreamingResponse(
             events(),

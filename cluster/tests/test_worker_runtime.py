@@ -126,6 +126,16 @@ class WorkerRouteContractTests(unittest.TestCase):
         self.assertEqual(unloaded.status_code, 200)
         self.assertFalse(unloaded.json()["current"]["loaded"])
 
+    def test_model_load_failure_keeps_message_and_exposes_stable_error_code(self) -> None:
+        client, _, _ = self.make_client()
+        response = client.post(
+            "/api/select-model",
+            json={"model_id": "missing.gguf", "n_ctx": 512, "n_gpu_layers": 0},
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertIn("missing.gguf", response.json()["detail"])
+        self.assertEqual(response.headers["X-Cluster-Error-Code"], "MODEL_MISSING")
+
     def test_health_separates_inference_and_degraded_telemetry(self) -> None:
         client, _, _ = self.make_client(backend_ready=True)
         health = client.get("/cluster/health")

@@ -44,6 +44,7 @@ class ExperimentConfig:
     seed: int = 42
     warmup_requests: int = 1
     prompt: str = "엣지 장치에서 의료 LLM을 실행할 때의 장점과 한계를 한 문단으로 설명해줘."
+    persist_prompt: bool = True
     require_uniform_config: bool = True
     request_timeout_s: float = 600.0
     execution_strategy: Union[ExecutionStrategy, str] = ExecutionStrategy.REPLICATED_ROUND_ROBIN
@@ -107,6 +108,8 @@ class ExperimentConfig:
             raise DomainValidationError("request_timeout_s must be a positive finite number")
         if not isinstance(self.prompt, str) or not self.prompt.strip():
             raise DomainValidationError("prompt cannot be empty")
+        if not isinstance(self.persist_prompt, bool):
+            raise DomainValidationError("persist_prompt must be a boolean")
         if not isinstance(self.require_uniform_config, bool):
             raise DomainValidationError("require_uniform_config must be a boolean")
         if not isinstance(self.acknowledge_experimental_rpc, bool):

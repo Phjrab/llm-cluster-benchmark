@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from cluster.clusterctl import worker_auth_headers
 from cluster.domain.experiment import ExperimentConfig
 from cluster.domain.errors import ErrorCode
+from cluster.domain.failures import failure_from_message
 from cluster.infrastructure.sse import parse_sse_events
 
 from .models import RequestTask
@@ -67,6 +68,7 @@ def stream_worker_request(
     generated_tokens = int(server_metrics.get("generated_tokens") or 0)
     generation_s = float(server_metrics.get("generation_s") or 0.0)
     output = "".join(output_parts)
+    failure = failure_from_message(error, stage="inference", node=node.name, model_id=config.model_id) if error else None
     return {
         "request_id": task.request_id,
         "logical_request_id": task.logical_request_id,
@@ -85,7 +87,10 @@ def stream_worker_request(
         "tokens_per_s": round(generated_tokens / generation_s, 6) if generation_s > 0 else None,
         "output_chars": len(output),
         "output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest() if ok else "",
+        "response": output,
         "error": error,
+        "error_code": failure.code.value if failure else "",
+        "failure": failure.to_dict() if failure else None,
         "warmup": warmup,
     }
 
@@ -148,6 +153,7 @@ def stream_rpc_request(
     if ok and generated_tokens <= 0:
         generated_tokens = len(output_parts)
     generation_s = finished - (first_token_at or started)
+    failure = failure_from_message(error, stage="rpc_inference", node=coordinator.name, model_id=config.model_id, fallback=ErrorCode.RPC_CONNECTION_FAILED) if error else None
     return {
         "request_id": task.request_id,
         "logical_request_id": task.logical_request_id,
@@ -166,8 +172,10 @@ def stream_rpc_request(
         "tokens_per_s": round(generated_tokens / generation_s, 6) if generation_s > 0 else None,
         "output_chars": len(output),
         "output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest() if ok else "",
+        "response": output,
         "error": error,
-        "error_code": error_code,
+        "error_code": failure.code.value if failure else error_code,
+        "failure": failure.to_dict() if failure else None,
         "warmup": False,
         "token_count_source": "server_usage" if generated_tokens and generated_tokens != len(output_parts) else "stream_chunk_estimate",
     }

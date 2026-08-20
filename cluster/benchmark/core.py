@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from cluster.domain.experiment import ExperimentConfig
+from cluster.domain.failures import failure_from_exception
+from cluster.domain.errors import ErrorCode
 
 from .executor import ScenarioExecutor
 from .metrics import add_cumulative_scaling, aggregate_records
@@ -132,7 +134,20 @@ class BenchmarkRunner:
                             loaded.append(info)
                             persistence.emit("node_model_loaded", node=node.name, actual=info)
                         except Exception as exc:
-                            persistence.emit("node_error", node=node.name, error=str(exc))
+                            failure = failure_from_exception(
+                                exc,
+                                stage="model_loading",
+                                node=node.name,
+                                model_id=config.model_id,
+                                fallback=ErrorCode.MODEL_LOAD_FAILED,
+                            )
+                            persistence.emit(
+                                "node_error",
+                                node=node.name,
+                                error=str(exc),
+                                error_code=failure.code.value,
+                                failure=failure.to_dict(),
+                            )
                             raise RuntimeError(
                                 f"Failed to load model on {node.name}: {exc}"
                             ) from exc
@@ -241,6 +256,11 @@ class BenchmarkRunner:
             return summary
         except Exception as exc:
             cancelled = cancel_event.is_set()
+            structured_failure = failure_from_exception(
+                exc,
+                stage="run",
+                model_id=config.model_id,
+            )
             failure = {
                 "schema_version": 2,
                 "run_id": run_id,
@@ -259,13 +279,22 @@ class BenchmarkRunner:
                 "benchmark_parameters": benchmark_parameters(config),
                 "topology": topology,
                 "error": str(exc),
+                "error_code": structured_failure.code.value,
+                "failure": structured_failure.to_dict(),
+                "failures": [structured_failure.to_dict()],
                 "result_dir": str(persistence.run_dir),
             }
             persistence.write_summary(failure)
             if cancelled:
                 persistence.emit("run_finished", summary=failure)
                 return failure
-            persistence.emit("run_failed", error=str(exc), summary=failure)
+            persistence.emit(
+                "run_failed",
+                error=str(exc),
+                error_code=structured_failure.code.value,
+                failure=structured_failure.to_dict(),
+                summary=failure,
+            )
             raise
         finally:
             if rpc_session is not None:

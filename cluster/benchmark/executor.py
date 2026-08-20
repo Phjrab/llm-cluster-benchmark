@@ -8,6 +8,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from cluster.domain.experiment import ExperimentConfig
+from cluster.domain.failures import failure_from_exception
 
 from .models import RequestTask, StrategyScenario
 
@@ -24,6 +25,7 @@ class ScenarioExecutor:
     def _failure_record(task: RequestTask, node: Any, exc: Exception) -> Dict[str, Any]:
         from .transport import utc_now
 
+        failure = failure_from_exception(exc, stage="request", node=node.name)
         return {
             "request_id": task.request_id,
             "logical_request_id": task.logical_request_id,
@@ -42,7 +44,10 @@ class ScenarioExecutor:
             "tokens_per_s": None,
             "output_chars": 0,
             "output_sha256": "",
+            "response": "",
             "error": str(exc),
+            "error_code": failure.code.value,
+            "failure": failure.to_dict(),
             "warmup": False,
         }
 
@@ -114,6 +119,15 @@ class ScenarioExecutor:
                         result = future.result()
                     except Exception as exc:
                         result = self._failure_record(task, target, exc)
+                    if not result.get("ok") and not result.get("failure"):
+                        failure = failure_from_exception(
+                            RuntimeError(str(result.get("error") or "request failed")),
+                            stage="request",
+                            node=target.name,
+                            model_id=config.model_id,
+                        )
+                        result["error_code"] = failure.code.value
+                        result["failure"] = failure.to_dict()
                     records.append(result)
                     emit(
                         "request_completed",

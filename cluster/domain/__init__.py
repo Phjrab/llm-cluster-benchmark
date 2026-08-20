@@ -2,6 +2,7 @@
 
 from .controller import ControllerConfig, ControllerPlatform
 from .errors import ClusterError, DomainValidationError, ErrorCode, FailureRecord
+from .failures import FAILURE_GUIDE, failure_from_exception, failure_from_message, http_status_for_failure
 from .experiment import ExperimentConfig, normalize_model_ids, validate_model_id
 from .identifiers import validate_experiment_id, validate_node_id, validate_run_id, validate_suite_id
 from .layout import ProjectLayout
@@ -21,6 +22,7 @@ __all__ = [
     "ControllerPlatform",
     "DomainValidationError",
     "ErrorCode",
+    "FAILURE_GUIDE",
     "EXECUTION_STRATEGIES",
     "EXECUTION_STRATEGY_ORDER",
     "ExecutionStrategy",
@@ -34,6 +36,9 @@ __all__ = [
     "WorkerNode",
     "WorkerPlatform",
     "normalize_model_ids",
+    "failure_from_exception",
+    "failure_from_message",
+    "http_status_for_failure",
     "validate_experiment_id",
     "validate_model_id",
     "validate_node_id",

@@ -69,6 +69,10 @@ class RunRepository(Protocol):
 
     def write_requests(self, run_id: str, records: Sequence[Mapping[str, Any]]) -> None: ...
 
+    def append_response(self, run_id: str, response: Mapping[str, Any]) -> None: ...
+
+    def read_responses(self, run_id: str) -> List[JsonObject]: ...
+
     def write_summary(self, run_id: str, summary: Mapping[str, Any]) -> None: ...
 
     def read_summary(self, run_id: str) -> JsonObject: ...
@@ -379,15 +383,49 @@ class FilesystemRunRepository:
                 handle.flush()
                 os.fsync(handle.fileno())
 
+    def append_response(self, run_id: str, response: Mapping[str, Any]) -> None:
+        """Durably journal a completed request before final CSV aggregation."""
+        path = self._run_dir(run_id) / "responses.jsonl"
+        with self._event_lock:
+            descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(dict(response), ensure_ascii=False) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+
+    def read_responses(self, run_id: str) -> List[JsonObject]:
+        path = self._run_dir(run_id) / "responses.jsonl"
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            return []
+        recovered: List[JsonObject] = []
+        for line in lines:
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                recovered.append(value)
+        return recovered
+
     def write_requests(self, run_id: str, records: Sequence[Mapping[str, Any]]) -> None:
         if not records:
             return
         path = self._run_dir(run_id) / "requests.csv"
-        fieldnames = list(records[0].keys())
+        # This legacy CSV is intentionally metric-only. Raw prompts/responses and
+        # structured failures live in responses.jsonl without changing its schema.
+        fieldnames = [
+            "request_id", "logical_request_id", "scenario_id", "replica_index",
+            "node", "assigned_node", "node_host", "started_at", "ok", "ttft_s",
+            "e2e_s", "server_ttft_s", "server_generation_s", "generated_tokens",
+            "tokens_per_s", "output_chars", "output_sha256", "error", "warmup",
+        ]
         from io import StringIO
 
         buffer = StringIO(newline="")
-        writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+        writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(records)
         atomic_write_text(path, buffer.getvalue(), default_mode=0o644)
