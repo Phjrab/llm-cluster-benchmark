@@ -2,7 +2,7 @@
   "experiment_id": "",
   "name": "cluster-load-test",
   "execution_strategy": "replicated_round_robin",
-  "node_names": ["edge-head"],
+  "node_names": ["edge-worker-01"],
   "model_id": "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
   "model_ids": ["qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"],
   "continue_on_model_error": true,

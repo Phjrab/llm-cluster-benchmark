@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-cluster-benchmark"
+version = "1.0.0"
+description = "Controller/Worker LLM benchmark orchestration for Jetson and Raspberry Pi clusters"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/Phjrab/llm-cluster-benchmark"
+
+# These extras mirror the pinned role requirements used by the existing setup
+# scripts. Native llama-cpp-python remains platform-managed by worker_setup.sh.
+[project.optional-dependencies]
+controller = [
+  "fastapi==0.136.0",
+  "uvicorn==0.44.0",
+  "jinja2==3.1.6",
+  "pydantic==2.13.1",
+  "psutil==7.2.2",
+  "httpx==0.28.1",
+]
+worker = [
+  "fastapi==0.136.0",
+  "uvicorn==0.44.0",
+  "psutil==7.2.2",
+  "jinja2==3.1.6",
+  "sse-starlette==3.3.4",
+  "pydantic==2.13.1",
+  "huggingface-hub==1.11.0",
+]
+
+[tool.setuptools]
+include-package-data = false
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cluster", "cluster.*"]
+exclude = ["cluster.tests", "cluster.tests.*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+cluster = [
+  "README.md",
+  "requirements-runtime.txt",
+  "config/*.json",
+  "config/*.csv",
+  "dashboard/*.sh",
+  "dashboard/static/*.js",
+  "dashboard/static/*.css",
+  "dashboard/static/js/*.js",
+  "dashboard/templates/*.html",
+  "rpc/*.sh",
+  "worker/*.sh",
+  "*.sh",
+]
+
+[tool.setuptools.data-files]
+"share/llm-cluster-benchmark" = [
+  "requirements-controller.txt",
+  "requirements-worker.txt",
+]

@@ -6,6 +6,11 @@ __pycache__/
 *.pyd
 *.so
 
+# Python packaging artifacts
+build/
+dist/
+*.egg-info/
+
 # Local model assets
 models/
 *.gguf
