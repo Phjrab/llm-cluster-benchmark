@@ -1554,7 +1554,7 @@ function eventChannel(message) {
   // Older Controller versions did not serialize a channel. Keep their wire
   // format usable while never mixing new node-operation events into RUN CONTROL.
   if (["experiment_event", "experiment_failed"].includes(message?.type)) return "experiment";
-  if (["action_started", "action_log", "action_finished", "environment_changed", "inventory_changed"].includes(message?.type)) return "node_ops";
+  if (["action_started", "action_log", "action_finished", "environment_changed", "inventory_changed", "model_progress"].includes(message?.type)) return "node_ops";
   return "system";
 }
 
@@ -1748,6 +1748,12 @@ function connectEvents() {
         const nodes = Array.isArray(action?.nodes) ? action.nodes : [];
         toast(status === "completed" ? "작업 완료" : "작업 실패", `${actionName(action)} · ${nodes.join(", ")}`, status === "completed" ? "success" : "error");
       }
+    } else if (message.type === "model_progress" && channel === "node_ops") {
+      const progress = message.progress || {};
+      const model = progress.model_id || "model";
+      const node = progress.node || "worker";
+      const percent = Number.isFinite(Number(progress.percent)) ? ` · ${Number(progress.percent).toFixed(1)}%` : "";
+      environmentLogLine("MODEL", `${node} · ${model} · ${progress.state || "working"}${percent}`);
     } else if (message.type === "experiment_event" && channel === "experiment") {
       const inner = message.event || {};
       setRunState(message.active);

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import importlib
 import sys
 import tempfile
@@ -29,7 +30,30 @@ class FakeInferenceBackend:
         self.load_calls: list[tuple[str, int, int]] = []
 
     def list_models(self) -> list[Dict[str, object]]:
-        return [{"id": "tiny.gguf", "name": "tiny.gguf", "size_mb": 1.0, "is_loaded": self.loaded == "tiny.gguf"}]
+        return [{"id": "tiny.gguf", "name": "tiny.gguf", "filename": "tiny.gguf", "size_bytes": 4, "size_mb": 1.0, "quantization": None, "is_loaded": self.loaded == "tiny.gguf"}]
+
+    def model_inventory(self) -> list[Dict[str, object]]:
+        return [{**item, "sha256": hashlib.sha256(b"gguf").hexdigest(), "checksum_valid": True} for item in self.list_models()]
+
+    def verify_model(self, model_id: str, expected_sha256: Optional[str] = None) -> Dict[str, object]:
+        if model_id != "tiny.gguf":
+            raise FileNotFoundError(model_id)
+        digest = hashlib.sha256(b"gguf").hexdigest()
+        if expected_sha256 and expected_sha256 != digest:
+            raise ValueError("Model checksum mismatch: tiny.gguf")
+        return {"id": model_id, "filename": model_id, "size_bytes": 4, "sha256": digest, "quantization": None, "checksum_valid": True}
+
+    def delete_model(self, model_id: str) -> Dict[str, object]:
+        if model_id != "tiny.gguf":
+            raise FileNotFoundError(model_id)
+        if self.loaded == model_id:
+            raise RuntimeError("Unload the selected model before deleting it")
+        return {"id": model_id, "filename": model_id, "size_bytes": 4, "deleted": True}
+
+    def install_model(self, model_id: str, source_url: str, expected_sha256: str) -> Dict[str, object]:
+        if model_id != "tiny.gguf" or not source_url.startswith("https://"):
+            raise ValueError("invalid direct download")
+        return {**self.verify_model(model_id, expected_sha256), "downloaded_bytes": 4, "already_present": False}
 
     def current_model_info(self) -> Dict[str, object]:
         return {"loaded": self.loaded is not None, "model_id": self.loaded}
@@ -125,6 +149,27 @@ class WorkerRouteContractTests(unittest.TestCase):
         unloaded = client.post("/api/unload-model")
         self.assertEqual(unloaded.status_code, 200)
         self.assertFalse(unloaded.json()["current"]["loaded"])
+
+    def test_cluster_inventory_verify_and_delete_contract(self) -> None:
+        client, backend, _ = self.make_client()
+        inventory = client.get("/cluster/models")
+        self.assertEqual(inventory.status_code, 200)
+        model = inventory.json()["models"][0]
+        self.assertEqual(model["filename"], "tiny.gguf")
+        self.assertEqual(model["size_bytes"], 4)
+        self.assertTrue(model["checksum_valid"])
+        verified = client.post("/cluster/models/verify", json={"model_id": "tiny.gguf", "expected_sha256": model["sha256"]})
+        self.assertEqual(verified.status_code, 200)
+        invalid = client.post("/cluster/models/verify", json={"model_id": "tiny.gguf", "expected_sha256": "0" * 64})
+        self.assertEqual(invalid.status_code, 404)
+        direct = client.post("/cluster/models/install", json={"model_id": "tiny.gguf", "source_url": "https://models.example/tiny.gguf", "expected_sha256": model["sha256"]})
+        self.assertEqual(direct.status_code, 200)
+        self.assertEqual(direct.json()["model"]["downloaded_bytes"], 4)
+        deleted = client.post("/cluster/models/delete", json={"model_id": "tiny.gguf"})
+        self.assertEqual(deleted.status_code, 200)
+        client.post("/api/select-model", json={"model_id": "tiny.gguf", "n_ctx": 512, "n_gpu_layers": 0})
+        blocked = client.post("/cluster/models/delete", json={"model_id": "tiny.gguf"})
+        self.assertEqual(blocked.status_code, 500)
 
     def test_model_load_failure_keeps_message_and_exposes_stable_error_code(self) -> None:
         client, _, _ = self.make_client()
@@ -242,6 +287,10 @@ class LlamaBackendCompatibilityTests(unittest.TestCase):
             models.mkdir()
             (models / "tiny.gguf").write_bytes(b"gguf")
             backend = LlamaCppInferenceBackend(models, llama_factory=FakeLlama, torch_module=None)
+            inventory = backend.model_inventory()
+            self.assertEqual(inventory[0]["size_bytes"], 4)
+            self.assertTrue(inventory[0]["checksum_valid"])
+            self.assertEqual(inventory[0]["sha256"], hashlib.sha256(b"gguf").hexdigest())
             loaded = backend.load_model("tiny.gguf", 1024, 8)
             self.assertTrue(loaded["auto_adjusted_n_gpu_layers"])
             self.assertEqual(loaded["n_gpu_layers"], 4)

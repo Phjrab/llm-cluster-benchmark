@@ -13,7 +13,14 @@ from fastapi.responses import StreamingResponse
 from cluster.domain.failures import failure_from_exception, http_status_for_failure
 
 from .inference import InferenceBackend
-from .schemas import ChatStreamRequest, ClusterChatRequest, SelectModelRequest
+from .schemas import (
+    ChatStreamRequest,
+    ClusterChatRequest,
+    DeleteModelRequest,
+    InstallModelRequest,
+    SelectModelRequest,
+    VerifyModelRequest,
+)
 from .telemetry import TelemetryService
 
 
@@ -177,7 +184,48 @@ def mount_worker_routes(
 
     @app.get("/cluster/models")
     async def cluster_models() -> Dict[str, Any]:
-        return {"ok": True, "node": runtime.node_name, "models": backend.list_models()}
+        return {"ok": True, "node": runtime.node_name, "models": backend.model_inventory()}
+
+    @app.post("/cluster/models/verify")
+    async def verify_model(payload: VerifyModelRequest) -> Dict[str, Any]:
+        try:
+            model = backend.verify_model(payload.model_id, payload.expected_sha256 or None)
+        except Exception as exc:
+            failure = failure_from_exception(exc, stage="model_verify", model_id=payload.model_id)
+            raise HTTPException(
+                status_code=http_status_for_failure(failure),
+                detail=str(exc),
+                headers={"X-Cluster-Error-Code": failure.code.value},
+            ) from exc
+        return {"ok": True, "node": runtime.node_name, "model": model}
+
+    @app.post("/cluster/models/delete")
+    async def delete_model(payload: DeleteModelRequest) -> Dict[str, Any]:
+        try:
+            model = backend.delete_model(payload.model_id)
+        except Exception as exc:
+            failure = failure_from_exception(exc, stage="model_delete", model_id=payload.model_id)
+            raise HTTPException(
+                status_code=http_status_for_failure(failure),
+                detail=str(exc),
+                headers={"X-Cluster-Error-Code": failure.code.value},
+            ) from exc
+        return {"ok": True, "node": runtime.node_name, "model": model}
+
+    @app.post("/cluster/models/install")
+    async def install_model(payload: InstallModelRequest) -> Dict[str, Any]:
+        try:
+            model = backend.install_model(
+                payload.model_id, payload.source_url, payload.expected_sha256
+            )
+        except Exception as exc:
+            failure = failure_from_exception(exc, stage="model_install", model_id=payload.model_id)
+            raise HTTPException(
+                status_code=http_status_for_failure(failure),
+                detail=str(exc),
+                headers={"X-Cluster-Error-Code": failure.code.value},
+            ) from exc
+        return {"ok": True, "node": runtime.node_name, "model": model}
 
     @app.post("/cluster/chat/stream")
     async def cluster_chat_stream(payload: ClusterChatRequest) -> StreamingResponse:

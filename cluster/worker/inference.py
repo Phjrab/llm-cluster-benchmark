@@ -7,8 +7,12 @@ the legacy model-loading retry schedule and chat-template fallback semantics.
 from __future__ import annotations
 
 import gc
+import hashlib
 import os
+import re
 import threading
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence
 
@@ -24,6 +28,14 @@ class InferenceBackend(Protocol):
     """Minimal worker inference contract; routes never depend on a manager."""
 
     def list_models(self) -> List[Dict[str, object]]: ...
+
+    def model_inventory(self) -> List[Dict[str, object]]: ...
+
+    def verify_model(self, model_id: str, expected_sha256: Optional[str] = None) -> Dict[str, object]: ...
+
+    def delete_model(self, model_id: str) -> Dict[str, object]: ...
+
+    def install_model(self, model_id: str, source_url: str, expected_sha256: str) -> Dict[str, object]: ...
 
     def current_model_info(self) -> Dict[str, object]: ...
 
@@ -65,6 +77,7 @@ class LlamaCppInferenceBackend:
         self.loaded_n_batch: Optional[int] = None
         self.requested_n_ctx: Optional[int] = None
         self.requested_n_gpu_layers: Optional[int] = None
+        self._model_hash_cache: Dict[Path, tuple[int, int, str]] = {}
 
     def _factory(self) -> Any:
         if self._llama_factory is not None:
@@ -105,19 +118,136 @@ class LlamaCppInferenceBackend:
             except (OSError, ValueError):
                 continue
             try:
-                size_mb = round(resolved.stat().st_size / (1024 * 1024), 2)
+                stat = resolved.stat()
+                size_bytes = stat.st_size
+                size_mb = round(size_bytes / (1024 * 1024), 2)
             except OSError:
                 continue
             models.append(
                 {
                     "id": relative.as_posix(),
                     "name": resolved.name,
+                    "filename": resolved.name,
                     "path": str(resolved),
+                    "size_bytes": size_bytes,
                     "size_mb": size_mb,
+                    "quantization": self._quantization_from_filename(resolved.name),
                     "is_loaded": self.loaded_model_path is not None and resolved == self.loaded_model_path,
                 }
             )
         return models
+
+    @staticmethod
+    def _quantization_from_filename(filename: str) -> Optional[str]:
+        match = re.search(r"(?:^|[-_.])(Q\d(?:_[A-Z0-9]+)*)(?:[-_.]|$)", filename.upper())
+        return match.group(1) if match else None
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _cached_sha256(self, path: Path) -> str:
+        stat = path.stat()
+        cached = self._model_hash_cache.get(path)
+        if cached is not None and cached[:2] == (stat.st_size, stat.st_mtime_ns):
+            return cached[2]
+        digest = self._sha256_file(path)
+        self._model_hash_cache[path] = (stat.st_size, stat.st_mtime_ns, digest)
+        return digest
+
+    def model_inventory(self) -> List[Dict[str, object]]:
+        """Return complete per-worker model metadata without hashing on health checks."""
+        with self.lock:
+            entries: List[Dict[str, object]] = []
+            for model in self.list_models():
+                model_id = str(model["id"])
+                path = self._resolve_model_path(model_id)
+                digest = self._cached_sha256(path)
+                entries.append({**model, "sha256": digest, "checksum_valid": True})
+            return entries
+
+    def verify_model(self, model_id: str, expected_sha256: Optional[str] = None) -> Dict[str, object]:
+        with self.lock:
+            path = self._resolve_model_path(model_id)
+            digest = self._cached_sha256(path)
+            expected = expected_sha256.strip().lower() if expected_sha256 else ""
+            if expected and (not re.fullmatch(r"[0-9a-f]{64}", expected) or digest != expected):
+                raise ValueError(f"Model checksum mismatch: {model_id}")
+            return {
+                "id": model_id,
+                "filename": path.name,
+                "size_bytes": path.stat().st_size,
+                "sha256": digest,
+                "quantization": self._quantization_from_filename(path.name),
+                "checksum_valid": True,
+            }
+
+    def delete_model(self, model_id: str) -> Dict[str, object]:
+        with self.lock:
+            path = self._resolve_model_path(model_id)
+            if self.loaded_model_path is not None and path == self.loaded_model_path:
+                raise RuntimeError("Unload the selected model before deleting it")
+            size_bytes = path.stat().st_size
+            path.unlink()
+            self._model_hash_cache.pop(path, None)
+            return {"id": model_id, "filename": path.name, "size_bytes": size_bytes, "deleted": True}
+
+    def install_model(self, model_id: str, source_url: str, expected_sha256: str) -> Dict[str, object]:
+        """Download directly to this Worker and atomically verify before READY."""
+        from cluster.domain.experiment import validate_model_id
+
+        validate_model_id(model_id)
+        expected = expected_sha256.strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", expected):
+            raise ValueError("A 64-character expected_sha256 is required for direct model installation")
+        parsed = urllib.parse.urlparse(source_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+            raise ValueError("Model source_url must be a credential-free http(s) URL")
+        with self.lock:
+            target = self.models_dir / model_id
+            resolved_root = self.models_dir.resolve()
+            try:
+                target.resolve().relative_to(resolved_root)
+            except ValueError as exc:
+                raise ValueError("Model path is outside models directory") from exc
+            if target.suffix.lower() != ".gguf":
+                raise ValueError("Selected file is not a .gguf model")
+            if self.loaded_model_path is not None and target.resolve() == self.loaded_model_path:
+                raise RuntimeError("Unload the selected model before replacing it")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.is_file() and self._cached_sha256(target) == expected:
+                return {**self.verify_model(model_id, expected), "downloaded_bytes": 0, "already_present": True}
+            temporary = target.with_name(target.name + ".part")
+            temporary.unlink(missing_ok=True)
+            downloaded = 0
+            digest = hashlib.sha256()
+            try:
+                request = urllib.request.Request(source_url, headers={"User-Agent": "llm-cluster-worker/1"})
+                with urllib.request.urlopen(request, timeout=30) as response, temporary.open("wb") as handle:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        handle.write(chunk)
+                        digest.update(chunk)
+                        downloaded += len(chunk)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                if digest.hexdigest() != expected:
+                    raise ValueError(f"Model checksum mismatch: {model_id}")
+                os.replace(temporary, target)
+                self._model_hash_cache.pop(target, None)
+                return {**self.verify_model(model_id, expected), "downloaded_bytes": downloaded, "already_present": False}
+            except Exception:
+                temporary.unlink(missing_ok=True)
+                raise
 
     def _resolve_model_path(self, model_id: str) -> Path:
         candidate = (self.models_dir / model_id).resolve()

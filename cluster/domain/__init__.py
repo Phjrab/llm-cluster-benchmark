@@ -7,6 +7,7 @@ from .failures import FAILURE_GUIDE, failure_from_exception, failure_from_messag
 from .experiment import ExperimentConfig, normalize_model_ids, validate_model_id
 from .identifiers import validate_experiment_id, validate_node_id, validate_run_id, validate_suite_id
 from .layout import ProjectLayout
+from .model import ModelCatalogEntry, ModelInventoryEntry, infer_quantization, recommend_models, validate_model_checksum
 from .strategy import (
     EXECUTION_STRATEGIES,
     EXECUTION_STRATEGY_ORDER,
@@ -31,6 +32,8 @@ __all__ = [
     "ExecutionStrategy",
     "ExperimentConfig",
     "FailureRecord",
+    "ModelCatalogEntry",
+    "ModelInventoryEntry",
     "ProjectLayout",
     "RpcSplitMode",
     "RpcSplitPolicy",
@@ -42,8 +45,11 @@ __all__ = [
     "failure_from_exception",
     "failure_from_message",
     "http_status_for_failure",
+    "infer_quantization",
+    "recommend_models",
     "validate_experiment_id",
     "validate_model_id",
+    "validate_model_checksum",
     "validate_node_id",
     "validate_run_id",
     "validate_suite_id",

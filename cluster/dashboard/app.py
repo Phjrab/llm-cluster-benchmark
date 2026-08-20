@@ -30,6 +30,13 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cluster.application.jobs import JobService, NONTERMINAL_JOB_STATES
+from cluster.application.model_service import (
+    ModelPreflightError,
+    WorkerModelInventory,
+    aggregate_catalog,
+    parse_worker_inventory,
+    validate_model_preflight,
+)
 from cluster.application.suite_runner import suite_document, suite_model_records
 from cluster.domain.events import ClusterEvent, EventChannel
 from cluster.benchmark.runner import (
@@ -49,7 +56,9 @@ from cluster.clusterctl import (
     select_nodes,
 )
 from cluster.integrations.runtime_layout import resolve_runtime_paths
-from cluster.domain.errors import ClusterError
+from cluster.domain.errors import ClusterError, ErrorCode
+from cluster.domain.failures import http_status_for_failure
+from cluster.domain.model import ModelCatalogEntry, recommend_models
 from cluster.infrastructure.storage import (
     FilesystemEnvironmentReportRepository,
     FilesystemExperimentRepository,
@@ -71,12 +80,15 @@ INVENTORY_PATH = RUNTIME_PATHS.inventory_path
 RESULTS_DIR = RUNTIME_PATHS.results_dir
 EXPERIMENTS_DIR = RUNTIME_PATHS.experiments_dir
 DEFAULTS_PATH = CLUSTER_DIR / "config" / "experiment_defaults.json"
+MODEL_CATALOG_PATH = CLUSTER_DIR / "config" / "model_catalog.json"
+MODEL_CATALOG_CACHE_PATH = RUNTIME_DIR / "model_catalog.cache.json"
 EXAMPLE_INVENTORY = CLUSTER_DIR / "config" / "nodes.example.csv"
 TOKEN_PATH = RUNTIME_PATHS.dashboard_token_path
 SETTINGS_PATH = RUNTIME_PATHS.settings_path
 ENVIRONMENT_DIR = RUNTIME_PATHS.environment_dir
 JOBS_DIR = RUNTIME_PATHS.jobs_dir
 ENVIRONMENT_MARKER = "CLUSTER_ENVIRONMENT_JSON="
+MODEL_PROGRESS_MARKER = "CLUSTER_MODEL_PROGRESS_JSON="
 
 
 def utc_now() -> str:
@@ -648,27 +660,71 @@ def validate_experiment_environment(
             available = set(live.get("model_ids") or [])
             missing_models = [model_id for model_id in model_ids if model_id not in available]
             if missing_models:
-                problems.append(
+                raise ModelPreflightError(
                     f"{node.name}: 모델 없음 - " + ", ".join(missing_models[:4])
-                    + (" 외" if len(missing_models) > 4 else "")
+                    + (" 외" if len(missing_models) > 4 else ""),
+                    code=ErrorCode.MODEL_MISSING,
+                    stage="model_preflight",
+                    node=node.name,
+                    model_id=missing_models[0],
+                    evidence={"available_model_ids": sorted(available)},
                 )
     if problems:
         raise ValueError("실험 환경 준비가 필요합니다: " + " / ".join(problems))
 
 
+def read_model_catalog() -> List[ModelCatalogEntry]:
+    """Read local/cache catalog metadata; no network is required for control plane use."""
+    raw_by_id: Dict[str, Dict[str, Any]] = {}
+    for path in (MODEL_CATALOG_PATH, MODEL_CATALOG_CACHE_PATH):
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, ValueError):
+            continue
+        values = raw.get("models", []) if isinstance(raw, dict) else raw
+        if not isinstance(values, list):
+            continue
+        for value in values:
+            if isinstance(value, dict) and value.get("id"):
+                raw_by_id[str(value["id"])] = value
+    catalog: List[ModelCatalogEntry] = []
+    for value in raw_by_id.values():
+        try:
+            catalog.append(ModelCatalogEntry.from_dict(value))
+        except (TypeError, ValueError):
+            continue
+    return sorted(catalog, key=lambda item: item.id)
+
+
+def fetch_worker_model_inventory(node: Node, timeout: float = 5.0) -> WorkerModelInventory:
+    try:
+        payload = request_json(f"{node.api_url}/cluster/models", timeout=timeout)
+        if payload.get("ok") is not True or payload.get("node") != node.name:
+            raise ValueError("worker model inventory identity mismatch")
+        models = payload.get("models")
+        if not isinstance(models, list):
+            raise ValueError("worker model inventory has no models list")
+        return parse_worker_inventory(node.name, models)
+    except Exception as exc:
+        return WorkerModelInventory(node=node.name, models=(), error=str(exc))
+
+
+def collect_worker_model_inventories(
+    nodes: Optional[Sequence[Node]] = None, *, timeout: float = 5.0
+) -> List[WorkerModelInventory]:
+    selected = list(nodes) if nodes is not None else [node for node in read_enabled_nodes() if node.role == "worker"]
+    if not selected:
+        return []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(selected)) as executor:
+        futures = {executor.submit(fetch_worker_model_inventory, node, timeout): node for node in selected}
+        collected = [future.result() for future in concurrent.futures.as_completed(futures)]
+    order = {node.name: index for index, node in enumerate(selected)}
+    return sorted(collected, key=lambda item: order[item.node])
+
+
 def list_models() -> List[Dict[str, Any]]:
-    root = PROJECT_ROOT / "models"
-    models = []
-    if root.exists():
-        for path in sorted(root.rglob("*.gguf")):
-            models.append(
-                {
-                    "id": path.relative_to(root).as_posix(),
-                    "name": path.name,
-                    "size_gb": round(path.stat().st_size / (1024**3), 2),
-                }
-            )
-    return models
+    """Aggregate Worker filesystem inventories; the Controller model directory is never scanned."""
+    return aggregate_catalog(collect_worker_model_inventories(), read_model_catalog())
 
 
 def probe_node(node: Node) -> Dict[str, Any]:
@@ -918,6 +974,8 @@ class ActionManager:
         "prepare-rpc",
         "sync-code",
         "sync-models",
+        "delete-models",
+        "install-model-url",
         "start",
         "stop",
         "restart",
@@ -1042,9 +1100,17 @@ class ActionManager:
         for node_name in payload.node_names:
             command.extend(["--node", node_name])
         command.append(payload.action)
-        if payload.action in {"sync-models", "prepare"}:
+        if payload.action in {"sync-models", "delete-models", "prepare"}:
             for model in payload.options.get("models", []):
                 command.extend(["--model", str(model)])
+        elif payload.action == "install-model-url":
+            command.extend(
+                [
+                    "--model-id", str(payload.options.get("model_id", "")),
+                    "--source-url", str(payload.options.get("source_url", "")),
+                    "--expected-sha256", str(payload.options.get("expected_sha256", "")),
+                ]
+            )
         elif payload.action == "prepare-rpc":
             pass
         elif payload.action == "select-model":
@@ -1102,6 +1168,23 @@ class ActionManager:
                             )
                     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
                         clean = f"[environment-report-error] {exc}"
+                if clean.startswith(MODEL_PROGRESS_MARKER):
+                    try:
+                        progress = json.loads(clean[len(MODEL_PROGRESS_MARKER) :])
+                        if not isinstance(progress, dict):
+                            raise ValueError("model progress is not an object")
+                        events.publish(
+                            "model_progress",
+                            channel=EventChannel.NODE_OPS,
+                            action_id=action_id,
+                            progress=progress,
+                        )
+                    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                        clean = f"[model-progress-error] {exc}"
+                    else:
+                        # Progress is already delivered as a typed node event;
+                        # do not leak the internal marker into the action log.
+                        continue
                 with self._lock:
                     log = self._actions[action_id]["log"]
                     log.append(clean)
@@ -1572,10 +1655,14 @@ async def bootstrap() -> Dict[str, Any]:
     public_key_path = Path.home() / ".ssh" / "id_ed25519_llm_cluster.pub"
     if public_key_path.exists():
         public_key = public_key_path.read_text(encoding="utf-8").strip()
+    inventories = await asyncio.to_thread(collect_worker_model_inventories)
+    catalog = read_model_catalog()
     return {
         "nodes": [serialize_node(node) for node in read_all_nodes()],
         "status": status_monitor.snapshot(),
-        "models": list_models(),
+        "models": aggregate_catalog(inventories, catalog),
+        "model_inventories": [item.to_dict() for item in inventories],
+        "model_catalog": [item.to_dict() for item in catalog],
         "defaults": defaults,
         "active_experiment": experiments.active(),
         "jobs": experiments.jobs(),
@@ -1645,6 +1732,32 @@ async def update_settings(payload: ClusterSettingsPayload, request: Request) -> 
 @app.get("/api/status", dependencies=[Depends(verify_token)])
 async def get_status() -> Dict[str, Any]:
     return {"nodes": status_monitor.snapshot(), "at": utc_now()}
+
+
+@app.get("/api/models", dependencies=[Depends(verify_token)])
+async def get_models() -> Dict[str, Any]:
+    inventories = await asyncio.to_thread(collect_worker_model_inventories)
+    catalog = read_model_catalog()
+    status_by_name = {item.get("name"): item for item in status_monitor.snapshot()}
+    recommendations: Dict[str, List[Dict[str, Any]]] = {}
+    for node in read_enabled_nodes():
+        if node.role != "worker":
+            continue
+        profile = (status_by_name.get(node.name) or {}).get("profile") or {}
+        recommendations[node.name] = [
+            item.to_dict()
+            for item in recommend_models(
+                catalog,
+                platform=str(profile.get("platform_kind") or node.platform),
+                memory_total_mb=profile.get("memory_total_mb"),
+            )
+        ]
+    return {
+        "models": aggregate_catalog(inventories, catalog),
+        "inventories": [item.to_dict() for item in inventories],
+        "catalog": [item.to_dict() for item in catalog],
+        "recommendations": recommendations,
+    }
 
 
 @app.post("/api/status/refresh", dependencies=[Depends(verify_token)])
@@ -1731,8 +1844,8 @@ async def delete_node(node_name: str) -> Dict[str, Any]:
 
 @app.post("/api/actions", dependencies=[Depends(verify_token)])
 async def start_action(payload: ActionPayload) -> Dict[str, Any]:
-    if payload.action in {"setup", "prepare", "prepare-rpc", "environment-install"} and payload.options.get("confirmed") is not True:
-        raise HTTPException(status_code=400, detail="Worker setup requires explicit confirmation")
+    if payload.action in {"setup", "prepare", "prepare-rpc", "environment-install", "delete-models", "install-model-url"} and payload.options.get("confirmed") is not True:
+        raise HTTPException(status_code=400, detail="This worker operation requires explicit confirmation")
     try:
         record = actions.start(payload)
     except ValueError as exc:
@@ -1808,15 +1921,28 @@ async def start_experiment(payload: ExperimentPayload) -> Dict[str, Any]:
             raise ValueError(
                 "Raspberry Pi nodes require n_gpu_layers=0: " + ", ".join(str(item) for item in pi_nodes)
             )
-        if payload.execution_strategy != "model_parallel_rpc":
-            catalog_ids = {item["id"] for item in list_models()}
-            missing_models = [model_id for model_id in payload.model_ids if model_id not in catalog_ids]
-            if missing_models:
-                raise ValueError("Unknown model_ids: " + ", ".join(missing_models))
+        # Fetch and verify Worker files immediately before a job is created.
+        # This is intentionally a preflight only: it never downloads or syncs a
+        # model as part of benchmark timing.
+        inventories = collect_worker_model_inventories(selected_nodes, timeout=60.0)
+        catalog = {item.id: item for item in read_model_catalog()}
+        validate_model_preflight(
+            node_names=[node.name for node in selected_nodes],
+            inventories={item.node: item for item in inventories},
+            model_ids=payload.model_ids,
+            execution_strategy=payload.execution_strategy,
+            rpc_coordinator_node=payload.rpc_coordinator_node,
+            catalog=catalog,
+        )
         definition = save_experiment_definition(payload)
         linked_payload = payload.model_copy(update={"experiment_id": definition["experiment_id"]})
         active = experiments.start(linked_payload)
-    except (ValueError, ClusterError) as exc:
+    except ClusterError as exc:
+        failure = exc.to_failure_record()
+        raise HTTPException(
+            status_code=http_status_for_failure(failure), detail=failure.to_dict()
+        ) from exc
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "experiment": active, "definition": definition}
 

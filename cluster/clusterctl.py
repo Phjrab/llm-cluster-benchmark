@@ -6,11 +6,13 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import csv
+import hashlib
 import json
 import os
 import platform
 import re
 import secrets
+import shlex
 import socket
 import subprocess
 import sys
@@ -53,6 +55,7 @@ SYSTEM_PACKAGE_ALLOWLIST = {
 }
 WORKER_READINESS_MARKER = "CLUSTER_READINESS_JSON="
 ENVIRONMENT_MARKER = "CLUSTER_ENVIRONMENT_JSON="
+MODEL_PROGRESS_MARKER = "CLUSTER_MODEL_PROGRESS_JSON="
 READINESS_STATUSES = {
     "ready",
     "needs_setup",
@@ -1122,6 +1125,7 @@ def sync_models_one(node: Node, model_paths: Sequence[str], dry_run: bool = Fals
 
     stdout: List[str] = []
     stderr: List[str] = []
+    models: List[Dict[str, Any]] = []
     ok = True
     for relative in model_paths:
         source = (PROJECT_ROOT / "models" / relative).resolve()
@@ -1132,10 +1136,16 @@ def sync_models_one(node: Node, model_paths: Sequence[str], dry_run: bool = Fals
         if not source.is_file() or source.suffix.lower() != ".gguf":
             return {"name": node.name, "ok": False, "stdout": "", "stderr": f"Model not found: {relative}"}
 
+        size_bytes = source.stat().st_size
+        source_sha256 = _sha256_file(source)
+        _print_model_progress(node.name, relative, "queued", 0, size_bytes)
+
         remote_parent = f"{target_models}/{Path(relative).parent.as_posix()}"
         parent_result = run_on_node(node, ["mkdir", "-p", remote_parent], timeout=30)
         if parent_result.returncode != 0:
             return {"name": node.name, "ok": False, "stdout": parent_result.stdout, "stderr": parent_result.stderr}
+
+        _print_model_progress(node.name, relative, "downloading", 0, size_bytes)
 
         command = [
             "rsync",
@@ -1155,12 +1165,56 @@ def sync_models_one(node: Node, model_paths: Sequence[str], dry_run: bool = Fals
         ok = ok and proc.returncode == 0
         if proc.returncode != 0:
             break
+        if dry_run:
+            models.append({"id": relative, "size_bytes": size_bytes, "sha256": source_sha256, "verified": False})
+            continue
+        _print_model_progress(node.name, relative, "verify", size_bytes, size_bytes)
+        remote_path = f"{target_models}/{relative}"
+        verified = run_on_node(node, ["sha256sum", remote_path], timeout=7200)
+        remote_sha256 = verified.stdout.split()[0].lower() if verified.returncode == 0 and verified.stdout.split() else ""
+        if remote_sha256 != source_sha256:
+            stderr.append(f"Checksum mismatch for {relative}: expected {source_sha256}, got {remote_sha256 or 'unavailable'}")
+            # The exact target was derived from a validated source-relative path.
+            # Do not leave an unverified binary eligible for a later preflight.
+            run_on_node(node, ["rm", "-f", remote_path], timeout=60)
+            ok = False
+            _print_model_progress(node.name, relative, "failed", size_bytes, size_bytes)
+            break
+        models.append({"id": relative, "size_bytes": size_bytes, "sha256": source_sha256, "verified": True})
+        _print_model_progress(node.name, relative, "ready", size_bytes, size_bytes)
     return {
         "name": node.name,
         "ok": ok,
         "stdout": "\n".join(item for item in stdout if item),
         "stderr": "\n".join(item for item in stderr if item),
+        "models": models,
     }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _print_model_progress(node: str, model_id: str, state: str, completed_bytes: int, total_bytes: int) -> None:
+    percent = round((completed_bytes / total_bytes) * 100, 2) if total_bytes else 0.0
+    print(
+        MODEL_PROGRESS_MARKER + json.dumps(
+            {
+                "node": node,
+                "model_id": model_id,
+                "state": state,
+                "bytes": completed_bytes,
+                "total_bytes": total_bytes,
+                "percent": percent,
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
 
 
 def all_model_paths() -> List[str]:
@@ -1322,6 +1376,83 @@ def command_lifecycle(nodes: Sequence[Node], action: str) -> int:
     return 0 if all(item["ok"] for item in results) else 1
 
 
+def delete_model_one(node: Node, model_paths: Sequence[str]) -> Dict[str, Any]:
+    deleted: List[Dict[str, Any]] = []
+    for model_id in model_paths:
+        _print_model_progress(node.name, model_id, "deleting", 0, 0)
+        try:
+            payload = request_json(
+                f"{node.api_url}/cluster/models/delete",
+                method="POST",
+                payload={"model_id": model_id},
+                timeout=60.0,
+            )
+        except Exception as exc:
+            _print_model_progress(node.name, model_id, "failed", 0, 0)
+            return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc), "models": deleted}
+        if payload.get("ok") is not True:
+            _print_model_progress(node.name, model_id, "failed", 0, 0)
+            return {"name": node.name, "ok": False, "stdout": "", "stderr": "Worker refused model deletion", "models": deleted}
+        deleted.append(payload.get("model") or {"id": model_id, "deleted": True})
+        _print_model_progress(node.name, model_id, "deleted", 0, 0)
+    return {"name": node.name, "ok": True, "stdout": "", "stderr": "", "models": deleted}
+
+
+def command_delete_models(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    if not args.model:
+        print("Specify at least one --model for deletion.", file=sys.stderr)
+        return 2
+    workers = [node for node in nodes if node.role == "worker"]
+    results = [delete_model_one(node, args.model) for node in workers]
+    for item in results:
+        print(f"[{item['name']}] {'OK' if item['ok'] else 'FAIL'}")
+        if item["stderr"]:
+            print(item["stderr"], file=sys.stderr)
+    return 0 if results and all(item["ok"] for item in results) else 1
+
+
+def install_model_url_one(node: Node, model_id: str, source_url: str, expected_sha256: str) -> Dict[str, Any]:
+    _print_model_progress(node.name, model_id, "queued", 0, 0)
+    _print_model_progress(node.name, model_id, "downloading", 0, 0)
+    try:
+        payload = request_json(
+            f"{node.api_url}/cluster/models/install",
+            method="POST",
+            payload={
+                "model_id": model_id,
+                "source_url": source_url,
+                "expected_sha256": expected_sha256,
+            },
+            timeout=7200.0,
+        )
+    except Exception as exc:
+        _print_model_progress(node.name, model_id, "failed", 0, 0)
+        return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc)}
+    model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
+    if payload.get("ok") is not True or not model.get("checksum_valid"):
+        _print_model_progress(node.name, model_id, "failed", 0, 0)
+        return {"name": node.name, "ok": False, "stdout": "", "stderr": "Worker direct download verification failed"}
+    downloaded = int(model.get("downloaded_bytes") or 0)
+    _print_model_progress(node.name, model_id, "verify", downloaded, downloaded)
+    _print_model_progress(node.name, model_id, "ready", downloaded, downloaded)
+    return {"name": node.name, "ok": True, "stdout": json.dumps(model, ensure_ascii=False), "stderr": ""}
+
+
+def command_install_model_url(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    workers = [node for node in nodes if node.role == "worker"]
+    if not workers:
+        print("No enabled worker nodes; nothing to install.")
+        return 0
+    results = [install_model_url_one(node, args.model_id, args.source_url, args.expected_sha256) for node in workers]
+    for item in results:
+        print(f"[{item['name']}] {'OK' if item['ok'] else 'FAIL'}")
+        if item["stdout"]:
+            print(item["stdout"])
+        if item["stderr"]:
+            print(item["stderr"], file=sys.stderr)
+    return 0 if all(item["ok"] for item in results) else 1
+
+
 def _select_model_one(node: Node, model_id: str, n_ctx: int, n_gpu_layers: int) -> Dict[str, Any]:
     try:
         result = request_json(
@@ -1408,6 +1539,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync_models_parser.add_argument("--dry-run", action="store_true")
 
+    delete_models_parser = subparsers.add_parser("delete-models", help="Delete GGUF models from selected workers")
+    delete_models_parser.add_argument(
+        "--model", action="append", default=[], help="Relative model path to delete; repeatable"
+    )
+
+    install_url_parser = subparsers.add_parser(
+        "install-model-url", help="Direct-download a checksummed GGUF to selected workers"
+    )
+    install_url_parser.add_argument("--model-id", required=True)
+    install_url_parser.add_argument("--source-url", required=True)
+    install_url_parser.add_argument("--expected-sha256", required=True)
+
     prepare_parser = subparsers.add_parser(
         "prepare",
         help="Sync code, install runtime, sync selected models and start workers",
@@ -1463,6 +1606,10 @@ def main() -> int:
         return command_sync_code(nodes, args)
     if args.command == "sync-models":
         return command_sync_models(nodes, args)
+    if args.command == "delete-models":
+        return command_delete_models(nodes, args)
+    if args.command == "install-model-url":
+        return command_install_model_url(nodes, args)
     if args.command == "prepare":
         return command_prepare(nodes, args)
     if args.command == "prepare-rpc":

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+      "family": "Qwen2.5",
+      "vendor": "Alibaba Cloud",
+      "parameter_count_b": 1.5,
+      "context_length": 32768,
+      "license": "Qwen Research License",
+      "description": "Small instruction model baseline for edge GGUF benchmarking.",
+      "recommended_platforms": ["jetson", "raspberry-pi"],
+      "estimated_memory_mb": 1400,
+      "quantization": "Q4_K_M",
+      "source_url": "",
+      "sha256": ""
+    }
+  ]
+}
