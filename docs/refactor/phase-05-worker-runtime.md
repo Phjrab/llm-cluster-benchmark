@@ -2,6 +2,12 @@
 
 Date: 2026-08-20 (Asia/Seoul)
 
+## Git checkpoint
+
+- Branch: `codex/mac-control-plane`
+- Implementation commit: `acf1123 refactor(worker): extract standalone inference and telemetry runtime`
+- Implementation push: `SUCCESS` to `origin/codex/mac-control-plane`
+
 ## Implemented
 
 - Added the Worker-owned `InferenceBackend` protocol and repository-local
@@ -65,7 +71,8 @@ Date: 2026-08-20 (Asia/Seoul)
 - llama.cpp retry schedule and chat-template fallback compatibility fixture.
 - Worker source/import test confirming no `web.app` runtime dependency.
 - Full Python suite, dashboard JavaScript/export fixture, shell syntax, and
-  legacy CLI help smoke tests (recorded with the Phase checkpoint).
+  legacy CLI help smoke tests (recorded with the Phase checkpoint):
+  `105 passed`.
 
 ## Tests not run / reason
 
