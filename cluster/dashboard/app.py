@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cluster.application.jobs import JobService, NONTERMINAL_JOB_STATES
 from cluster.application.suite_runner import suite_document, suite_model_records
+from cluster.domain.events import ClusterEvent, EventChannel
 from cluster.benchmark.runner import (
     ExperimentConfig,
     experiment_strategy_catalog,
@@ -135,12 +136,15 @@ def verify_token(request: Request) -> None:
 
 
 class EventBus:
-    def __init__(self) -> None:
+    def __init__(self, subscriber_maxsize: int = 100) -> None:
         self._lock = threading.Lock()
         self._subscribers: List[queue.Queue[Dict[str, Any]]] = []
+        self._subscriber_maxsize = subscriber_maxsize
 
-    def publish(self, event_type: str, **payload: Any) -> None:
-        event = {"type": event_type, "at": utc_now(), **payload}
+    def publish(
+        self, event_type: str, *, channel: EventChannel = EventChannel.SYSTEM, **payload: Any
+    ) -> None:
+        event = ClusterEvent.create(channel, event_type, utc_now(), **payload).to_dict()
         with self._lock:
             subscribers = list(self._subscribers)
         for subscriber in subscribers:
@@ -154,11 +158,11 @@ class EventBus:
                     pass
 
     def stream(self, supplied_token: str = "") -> Generator[str, None, None]:
-        subscriber: queue.Queue[Dict[str, Any]] = queue.Queue(maxsize=100)
+        subscriber: queue.Queue[Dict[str, Any]] = queue.Queue(maxsize=self._subscriber_maxsize)
         with self._lock:
             self._subscribers.append(subscriber)
         try:
-            yield f"data: {json.dumps({'type': 'connected', 'at': utc_now()})}\n\n"
+            yield f"data: {json.dumps(ClusterEvent.create(EventChannel.SYSTEM, 'connected', utc_now()).to_dict())}\n\n"
             while True:
                 try:
                     event = subscriber.get(timeout=15.0)
@@ -166,7 +170,7 @@ class EventBus:
                         read_settings()["dashboard_token_auth"]
                         and not dashboard_token_is_valid(supplied_token)
                     ):
-                        yield f"data: {json.dumps({'type': 'auth_required', 'at': utc_now()})}\n\n"
+                        yield f"data: {json.dumps(ClusterEvent.create(EventChannel.SYSTEM, 'auth_required', utc_now()).to_dict())}\n\n"
                         return
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 except queue.Empty:
@@ -174,7 +178,7 @@ class EventBus:
                         read_settings()["dashboard_token_auth"]
                         and not dashboard_token_is_valid(supplied_token)
                     ):
-                        yield f"data: {json.dumps({'type': 'auth_required', 'at': utc_now()})}\n\n"
+                        yield f"data: {json.dumps(ClusterEvent.create(EventChannel.SYSTEM, 'auth_required', utc_now()).to_dict())}\n\n"
                         return
                     yield ": keepalive\n\n"
         finally:
@@ -889,9 +893,9 @@ class StatusMonitor:
             with self._lock:
                 changed = snapshot != self._snapshot
                 self._snapshot = snapshot
-            events.publish("cluster_status", nodes=snapshot, changed=changed)
+            events.publish("cluster_status", channel=EventChannel.SYSTEM, nodes=snapshot, changed=changed)
         except Exception as exc:
-            events.publish("monitor_error", message=str(exc))
+            events.publish("monitor_error", channel=EventChannel.SYSTEM, message=str(exc))
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -979,7 +983,7 @@ class ActionManager:
                     }
                 )
                 checking_reports.append(write_environment_report(pending))
-            events.publish("environment_changed", environment=read_environment_reports(), reports=checking_reports)
+            events.publish("environment_changed", channel=EventChannel.NODE_OPS, environment=read_environment_reports(), reports=checking_reports)
         thread = threading.Thread(
             target=self._run,
             args=(action_id, payload),
@@ -1023,6 +1027,7 @@ class ActionManager:
                 environment_reported_nodes.add(node_name)
                 events.publish(
                     "environment_changed",
+                    channel=EventChannel.NODE_OPS,
                     environment=read_environment_reports(),
                     report=report,
                 )
@@ -1058,7 +1063,7 @@ class ActionManager:
 
         with self._lock:
             self._actions[action_id]["status"] = "running"
-        events.publish("action_started", action=self.get(action_id))
+        events.publish("action_started", channel=EventChannel.NODE_OPS, action=self.get(action_id))
         try:
             process = subprocess.Popen(
                 command,
@@ -1091,6 +1096,7 @@ class ActionManager:
                             environment_reported_nodes.add(report["node"])
                             events.publish(
                                 "environment_changed",
+                                channel=EventChannel.NODE_OPS,
                                 environment=read_environment_reports(),
                                 report=report,
                             )
@@ -1101,7 +1107,7 @@ class ActionManager:
                     log.append(clean)
                     if len(log) > 500:
                         del log[:-500]
-                events.publish("action_log", action_id=action_id, line=clean)
+                events.publish("action_log", channel=EventChannel.NODE_OPS, action_id=action_id, line=clean)
             exit_code = process.wait()
             persist_missing_environment_reports(
                 f"Environment process exited with code {exit_code} without a structured report"
@@ -1118,7 +1124,7 @@ class ActionManager:
                 record["status"] = "failed"
                 record["finished_at"] = utc_now()
                 record["log"].append(str(exc))
-        events.publish("action_finished", action=self.get(action_id))
+        events.publish("action_finished", channel=EventChannel.NODE_OPS, action=self.get(action_id))
         status_monitor.refresh_now()
 
     def get(self, action_id: str) -> Dict[str, Any]:
@@ -1413,7 +1419,7 @@ class ExperimentManager:
             "job_id": job.get("job_id"),
             "status": job.get("status"),
         }
-        events.publish("experiment_event", event=event, active=public_job)
+        events.publish("experiment_event", channel=EventChannel.EXPERIMENT, event=event, active=public_job)
         if job.get("status") not in NONTERMINAL_JOB_STATES:
             status_monitor.refresh_now()
 
@@ -1632,7 +1638,7 @@ async def update_settings(payload: ClusterSettingsPayload, request: Request) -> 
             except ValueError as exc:
                 write_settings(previous)
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
-    events.publish("settings_changed", settings=updated, action=action)
+    events.publish("settings_changed", channel=EventChannel.SYSTEM, settings=updated, action=action)
     return {"ok": True, "settings": updated, "action": action}
 
 
@@ -1693,7 +1699,7 @@ async def upsert_node(payload: NodePayload) -> Dict[str, Any]:
                 _invalidate_environment_report(node.name)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    events.publish("inventory_changed", nodes=[serialize_node(item) for item in nodes])
+    events.publish("inventory_changed", channel=EventChannel.NODE_OPS, nodes=[serialize_node(item) for item in nodes])
     threading.Thread(target=status_monitor.refresh_now, daemon=True).start()
     return {"ok": True, "node": serialize_node(node)}
 
@@ -1719,7 +1725,7 @@ async def delete_node(node_name: str) -> Dict[str, Any]:
         nodes = [node for node in nodes if node.name != node_name]
         write_all_nodes(nodes)
         _invalidate_environment_report(node_name)
-    events.publish("inventory_changed", nodes=[serialize_node(item) for item in nodes])
+    events.publish("inventory_changed", channel=EventChannel.NODE_OPS, nodes=[serialize_node(item) for item in nodes])
     return {"ok": True}
 
 

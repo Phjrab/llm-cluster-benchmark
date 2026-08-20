@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from cluster.domain.experiment import ExperimentConfig
+from cluster.domain.events import EventChannel
 from cluster.infrastructure.storage import FilesystemSuiteRepository, SuiteRepository
 
 
@@ -173,7 +174,12 @@ class SuiteRunner:
         self._progress_callback = progress
 
     def _emit(self, event_type: str, **payload: Any) -> Dict[str, Any]:
-        event = {"type": event_type, "at": utc_now(), **payload}
+        event = {
+            "type": event_type,
+            "at": utc_now(),
+            "channel": EventChannel.EXPERIMENT.value,
+            **payload,
+        }
         if self._emit_callback:
             self._emit_callback(event)
         return event

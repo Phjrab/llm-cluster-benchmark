@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 from cluster.domain.experiment import ExperimentConfig
+from cluster.domain.events import EventChannel
 from cluster.infrastructure.storage import FilesystemRunRepository
 
 from .transport import utc_now
@@ -44,6 +45,7 @@ class RunPersistence:
         event = {
             "type": event_type,
             "at": utc_now(),
+            "channel": EventChannel.EXPERIMENT.value,
             "run_id": self.run_id,
             "suite_id": self.config.suite_id,
             "model_id": self.config.model_id,

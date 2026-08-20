@@ -2,6 +2,7 @@
 
 from .controller import ControllerConfig, ControllerPlatform
 from .errors import ClusterError, DomainValidationError, ErrorCode, FailureRecord
+from .events import ClusterEvent, EventChannel
 from .failures import FAILURE_GUIDE, failure_from_exception, failure_from_message, http_status_for_failure
 from .experiment import ExperimentConfig, normalize_model_ids, validate_model_id
 from .identifiers import validate_experiment_id, validate_node_id, validate_run_id, validate_suite_id
@@ -18,10 +19,12 @@ from .worker import WorkerInventory, WorkerNode, WorkerPlatform
 
 __all__ = [
     "ClusterError",
+    "ClusterEvent",
     "ControllerConfig",
     "ControllerPlatform",
     "DomainValidationError",
     "ErrorCode",
+    "EventChannel",
     "FAILURE_GUIDE",
     "EXECUTION_STRATEGIES",
     "EXECUTION_STRATEGY_ORDER",

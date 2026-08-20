@@ -1549,6 +1549,15 @@ function environmentLogLine(label, message) {
   log.scrollTop = log.scrollHeight;
 }
 
+function eventChannel(message) {
+  if (message?.channel) return message.channel;
+  // Older Controller versions did not serialize a channel. Keep their wire
+  // format usable while never mixing new node-operation events into RUN CONTROL.
+  if (["experiment_event", "experiment_failed"].includes(message?.type)) return "experiment";
+  if (["action_started", "action_log", "action_finished", "environment_changed", "inventory_changed"].includes(message?.type)) return "node_ops";
+  return "system";
+}
+
 function actionName(value) {
   if (typeof value === "string") return value;
   return value?.action || value?.name || value?.action_name || "";
@@ -1680,6 +1689,7 @@ function connectEvents() {
   };
   state.eventSource.onmessage = event => {
     const message = JSON.parse(event.data);
+    const channel = eventChannel(message);
     if (message.type === "cluster_status") {
       state.status = message.nodes || [];
       ingestStatus(state.status);
@@ -1720,7 +1730,7 @@ function connectEvents() {
         const line = message.line || message.message || "환경 작업 진행 중";
         if (!String(line).startsWith("CLUSTER_ENVIRONMENT_JSON=")) environmentLogLine("TASK", line);
       }
-      else logLine("TASK", message.line);
+      else environmentLogLine("TASK", message.line || message.message || "노드 작업 진행 중");
     } else if (message.type === "action_finished") {
       const action = message.action;
       const environmentAction = environmentActionFromMessage(message);
@@ -1738,7 +1748,7 @@ function connectEvents() {
         const nodes = Array.isArray(action?.nodes) ? action.nodes : [];
         toast(status === "completed" ? "작업 완료" : "작업 실패", `${actionName(action)} · ${nodes.join(", ")}`, status === "completed" ? "success" : "error");
       }
-    } else if (message.type === "experiment_event") {
+    } else if (message.type === "experiment_event" && channel === "experiment") {
       const inner = message.event || {};
       setRunState(message.active);
       if (inner.type === "phase") logLine("PHASE", inner.message || inner.phase);
@@ -1764,7 +1774,7 @@ function connectEvents() {
           suiteStatus === "completed" ? "success" : "error",
         );
       }
-    } else if (message.type === "experiment_failed") {
+    } else if (message.type === "experiment_failed" && channel === "experiment") {
       setRunState(message.active);
       refreshExperimentData().catch(() => {});
       toast("벤치마크 실패", message.message, "error");
@@ -1776,7 +1786,7 @@ async function runActionOnNodes(action, nodeNames, options = {}) {
   if (!nodeNames.length) return toast("노드 선택 필요", "하나 이상의 노드를 선택하세요.", "error");
   try {
     const result = await api("/api/actions", { method: "POST", body: { action, node_names: nodeNames, options } });
-    logLine("TASK", `${action} 시작 · ${result.action.nodes.join(", ")}`);
+    environmentLogLine("TASK", `${action} 시작 · ${result.action.nodes.join(", ")}`);
     toast("작업 시작", action);
     return result;
   } catch (error) {
