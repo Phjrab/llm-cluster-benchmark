@@ -12,6 +12,7 @@ from unittest import mock
 import unittest
 from pathlib import Path
 
+from cluster.application.suite_runner import ExperimentRunner, SuiteRunner
 from cluster.benchmark.runner import (
     ExperimentConfig,
     RequestTask,
@@ -31,6 +32,7 @@ from cluster.benchmark.runner import (
 )
 from cluster import clusterctl
 from cluster.clusterctl import Node, load_nodes, select_nodes
+from cluster.infrastructure.storage import FilesystemSuiteRepository
 
 
 INVENTORY = """name,role,host,user,ssh_port,api_port,project_dir,enabled,identity_file
@@ -809,14 +811,7 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
     def test_final_success_is_unloaded_and_unload_failure_is_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            dashboard = self._load_dashboard(root)
             results = root / "results"
-            manager = dashboard.ExperimentManager()
-            manager._active = {
-                "suite_id": "suite_test_cleanup",
-                "started_at": "2026-08-13T00:00:00+00:00",
-                "status": "queued",
-            }
             config = ExperimentConfig(
                 experiment_id="experiment-1",
                 name="cleanup suite",
@@ -838,20 +833,23 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
                     "status": "completed",
                 }
 
-            with mock.patch.object(dashboard, "RESULTS_DIR", results), mock.patch.object(
-                dashboard, "run_experiment", side_effect=fake_run
-            ), mock.patch.object(
-                manager,
-                "_unload_models",
-                side_effect=[[], ["jetson-head: unload failed"]],
-            ) as unload, mock.patch.object(dashboard.status_monitor, "refresh_now"):
-                manager._run(
-                    config,
-                    ["models/a.gguf", "models/b.gguf"],
-                    continue_on_model_error=False,
-                    model_cooldown_s=0,
-                    cancel_event=threading.Event(),
-                )
+            unload = mock.Mock(side_effect=[[], ["jetson-head: unload failed"]])
+            runner = SuiteRunner(
+                ExperimentRunner(fake_run, root / "nodes.csv", results),
+                FilesystemSuiteRepository(results / "_suites"),
+                unload,
+            )
+            active = runner.run(
+                config,
+                ["models/a.gguf", "models/b.gguf"],
+                "suite_test_cleanup",
+                continue_on_model_error=False,
+                model_cooldown_s=0,
+                cancel_event=threading.Event(),
+                total_work_units=2,
+                per_model_work_units=1,
+                started_at="2026-08-13T00:00:00+00:00",
+            )
 
             suite = json.loads(
                 (results / "_suites" / "suite_test_cleanup.json").read_text(
@@ -859,7 +857,7 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
                 )
             )
             self.assertEqual(unload.call_count, 2)
-            self.assertEqual(manager.active()["status"], "partial")
+            self.assertEqual(active["status"], "partial")
             self.assertEqual(suite["status"], "partial")
             self.assertEqual(suite["models"][1]["cleanup_status"], "failed")
             self.assertEqual(suite["errors"][0]["stage"], "unload")

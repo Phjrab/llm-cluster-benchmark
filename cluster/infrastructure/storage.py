@@ -9,13 +9,15 @@ plain mappings or typed values rather than opening files directly.
 from __future__ import annotations
 
 import csv
+import fcntl
 import json
 import os
 import stat
 import threading
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Protocol, Sequence
+from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Protocol, Sequence
 
 from cluster.domain.identifiers import (
     validate_experiment_id,
@@ -88,6 +90,12 @@ class JobRepository(Protocol):
     def write(self, job_id: str, job: Mapping[str, Any]) -> None: ...
 
     def list(self, limit: int = 100) -> List[JsonObject]: ...
+
+    def update(self, job_id: str, mutate: Callable[[JsonObject], None]) -> JsonObject: ...
+
+    def append_event(self, job_id: str, event: Mapping[str, Any]) -> None: ...
+
+    def read_events(self, job_id: str, limit: int = 100) -> List[JsonObject]: ...
 
 
 def _existing_or_default_mode(path: Path, default_mode: int) -> int:
@@ -277,14 +285,73 @@ class FilesystemSuiteRepository(_JsonDirectoryRepository):
 
 
 class FilesystemJobRepository(_JsonDirectoryRepository):
+    """Private, process-safe durable registry and event journal for jobs."""
+
+    def __init__(self, directory: Path) -> None:
+        super().__init__(directory, default_mode=0o600)
+        self._thread_lock = threading.RLock()
+
+    def _event_path(self, job_id: str) -> Path:
+        return self.directory / f"{validate_experiment_id(job_id)}.events.jsonl"
+
+    @contextmanager
+    def _locked(self, job_id: str) -> Iterator[None]:
+        _ensure_directory(self.directory, mode=0o700)
+        lock_path = self.directory / f".{validate_experiment_id(job_id)}.lock"
+        descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        os.fchmod(descriptor, 0o600)
+        try:
+            with self._thread_lock:
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+                yield
+        finally:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
+
     def read(self, job_id: str) -> JsonObject:
         return self._read(job_id, validate_experiment_id)
 
     def write(self, job_id: str, job: Mapping[str, Any]) -> None:
-        self._write(job_id, job, validate_experiment_id)
+        with self._locked(job_id):
+            self._write(job_id, job, validate_experiment_id)
 
     def list(self, limit: int = 100) -> List[JsonObject]:
         return self._list(limit)
+
+    def update(self, job_id: str, mutate: Callable[[JsonObject], None]) -> JsonObject:
+        with self._locked(job_id):
+            current = self._read(job_id, validate_experiment_id)
+            mutate(current)
+            self._write(job_id, current, validate_experiment_id)
+            return current
+
+    def append_event(self, job_id: str, event: Mapping[str, Any]) -> None:
+        with self._locked(job_id):
+            path = self._event_path(job_id)
+            descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(dict(event), ensure_ascii=False) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+
+    def read_events(self, job_id: str, limit: int = 100) -> List[JsonObject]:
+        try:
+            lines = self._event_path(job_id).read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            return []
+        events: List[JsonObject] = []
+        selected = lines if limit <= 0 else lines[-limit:]
+        for line in selected:
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                events.append(value)
+        return events
 
 
 class FilesystemRunRepository:

@@ -75,10 +75,16 @@ class FilesystemStorageTests(unittest.TestCase):
             experiments.write("edge-test", {"experiment_id": "edge-test"})
             suites.write("suite_01", {"suite_id": "suite_01"})
             jobs.write("job_01", {"job_id": "job_01", "status": "queued"})
+            jobs.update("job_01", lambda job: job.update({"status": "running"}))
+            jobs.append_event("job_01", {"type": "job_started"})
             (root / "experiments" / "broken.json").write_text("[]", encoding="utf-8")
             self.assertEqual(experiments.list(), [{"experiment_id": "edge-test"}])
             self.assertEqual(suites.read("suite_01")["suite_id"], "suite_01")
-            self.assertEqual(jobs.list()[0]["status"], "queued")
+            self.assertEqual(jobs.list()[0]["status"], "running")
+            self.assertEqual(jobs.read_events("job_01")[0]["type"], "job_started")
+            self.assertEqual((root / "jobs").stat().st_mode & 0o777, 0o700)
+            self.assertEqual((root / "jobs" / "job_01.json").stat().st_mode & 0o777, 0o600)
+            self.assertEqual((root / "jobs" / "job_01.events.jsonl").stat().st_mode & 0o777, 0o600)
 
     def test_run_repository_preserves_existing_run_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

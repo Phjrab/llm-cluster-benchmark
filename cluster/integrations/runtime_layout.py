@@ -46,7 +46,9 @@ class RuntimePaths:
 
     @property
     def jobs_dir(self) -> Path:
-        return self.runtime_dir / "jobs"
+        if self.runtime_dir == self.layout.runtime_dir:
+            return self.layout.jobs_dir
+        return self.runtime_dir / "controller" / "jobs"
 
 
 def repository_root() -> Path:

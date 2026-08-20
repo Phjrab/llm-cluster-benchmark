@@ -596,6 +596,10 @@ class IdentifierAndLayoutTests(unittest.TestCase):
         self.assertEqual(layout.runtime_dir, layout.root / ".run" / "cluster")
         self.assertEqual(layout.results_dir, layout.runtime_dir / "results")
         self.assertEqual(layout.experiments_dir, layout.runtime_dir / "experiments")
+        self.assertEqual(
+            layout.jobs_dir,
+            layout.root / ".run" / "controller" / "jobs",
+        )
         self.assertEqual(layout.inventory_path, layout.runtime_dir / "nodes.local.csv")
         self.assertEqual(
             layout.run_dir("20260820_123456_abc123"),

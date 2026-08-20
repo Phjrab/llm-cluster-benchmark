@@ -81,7 +81,7 @@ class ProjectLayout:
 
     @property
     def jobs_dir(self) -> Path:
-        return self.runtime_dir / "jobs"
+        return self.controller_runtime_dir / "jobs"
 
     @property
     def suites_dir(self) -> Path:
