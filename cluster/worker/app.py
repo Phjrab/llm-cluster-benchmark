@@ -14,6 +14,7 @@ import secrets
 import shutil
 import socket
 import subprocess
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -154,7 +155,6 @@ def create_app(
     resolved_root = Path(project_root)
     selected_backend = backend or LlamaCppInferenceBackend(resolved_root / "models")
     selected_telemetry = telemetry or TelemetryService.for_platform(platform_kind, resolved_root)
-    selected_telemetry.start()
     backend_profile = runtime_backend()
     runtime = WorkerRuntimeInfo(
         node_name=node_name,
@@ -166,7 +166,31 @@ def create_app(
         profile=system_profile(resolved_root, platform_kind, backend_profile),
         worker_api_auth=auth_enabled,
     )
-    app = FastAPI(title="LLM Cluster Worker", version="1.0.0")
+    telemetry_running = False
+    if telemetry is not None:
+        # Preserve the injectable service contract used by existing callers;
+        # the real platform sampler starts only when the ASGI app starts.
+        selected_telemetry.start()
+        telemetry_running = True
+
+    @asynccontextmanager
+    async def worker_lifespan(_application: FastAPI):
+        nonlocal telemetry_running
+        if not telemetry_running:
+            selected_telemetry.start()
+            telemetry_running = True
+        try:
+            yield
+        finally:
+            if telemetry_running:
+                selected_telemetry.stop()
+                telemetry_running = False
+
+    app = FastAPI(
+        title="LLM Cluster Worker",
+        version="1.0.0",
+        lifespan=worker_lifespan,
+    )
 
     @app.middleware("http")
     async def require_cluster_api_token(request: Request, call_next: Any) -> Any:

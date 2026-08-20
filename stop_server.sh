@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 find_project_root() {
@@ -17,39 +18,67 @@ find_project_root() {
 }
 
 PROJECT_ROOT="$(find_project_root)"
-cd "$PROJECT_ROOT"
-
 PORT="${PORT:-8000}"
 RUN_DIR="$PROJECT_ROOT/.run"
 PID_FILE="$RUN_DIR/chat_server.pid"
+IDENTITY_FILE="$RUN_DIR/chat_server.identity.json"
+LOCK_FILE="$RUN_DIR/chat_server.lock"
+PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python"
 
-stopped=0
-stopped_pid=""
-
-if [[ -f "$PID_FILE" ]]; then
-  pid="$(cat "$PID_FILE" 2>/dev/null || true)"
-  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-    kill "$pid" || true
-    echo "[OK] Sent stop signal to PID=$pid"
-    stopped=1
-    stopped_pid="$pid"
-  fi
-  rm -f "$PID_FILE"
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "[ERROR] .venv not found in $PROJECT_ROOT" >&2
+  exit 1
+fi
+if ! command -v flock >/dev/null 2>&1; then
+  echo "[ERROR] flock is required for safe server lifecycle management" >&2
+  exit 1
+fi
+mkdir -p "$RUN_DIR"
+chmod 700 "$RUN_DIR"
+PROCESS_GUARD=(
+  "$PYTHON_BIN" -m cluster.infrastructure.process_guard
+  --pid-file "$PID_FILE"
+  --identity-file "$IDENTITY_FILE"
+  --cwd "$PROJECT_ROOT"
+  --python "$PYTHON_BIN"
+  --module web.app
+  --port "$PORT"
+)
+exec 9>"$LOCK_FILE"
+chmod 600 "$LOCK_FILE"
+if ! flock -w 30 9; then
+  echo "[ERROR] another server lifecycle operation is still running" >&2
+  exit 1
 fi
 
-fallback_pids="$(pgrep -f "uvicorn web.app:app --host .* --port $PORT" || true)"
-if [[ -n "$fallback_pids" ]]; then
-  while IFS= read -r pid; do
-    [[ -z "$pid" ]] && continue
-    [[ -n "$stopped_pid" && "$pid" == "$stopped_pid" ]] && continue
-    kill "$pid" || true
-    echo "[OK] Sent stop signal to PID=$pid (fallback)"
-    stopped=1
-  done <<< "$fallback_pids"
-fi
+cd "$PROJECT_ROOT"
+set +e
+tracked_pid="$("${PROCESS_GUARD[@]}" status --adopt)"
+guard_status=$?
+set -e
 
-if [[ "$stopped" -eq 0 ]]; then
-  echo "[INFO] No running server found on port $PORT"
-else
-  echo "[OK] Server stop requested"
-fi
+case "$guard_status" in
+  0)
+    set +e
+    stopped_pid="$("${PROCESS_GUARD[@]}" stop)"
+    stop_status=$?
+    set -e
+    if [[ "$stop_status" -ne 0 ]]; then
+      echo "[ERROR] Server process identity changed; no further signal was sent" >&2
+      exit 1
+    fi
+    [[ "$stopped_pid" == "$tracked_pid" ]] || {
+      echo "[ERROR] Server process identity changed during stop" >&2
+      exit 1
+    }
+    echo "[OK] Sent stop signal to PID=$stopped_pid"
+    echo "[OK] Server stop requested"
+    ;;
+  3)
+    echo "[INFO] No running server found on port $PORT"
+    ;;
+  *)
+    echo "[ERROR] Server process metadata is unsafe; no process was signalled" >&2
+    exit 1
+    ;;
+esac

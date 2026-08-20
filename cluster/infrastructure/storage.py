@@ -238,15 +238,22 @@ class FilesystemEnvironmentReportRepository:
 
 
 class _JsonDirectoryRepository:
-    def __init__(self, directory: Path, *, default_mode: int = 0o644) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        *,
+        default_mode: int = 0o644,
+        directory_mode: Optional[int] = None,
+    ) -> None:
         self.directory = Path(directory)
         self.default_mode = default_mode
+        self.directory_mode = directory_mode
 
     def _read(self, identifier: str, validator: Any) -> JsonObject:
         return read_json_object(self.directory / f"{validator(identifier)}.json")
 
     def _write(self, identifier: str, value: Mapping[str, Any], validator: Any) -> None:
-        _ensure_directory(self.directory)
+        _ensure_directory(self.directory, mode=self.directory_mode)
         write_json_object(
             self.directory / f"{validator(identifier)}.json",
             value,
@@ -267,6 +274,10 @@ class _JsonDirectoryRepository:
 
 
 class FilesystemExperimentRepository(_JsonDirectoryRepository):
+    def __init__(self, directory: Path) -> None:
+        # Experiment definitions can contain research prompts.
+        super().__init__(directory, default_mode=0o600, directory_mode=0o700)
+
     def read(self, experiment_id: str) -> JsonObject:
         return self._read(experiment_id, validate_experiment_id)
 
@@ -278,6 +289,10 @@ class FilesystemExperimentRepository(_JsonDirectoryRepository):
 
 
 class FilesystemSuiteRepository(_JsonDirectoryRepository):
+    def __init__(self, directory: Path) -> None:
+        # Suite summaries can contain model and failure evidence.
+        super().__init__(directory, default_mode=0o600, directory_mode=0o700)
+
     def read(self, suite_id: str) -> JsonObject:
         return self._read(suite_id, validate_suite_id)
 
@@ -292,7 +307,7 @@ class FilesystemJobRepository(_JsonDirectoryRepository):
     """Private, process-safe durable registry and event journal for jobs."""
 
     def __init__(self, directory: Path) -> None:
-        super().__init__(directory, default_mode=0o600)
+        super().__init__(directory, default_mode=0o600, directory_mode=0o700)
         self._thread_lock = threading.RLock()
 
     def _event_path(self, job_id: str) -> Path:
@@ -370,15 +385,18 @@ class FilesystemRunRepository:
 
     def create(self, run_id: str, config: Mapping[str, Any]) -> Path:
         run_dir = self._run_dir(run_id)
-        self.results_dir.mkdir(parents=True, exist_ok=True)
-        run_dir.mkdir(parents=False, exist_ok=False)
-        write_json_object(run_dir / "config.json", config, default_mode=0o644)
+        _ensure_directory(self.results_dir, mode=0o700)
+        run_dir.mkdir(parents=False, exist_ok=False, mode=0o700)
+        run_dir.chmod(0o700)
+        write_json_object(run_dir / "config.json", config, default_mode=0o600)
         return run_dir
 
     def append_event(self, run_id: str, event: Mapping[str, Any]) -> None:
         path = self._run_dir(run_id) / "events.jsonl"
         with self._event_lock:
-            with path.open("a", encoding="utf-8") as handle:
+            descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
                 handle.write(json.dumps(dict(event), ensure_ascii=False) + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -428,10 +446,10 @@ class FilesystemRunRepository:
         writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(records)
-        atomic_write_text(path, buffer.getvalue(), default_mode=0o644)
+        atomic_write_text(path, buffer.getvalue(), default_mode=0o600)
 
     def write_summary(self, run_id: str, summary: Mapping[str, Any]) -> None:
-        write_json_object(self._run_dir(run_id) / "summary.json", summary, default_mode=0o644)
+        write_json_object(self._run_dir(run_id) / "summary.json", summary, default_mode=0o600)
 
     def read_summary(self, run_id: str) -> JsonObject:
         return read_json_object(self._run_dir(run_id) / "summary.json")

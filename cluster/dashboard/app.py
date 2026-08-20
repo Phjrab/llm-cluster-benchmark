@@ -10,6 +10,9 @@ module intentionally owns only application construction and lifecycle wiring.
 from __future__ import annotations
 
 import importlib
+import json
+import logging
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -24,6 +27,7 @@ from cluster.dashboard.routes import register_routers
 # overrides. Reload the service module in place so compatibility globals are
 # rebuilt from the same explicit runtime integration boundary.
 services = importlib.reload(_services_module)
+LOGGER = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
@@ -55,8 +59,28 @@ def create_app() -> FastAPI:
     register_routers(application, templates)
 
     @application.exception_handler(Exception)
-    async def unexpected_error(_request: Request, exc: Exception) -> JSONResponse:
-        return JSONResponse(status_code=500, content={"detail": str(exc)})
+    async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+        request_id = uuid.uuid4().hex
+        # Do not return or log exception text: native/runtime failures can carry
+        # paths, prompts, command output, or credentials. Keep only structured
+        # correlation context and the exception type.
+        LOGGER.error(
+            json.dumps(
+                {
+                    "event": "dashboard_unexpected_error",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                    "error_type": type(exc).__name__,
+                },
+                sort_keys=True,
+            )
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error", "request_id": request_id},
+            headers={"X-Request-ID": request_id},
+        )
 
     return application
 

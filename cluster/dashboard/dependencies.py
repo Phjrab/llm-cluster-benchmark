@@ -13,7 +13,9 @@ if TYPE_CHECKING:
 
 
 def supplied_dashboard_token(request: Request) -> str:
-    return request.headers.get("X-Cluster-Token") or request.query_params.get("token", "")
+    # Credentials must never be accepted from a URL: query strings are commonly
+    # retained by browser history, proxies, and access logs.
+    return request.headers.get("X-Cluster-Token", "")
 
 
 def verify_token(request: Request) -> None:

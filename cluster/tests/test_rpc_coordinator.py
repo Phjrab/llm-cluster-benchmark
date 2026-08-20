@@ -91,6 +91,42 @@ class CoordinatorSelectionTests(unittest.TestCase):
 
 
 class WorkerRpcBackendTests(unittest.TestCase):
+    def test_start_timeout_still_attempts_idempotent_device_cleanup(self) -> None:
+        coordinator = worker("w1", "192.168.10.11", "jetson")
+        device = worker("w2", "192.168.10.12", "jetson")
+        commands: list[tuple[str, str]] = []
+
+        def runtime(node, action, *args, timeout=0):
+            commands.append((node.name, action))
+            if action == "check":
+                return {
+                    "node": node.name,
+                    "ok": True,
+                    "stdout": "platform=jetson",
+                    "stderr": "",
+                }
+            if node is device and action == "start-worker":
+                raise TimeoutError("SSH response lost after remote spawn")
+            return {"node": node.name, "ok": True, "stdout": "ok", "stderr": ""}
+
+        backend = WorkerRpcBackend(
+            runtime,
+            lambda *args, **kwargs: {"ok": True},
+            lambda *args, **kwargs: SimpleNamespace(
+                returncode=0, stdout="pinned-commit\n", stderr=""
+            ),
+        )
+        with self.assertRaises(TimeoutError):
+            backend.start(
+                [coordinator, device],
+                rpc_config([coordinator, device], rpc_coordinator_node="w1"),
+                lambda *args, **kwargs: None,
+            )
+
+        self.assertIn((device.name, "start-worker"), commands)
+        self.assertIn((device.name, "stop-worker"), commands)
+        self.assertIn((coordinator.name, "stop-coordinator"), commands)
+
     def test_topology_and_command_use_actual_worker_coordinator(self) -> None:
         pi = worker("pi-1", "192.168.10.21", "raspberry-pi")
         jetson = worker("jetson-1", "192.168.10.11", "jetson")

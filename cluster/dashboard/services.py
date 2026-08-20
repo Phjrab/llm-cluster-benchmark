@@ -90,22 +90,61 @@ ENVIRONMENT_DIR = RUNTIME_PATHS.environment_dir
 JOBS_DIR = RUNTIME_PATHS.jobs_dir
 ENVIRONMENT_MARKER = "CLUSTER_ENVIRONMENT_JSON="
 MODEL_PROGRESS_MARKER = "CLUSTER_MODEL_PROGRESS_JSON="
+PRIVATE_RUN_ARTIFACTS = frozenset(
+    {"config.json", "events.jsonl", "requests.csv", "responses.jsonl", "summary.json"}
+)
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _ensure_private_directory(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.chmod(0o700)
+
+
+def _chmod_private_file(path: Path) -> None:
+    if path.is_file() and not path.is_symlink():
+        path.chmod(0o600)
+
+
+def _tighten_existing_runtime_permissions() -> None:
+    """Migrate only known private runtime artifacts without following symlinks."""
+    for path in (
+        INVENTORY_PATH,
+        TOKEN_PATH,
+        SETTINGS_PATH,
+        MODEL_CATALOG_CACHE_PATH,
+    ):
+        _chmod_private_file(path)
+
+    for directory in (EXPERIMENTS_DIR, ENVIRONMENT_DIR, JOBS_DIR):
+        for path in directory.iterdir():
+            _chmod_private_file(path)
+
+    suites_dir = RESULTS_DIR / "_suites"
+    for path in suites_dir.iterdir():
+        _chmod_private_file(path)
+
+    for run_dir in RESULTS_DIR.iterdir():
+        if run_dir == suites_dir or run_dir.is_symlink() or not run_dir.is_dir():
+            continue
+        run_dir.chmod(0o700)
+        for name in PRIVATE_RUN_ARTIFACTS:
+            _chmod_private_file(run_dir / name)
+
+
 def ensure_runtime() -> None:
-    RUNTIME_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    RUNTIME_DIR.chmod(0o700)
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    (RESULTS_DIR / "_suites").mkdir(parents=True, exist_ok=True)
-    EXPERIMENTS_DIR.mkdir(parents=True, exist_ok=True)
-    ENVIRONMENT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    ENVIRONMENT_DIR.chmod(0o700)
-    JOBS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    JOBS_DIR.chmod(0o700)
+    for directory in (
+        RUNTIME_DIR,
+        RESULTS_DIR,
+        RESULTS_DIR / "_suites",
+        EXPERIMENTS_DIR,
+        ENVIRONMENT_DIR,
+        JOBS_DIR,
+    ):
+        _ensure_private_directory(directory)
     if not INVENTORY_PATH.exists():
         # A Controller can start before its first inference worker is enrolled.
         # Do not create a synthetic legacy head: the Controller is not a worker.
@@ -122,11 +161,11 @@ def ensure_runtime() -> None:
         os.replace(temporary, TOKEN_PATH)
     TOKEN_PATH.chmod(0o600)
     if not SETTINGS_PATH.exists():
-        SETTINGS_PATH.write_text(
-            '{\n  "worker_api_auth": false,\n  "dashboard_token_auth": false\n}\n',
-            encoding="utf-8",
+        FilesystemSettingsRepository(SETTINGS_PATH).write(
+            {"worker_api_auth": False, "dashboard_token_auth": False}
         )
     SETTINGS_PATH.chmod(0o600)
+    _tighten_existing_runtime_permissions()
 
 
 ensure_runtime()
@@ -229,11 +268,15 @@ def read_settings() -> Dict[str, Any]:
         except (OSError, StorageCorruptionError):
             # A damaged existing settings file must not silently disable a
             # dashboard protection that may previously have been enabled.
-            return {"worker_api_auth": False, "dashboard_token_auth": True}
+            return {"worker_api_auth": True, "dashboard_token_auth": True}
         worker_value = raw.get("worker_api_auth", False)
         dashboard_value = raw.get("dashboard_token_auth", False)
         return {
-            "worker_api_auth": worker_value if isinstance(worker_value, bool) else False,
+            "worker_api_auth": (
+                worker_value
+                if isinstance(worker_value, bool)
+                else "worker_api_auth" in raw
+            ),
             "dashboard_token_auth": (
                 dashboard_value
                 if isinstance(dashboard_value, bool)

@@ -15,10 +15,11 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from cluster.clusterctl import (
     DEFAULT_INVENTORY, Node, load_nodes, request_json, select_nodes,
+    worker_auth_enabled,
 )
 from cluster.domain.experiment import ExperimentConfig, normalize_model_ids, validate_model_id
 from cluster.domain.strategy import EXECUTION_STRATEGIES
-from cluster.integrations.runtime_layout import default_project_layout
+from cluster.integrations.runtime_layout import default_project_layout, resolve_runtime_paths
 
 from .core import BenchmarkRunner, benchmark_parameters
 from .executor import ScenarioExecutor
@@ -35,7 +36,8 @@ from .transport import stream_rpc_request, stream_worker_request, utc_now
 
 PROJECT_LAYOUT = default_project_layout()
 PROJECT_ROOT = PROJECT_LAYOUT.root
-DEFAULT_RESULTS_DIR = PROJECT_LAYOUT.results_dir
+RUNTIME_PATHS = resolve_runtime_paths()
+DEFAULT_RESULTS_DIR = RUNTIME_PATHS.results_dir
 ProgressCallback = Callable[[Dict[str, Any]], None]
 
 
@@ -175,7 +177,15 @@ def run_experiment(
     cancel_event: Optional[threading.Event] = None,
 ) -> Dict[str, Any]:
     config.validate()
-    all_nodes = load_nodes(inventory_path)
+    if config.execution_strategy == "model_parallel_rpc" and worker_auth_enabled():
+        raise ValueError(
+            "model_parallel_rpc cannot run while Worker API authentication is enabled; "
+            "native llama.cpp RPC is unauthenticated"
+        )
+    # A macOS Controller owns a Worker-only inventory.  Keep legacy head rows
+    # readable when present, but never require a synthetic inference head for
+    # the benchmark facade or durable child-process path.
+    all_nodes = load_nodes(inventory_path, require_legacy_head=False)
     selected = select_nodes(all_nodes, config.node_names)
     if len(selected) != len(config.node_names):
         raise ValueError("Some selected nodes are unavailable")
@@ -189,10 +199,11 @@ def run_experiment(
 
 
 def main() -> int:
+    runtime_paths = resolve_runtime_paths()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--inventory", type=Path, default=DEFAULT_INVENTORY)
-    parser.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS_DIR)
+    parser.add_argument("--inventory", type=Path, default=runtime_paths.inventory_path)
+    parser.add_argument("--results-dir", type=Path, default=runtime_paths.results_dir)
     args = parser.parse_args()
     config = ExperimentConfig.from_dict(json.loads(args.config.read_text(encoding="utf-8")))
     try:

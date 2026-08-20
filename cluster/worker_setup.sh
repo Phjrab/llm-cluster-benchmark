@@ -3,6 +3,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR_EXPLICIT=0
 MODE="check"
 PLAN_ONLY=0
 PLATFORM_OVERRIDE=""
@@ -31,7 +32,7 @@ while [[ $# -gt 0 ]]; do
     --install) MODE="install"; shift ;;
     --project-dir)
       [[ $# -ge 2 ]] || { echo "[ERROR] --project-dir requires a path" >&2; exit 2; }
-      PROJECT_DIR="$2"; shift 2 ;;
+      PROJECT_DIR="$2"; PROJECT_DIR_EXPLICIT=1; shift 2 ;;
     --report-json)
       [[ $# -ge 2 ]] || { echo "[ERROR] --report-json requires a path" >&2; exit 2; }
       REPORT_JSON="$2"; shift 2 ;;
@@ -51,6 +52,22 @@ fi
 if [[ "$PROJECT_DIR" != /* ]]; then
   echo "[ERROR] project directory must be absolute" >&2
   exit 2
+fi
+if [[ "$PLAN_ONLY" -eq 0 || "$PROJECT_DIR_EXPLICIT" -eq 1 ]]; then
+  if [[ ! "$PROJECT_DIR" =~ ^/(home|opt|srv)/[a-zA-Z0-9._/-]+$ ]] \
+    || [[ "$PROJECT_DIR" == */ ]] \
+    || [[ "$PROJECT_DIR" == *//* ]] \
+    || [[ "/${PROJECT_DIR#/}/" == *"/../"* ]] \
+    || [[ "/${PROJECT_DIR#/}/" == *"/./"* ]]; then
+    echo "[ERROR] project directory must be an unambiguous path below /home, /opt or /srv" >&2
+    exit 2
+  fi
+  IFS='/' read -r -a project_parts <<<"$PROJECT_DIR"
+  if [[ "$PROJECT_DIR" == "/home" || "$PROJECT_DIR" == "/opt" || "$PROJECT_DIR" == "/srv" ]] \
+    || { [[ "${project_parts[1]:-}" == "home" ]] && (( ${#project_parts[@]} < 4 )); }; then
+    echo "[ERROR] project directory is too broad for environment installation: $PROJECT_DIR" >&2
+    exit 2
+  fi
 fi
 if [[ -n "$REPORT_JSON" && "$REPORT_JSON" != /* ]]; then
   echo "[ERROR] report path must be absolute" >&2

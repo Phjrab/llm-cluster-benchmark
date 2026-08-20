@@ -275,6 +275,13 @@ class JetsonTelemetry(GenericPsutilTelemetry):
 
     def stop(self) -> None:
         self._stop.set()
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            # The sampler is daemonized as a last-resort process-exit guard, but
+            # normal ASGI shutdown must still wait for its bounded event loop.
+            thread.join(timeout=4.0)
+        if thread is not None and not thread.is_alive():
+            self._thread = None
 
     def status(self) -> Dict[str, Any]:
         with self._lock:

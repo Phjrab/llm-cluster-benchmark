@@ -233,6 +233,19 @@ class WorkerTelemetryTests(unittest.TestCase):
         self.assertIsNone(snapshot["gpu_pct"])
         self.assertIsNotNone(snapshot["ram_pct"])
 
+    def test_jetson_sampler_stops_its_background_thread(self) -> None:
+        telemetry = JetsonTelemetry(Path(tempfile.gettempdir()))
+        telemetry.refresh = lambda: None  # type: ignore[method-assign]
+        telemetry.start()
+        thread = telemetry._thread
+        self.assertIsNotNone(thread)
+        self.assertTrue(thread.is_alive())
+
+        telemetry.stop()
+
+        self.assertFalse(thread.is_alive())
+        self.assertIsNone(telemetry._thread)
+
 
 class WorkerStandaloneBoundaryTests(unittest.TestCase):
     def test_worker_runtime_does_not_import_web_app(self) -> None:

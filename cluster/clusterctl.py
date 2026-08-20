@@ -14,6 +14,7 @@ import re
 import secrets
 import shlex
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -24,17 +25,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from cluster.integrations.runtime_layout import default_project_layout
+from cluster.integrations.runtime_layout import default_project_layout, resolve_runtime_paths
+from cluster.domain.identifiers import validate_node_id
+from cluster.domain.worker import validate_worker_host
 from cluster.infrastructure.remote import CommandResult, SshRemoteExecutor, build_ssh_command
 from cluster.infrastructure.platform import controller_capabilities
 
 PROJECT_LAYOUT = default_project_layout()
 CLUSTER_DIR = PROJECT_LAYOUT.cluster_dir
 PROJECT_ROOT = PROJECT_LAYOUT.root
-DEFAULT_INVENTORY = PROJECT_LAYOUT.inventory_path
+RUNTIME_PATHS = resolve_runtime_paths()
+DEFAULT_INVENTORY = RUNTIME_PATHS.inventory_path
 DEFAULT_IDENTITY = Path.home() / ".ssh" / "id_ed25519_llm_cluster"
-DEFAULT_WORKER_TOKEN = PROJECT_LAYOUT.worker_token_path
-DEFAULT_SETTINGS = PROJECT_LAYOUT.settings_path
+DEFAULT_WORKER_TOKEN = RUNTIME_PATHS.worker_token_path
+DEFAULT_SETTINGS = RUNTIME_PATHS.settings_path
 _worker_token_lock = threading.Lock()
 SYSTEM_PACKAGE_ALLOWLIST = {
     "ca-certificates",
@@ -66,6 +70,39 @@ READINESS_STATUSES = {
     "repairable",
     "blocked",
 }
+_INVENTORY_USER_PATTERN = re.compile(r"^[a-z_][a-zA-Z0-9_-]*$")
+
+
+def _worker_token_path() -> Path:
+    # Keep the long-standing patchable constants for embedded/test callers,
+    # while honoring a runtime override supplied after module import.
+    if os.getenv("CLUSTER_RUNTIME_DIR"):
+        return resolve_runtime_paths().worker_token_path
+    return DEFAULT_WORKER_TOKEN
+
+
+def _settings_path() -> Path:
+    if os.getenv("CLUSTER_RUNTIME_DIR"):
+        return resolve_runtime_paths().settings_path
+    return DEFAULT_SETTINGS
+
+
+def validate_identity_reference(identity_file: str) -> str:
+    """Validate a legacy CSV key reference before it can become SSH argv.
+
+    ``~`` and environment-variable expansion remain available for the public
+    compatibility CLI, but the expanded value must be one unambiguous absolute
+    path.  File ownership and permissions are checked immediately before use.
+    """
+    raw = identity_file.strip()
+    if not raw:
+        return ""
+    if any(ord(character) < 32 or ord(character) == 127 for character in raw):
+        raise ValueError("identity_file contains unsupported control characters")
+    expanded = Path(os.path.expandvars(os.path.expanduser(raw)))
+    if not expanded.is_absolute() or ".." in expanded.parts:
+        raise ValueError("identity_file must resolve to an absolute path without traversal")
+    return raw
 
 
 def validate_project_dir(project_dir: str, user: str = "") -> str:
@@ -232,14 +269,23 @@ def load_nodes(
                 raise ValueError(f"Invalid role for {node.name}: {node.role}")
             if node.platform not in {"auto", "jetson", "raspberry-pi"}:
                 raise ValueError(f"Invalid platform for {node.name}: {node.platform}")
-            if not node.host:
-                raise ValueError(f"Host is empty for {node.name}")
+            try:
+                validate_node_id(node.name)
+                validate_worker_host(node.host)
+            except ValueError as exc:
+                raise ValueError(f"Invalid node identity for {node.name}: {exc}") from exc
+            if not _INVENTORY_USER_PATTERN.fullmatch(node.user):
+                raise ValueError(f"Invalid SSH user for {node.name}")
             try:
                 validate_project_dir(node.project_dir, node.user)
             except ValueError as exc:
                 raise ValueError(f"Invalid project_dir for {node.name}: {exc}") from exc
-            if node.ssh_port < 1 or node.api_port < 1:
-                raise ValueError(f"Ports must be positive for {node.name}")
+            if not 1 <= node.ssh_port <= 65535 or not 1 <= node.api_port <= 65535:
+                raise ValueError(f"Ports must be between 1 and 65535 for {node.name}")
+            try:
+                validate_identity_reference(node.identity_file)
+            except ValueError as exc:
+                raise ValueError(f"Invalid identity_file for {node.name}: {exc}") from exc
             nodes.append(node)
 
     names = [node.name for node in nodes]
@@ -267,10 +313,24 @@ def select_nodes(nodes: Sequence[Node], names: Sequence[str], workers_only: bool
 def _identity_path(node: Node) -> Optional[Path]:
     raw = node.identity_file.strip()
     if not raw and DEFAULT_IDENTITY.exists():
-        return DEFAULT_IDENTITY
-    if not raw:
+        candidate = DEFAULT_IDENTITY
+    elif not raw:
         return None
-    return Path(os.path.expandvars(os.path.expanduser(raw)))
+    else:
+        validate_identity_reference(raw)
+        candidate = Path(os.path.expandvars(os.path.expanduser(raw)))
+    try:
+        resolved = candidate.resolve(strict=True)
+        metadata = resolved.stat()
+    except OSError as exc:
+        raise ValueError(f"identity_file is unavailable: {candidate}") from exc
+    if not resolved.is_file():
+        raise ValueError(f"identity_file is not a regular file: {candidate}")
+    if metadata.st_uid != os.getuid():
+        raise ValueError(f"identity_file must be owned by the current user: {candidate}")
+    if stat.S_IMODE(metadata.st_mode) & 0o077:
+        raise ValueError(f"identity_file permissions must not grant group or other access: {candidate}")
+    return resolved
 
 
 def ssh_base(node: Node) -> List[str]:
@@ -839,25 +899,57 @@ def request_json(
 
 def ensure_worker_token() -> str:
     with _worker_token_lock:
+        token_path = _worker_token_path()
         configured = os.getenv("CLUSTER_API_TOKEN", "").strip()
         if configured:
-            DEFAULT_WORKER_TOKEN.parent.mkdir(parents=True, exist_ok=True)
-            if not DEFAULT_WORKER_TOKEN.exists() or DEFAULT_WORKER_TOKEN.read_text(encoding="utf-8").strip() != configured:
-                temporary = DEFAULT_WORKER_TOKEN.with_suffix(".tmp")
-                descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                    handle.write(configured + "\n")
-                os.replace(temporary, DEFAULT_WORKER_TOKEN)
+            token_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            token_path.parent.chmod(0o700)
+            if not token_path.exists() or token_path.read_text(encoding="utf-8").strip() != configured:
+                temporary = token_path.with_suffix(
+                    f".tmp.{os.getpid()}.{secrets.token_hex(4)}"
+                )
+                descriptor = os.open(
+                    temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+                )
+                try:
+                    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                        handle.write(configured + "\n")
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    os.replace(temporary, token_path)
+                finally:
+                    try:
+                        temporary.unlink()
+                    except FileNotFoundError:
+                        pass
+            token_path.chmod(0o600)
             return configured
-        if not DEFAULT_WORKER_TOKEN.exists():
-            DEFAULT_WORKER_TOKEN.parent.mkdir(parents=True, exist_ok=True)
-            temporary = DEFAULT_WORKER_TOKEN.with_suffix(".tmp")
-            descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(secrets.token_urlsafe(32) + "\n")
-            os.replace(temporary, DEFAULT_WORKER_TOKEN)
-        DEFAULT_WORKER_TOKEN.chmod(0o600)
-        return DEFAULT_WORKER_TOKEN.read_text(encoding="utf-8").strip()
+        token_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        token_path.parent.chmod(0o700)
+        try:
+            existing = token_path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            existing = ""
+        if not existing:
+            temporary = token_path.with_suffix(
+                f".tmp.{os.getpid()}.{secrets.token_hex(4)}"
+            )
+            descriptor = os.open(
+                temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+            )
+            try:
+                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                    handle.write(secrets.token_urlsafe(32) + "\n")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, token_path)
+            finally:
+                try:
+                    temporary.unlink()
+                except FileNotFoundError:
+                    pass
+        token_path.chmod(0o600)
+        return token_path.read_text(encoding="utf-8").strip()
 
 
 def worker_auth_headers() -> Dict[str, str]:
@@ -873,11 +965,18 @@ def cluster_settings() -> Dict[str, Any]:
         "dashboard_token_auth": False,
     }
     try:
-        stored = json.loads(DEFAULT_SETTINGS.read_text(encoding="utf-8"))
-        if isinstance(stored, dict):
-            defaults.update({key: value for key, value in stored.items() if key in defaults})
+        stored = json.loads(_settings_path().read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return defaults
     except (OSError, ValueError):
-        pass
+        return {"worker_api_auth": True, "dashboard_token_auth": True}
+    if not isinstance(stored, dict):
+        return {"worker_api_auth": True, "dashboard_token_auth": True}
+    for key in defaults:
+        if key not in stored:
+            continue
+        value = stored[key]
+        defaults[key] = value if isinstance(value, bool) else True
     return defaults
 
 
@@ -1076,6 +1175,7 @@ def sync_code_one(node: Node, dry_run: bool = False) -> Dict[str, Any]:
 
 def sync_worker_token_one(node: Node) -> Dict[str, Any]:
     ensure_worker_token()
+    token_path = _worker_token_path()
     if node.is_local:
         return {"name": node.name, "ok": True, "stdout": "local token ready", "stderr": ""}
     remote_runtime = f"{node.project_dir}/.run/cluster"
@@ -1088,7 +1188,7 @@ def sync_worker_token_one(node: Node) -> Dict[str, Any]:
         "--chmod=F600",
         "-e",
         _rsync_ssh(node),
-        str(DEFAULT_WORKER_TOKEN),
+        str(token_path),
         f"{node.ssh_target}:{remote_runtime}/worker.token",
     ]
     proc = subprocess.run(command, text=True, capture_output=True, timeout=60)
@@ -1502,7 +1602,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--inventory",
         type=Path,
-        default=Path(os.getenv("CLUSTER_INVENTORY", DEFAULT_INVENTORY)),
+        default=resolve_runtime_paths().inventory_path,
     )
     parser.add_argument("--node", action="append", default=[], help="Limit to a node name; repeatable")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -1581,7 +1681,9 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     try:
-        nodes = load_nodes(args.inventory)
+        # The macOS Controller owns a Worker-only inventory. Legacy head rows
+        # remain readable when present, but no public command may require one.
+        nodes = load_nodes(args.inventory, require_legacy_head=False)
         nodes = select_nodes(nodes, args.node)
     except (FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))

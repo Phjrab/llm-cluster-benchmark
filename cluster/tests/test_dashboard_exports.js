@@ -45,6 +45,10 @@ assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.recordProgres
 assert.match(appSource, /return state\.nodes\.filter\(node => node\.role === "worker"\)/);
 assert.match(appSource, /telemetryDegraded/);
 assert.match(appSource, /channel === "experiment"/);
+assert.match(appSource, /headers\["X-Cluster-Token"\] = state\.token/);
+assert.match(appSource, /authenticatedEventStream\("\/api\/events"\)/);
+assert.doesNotMatch(appSource, /\/api\/events\?token=/);
+assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/results.js"), "utf8"), /output_sha256/);
 const responseGrouping = vm.runInContext(`ClusterDashboard.results.responseGroups([
   { logical_request_id: 1, node: "jetson-a" },

@@ -152,6 +152,11 @@ class WorkerRpcBackend:
         try:
             for device in remote_devices:
                 emit("rpc_started", node=device.name, role="device", port=RPC_SERVER_PORT)
+                # Register the attempt before SSH. A timeout can happen after
+                # the remote script has spawned its unauthenticated RPC server,
+                # so cleanup must issue an idempotent stop even without a
+                # successful response.
+                started_devices.append(device)
                 started = self.runtime_command(
                     device, "start-worker", str(RPC_SERVER_PORT), timeout=60
                 )
@@ -162,7 +167,6 @@ class WorkerRpcBackend:
                         stage="rpc_device_start",
                         node=device.name,
                     )
-                started_devices.append(device)
                 rpc_device_nodes.append(device)
                 endpoints.append(f"{device.host}:{RPC_SERVER_PORT}")
 
@@ -171,6 +175,7 @@ class WorkerRpcBackend:
                     "rpc_started", node=coordinator.name, role="loopback_cpu_device",
                     port=RPC_SERVER_PORT,
                 )
+                started_devices.append(coordinator)
                 started = self.runtime_command(
                     coordinator, "start-worker", str(RPC_SERVER_PORT), "127.0.0.1", timeout=60
                 )
@@ -182,7 +187,6 @@ class WorkerRpcBackend:
                         stage="rpc_device_start",
                         node=coordinator.name,
                     )
-                started_devices.append(coordinator)
                 rpc_device_nodes.append(coordinator)
                 endpoints.append(f"127.0.0.1:{RPC_SERVER_PORT}")
 
