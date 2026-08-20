@@ -2,11 +2,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -d "$SCRIPT_DIR/.venv" && -d "$SCRIPT_DIR/bench" ]]; then
-  PROJECT_ROOT="$SCRIPT_DIR"
-else
-  PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-fi
+find_project_root() {
+  local current="$SCRIPT_DIR"
+
+  while [[ "$current" != "/" ]]; do
+    if [[ -d "$current/bench" && -d "$current/models" ]]; then
+      echo "$current"
+      return 0
+    fi
+    current="$(dirname "$current")"
+  done
+
+  echo "$SCRIPT_DIR"
+}
+
+PROJECT_ROOT="$(find_project_root)"
 cd "$PROJECT_ROOT"
 
 if [[ ! -d ".venv" ]]; then
@@ -35,11 +45,13 @@ GPU_LAYER_MARGIN="${GPU_LAYER_MARGIN:-2}"
 MODEL_CSV_PATH="${MODEL_CSV_PATH:-$PROJECT_ROOT/models.example.csv}"
 LIST_MODELS_ONLY="${LIST_MODELS_ONLY:-0}"
 SKIP_UNLOADABLE_MODELS="${SKIP_UNLOADABLE_MODELS:-1}"
+PROBE_ERROR_TAIL_LINES="${PROBE_ERROR_TAIL_LINES:-6}"
 
 GENERAL_OUTPUT_DIR="${GENERAL_OUTPUT_DIR:-outputs/general_benchmark}"
 OUTPUT_CSV="${OUTPUT_CSV:-$GENERAL_OUTPUT_DIR/comparison_results.csv}"
 RANKED_CSV="${RANKED_CSV:-$GENERAL_OUTPUT_DIR/comparison_ranked.csv}"
-PLOT_PNG="${PLOT_PNG:-$GENERAL_OUTPUT_DIR/comparison_results.png}"
+BENCHMARK_PLOT_DIR="${BENCHMARK_PLOT_DIR:-$GENERAL_OUTPUT_DIR/plots}"
+PLOT_PNG="${PLOT_PNG:-$BENCHMARK_PLOT_DIR/comparison_results.png}"
 PLOT_SORT_BY="${PLOT_SORT_BY:-avg_tps}"
 
 RANK_W_TPS="${RANK_W_TPS:-0.50}"
@@ -338,7 +350,12 @@ find_safe_config() {
   local probe_max_tokens="$2"
   local candidate_ctx
   local adjusted
+  local probe_err_file
+  local probe_tail
+  local last_probe_reason=""
   IFS=',' read -r -a layer_candidates <<< "$PROBE_LAYERS"
+
+  probe_err_file="$(mktemp "${TMPDIR:-/tmp}/probe_err.XXXXXX.log")"
 
   while IFS= read -r candidate_ctx; do
     for n_gpu_layers in "${layer_candidates[@]}"; do
@@ -354,8 +371,9 @@ find_safe_config() {
         --top-p 1.0 \
         --seed "$SEED" \
         --warmup \
-        >/dev/null 2>&1
+        >/dev/null 2>"$probe_err_file"
       then
+        rm -f "$probe_err_file"
         adjusted=$(( n_gpu_layers - GPU_LAYER_MARGIN ))
         if (( adjusted < 0 )); then
           adjusted=0
@@ -363,9 +381,20 @@ find_safe_config() {
         echo "$adjusted,$candidate_ctx"
         return 0
       fi
+
+      if [[ -s "$probe_err_file" ]]; then
+        probe_tail="$(tail -n "$PROBE_ERROR_TAIL_LINES" "$probe_err_file" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//')"
+      else
+        probe_tail="(no stderr output captured)"
+      fi
+      last_probe_reason="ctx=$candidate_ctx layers=$n_gpu_layers -> $probe_tail"
     done
   done < <(build_ctx_schedule)
 
+  rm -f "$probe_err_file"
+  if [[ -n "$last_probe_reason" ]]; then
+    warn "Last probe failure detail: $last_probe_reason"
+  fi
   echo "-1,-1"
 }
 
@@ -426,19 +455,6 @@ python "$PROJECT_ROOT/bench/compare_models.py" \
   --warmup \
   --output-csv "$OUTPUT_CSV"
 
-echo "[INFO] Running plot_results.py"
-if python - <<'PY'
-import importlib.util
-raise SystemExit(0 if importlib.util.find_spec("matplotlib") else 1)
-PY
-then
-  python "$PROJECT_ROOT/bench/plot_results.py" \
-    --output-dir "$GENERAL_OUTPUT_DIR" \
-    --sort-by "$PLOT_SORT_BY"
-else
-  echo "[WARN] matplotlib is not installed; skipping PNG plot generation"
-fi
-
 echo "[INFO] Running rank_models.py"
 if python - "$OUTPUT_CSV" <<'PY'
 import csv
@@ -467,6 +483,21 @@ else
   echo "[WARN] No successful rows in $OUTPUT_CSV; skipping ranking"
 fi
 
+echo "[INFO] Running plot_benchmark.py"
+if python - <<'PY'
+import importlib.util
+raise SystemExit(0 if importlib.util.find_spec("matplotlib") else 1)
+PY
+then
+  python "$PROJECT_ROOT/bench/plot_benchmark.py" \
+    --input-csv "$OUTPUT_CSV" \
+    --ranked-csv "$RANKED_CSV" \
+    --output-dir "$BENCHMARK_PLOT_DIR" \
+    --sort-by "$PLOT_SORT_BY"
+else
+  echo "[WARN] matplotlib is not installed; skipping benchmark plot generation"
+fi
+
 echo "[DONE] All steps completed"
 echo "[DONE] Output dir   : $GENERAL_OUTPUT_DIR"
 echo "[DONE] Results CSV  : $OUTPUT_CSV"
@@ -479,4 +510,9 @@ if [[ -f "$PLOT_PNG" ]]; then
   echo "[DONE] Plot PNG     : $PLOT_PNG"
 else
   echo "[DONE] Plot PNG     : skipped"
+fi
+if [[ -d "$BENCHMARK_PLOT_DIR" ]]; then
+  echo "[DONE] Plot Dir     : $BENCHMARK_PLOT_DIR"
+else
+  echo "[DONE] Plot Dir     : skipped"
 fi

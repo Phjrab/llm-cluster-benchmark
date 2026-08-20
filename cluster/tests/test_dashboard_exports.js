@@ -110,6 +110,26 @@ const newestSuite = vm.runInContext(`latestResultArtifact([
 ])`, context);
 assert.equal(newestSuite.suite.suite_id, "suite_new");
 
+const topology = vm.runInContext(`(() => {
+  state.nodes = [
+    { name: "edge-head", role: "head", enabled: true },
+    { name: "pi-worker", role: "worker", enabled: true },
+    { name: "legacy-placeholder", role: "worker", enabled: false }
+  ];
+  state.selectedNodes = new Set(["legacy-placeholder"]);
+  reconcileSelection();
+  return {
+    names: topologyNodes().map(node => node.name),
+    selected: [...state.selectedNodes],
+    capacity: clusterCapacity()
+  };
+})()`, context);
+assert.deepEqual([...topology.names], ["edge-head", "pi-worker"]);
+assert.deepEqual([...topology.selected], ["edge-head", "pi-worker"]);
+assert.equal(topology.capacity.count, 2);
+assert.equal(topology.capacity.remaining, 2);
+assert.equal(topology.capacity.full, false);
+
 const wrappedLegend = vm.runInContext(`buildPublicationSvg({
   type: "line", title: "Many models", subtitle: "legend wrapping",
   xLabel: "Nodes", yLabel: "Throughput", unit: "tok/s", strategy: "node_sweep",

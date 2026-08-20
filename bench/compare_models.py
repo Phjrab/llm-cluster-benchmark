@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional
 
 
@@ -67,6 +68,33 @@ def to_optional_int(value: Optional[str]) -> Optional[int]:
     return int(value)
 
 
+def resolve_model_path(raw_path: str, models_file: str) -> str:
+    path = Path(raw_path).expanduser()
+    if path.is_file():
+        return str(path.resolve())
+
+    models_dir = Path(models_file).resolve().parent
+    project_root = Path(__file__).resolve().parent.parent
+
+    candidates = [
+        models_dir / raw_path,
+        Path.cwd() / raw_path,
+        project_root / raw_path,
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate.resolve())
+
+    normalized = raw_path.replace("\\", "/")
+    if "/models/" in normalized:
+        suffix = normalized.split("/models/", 1)[1]
+        candidate = project_root / "models" / suffix
+        if candidate.is_file():
+            return str(candidate.resolve())
+
+    return raw_path
+
+
 def load_model_specs(models_file: str) -> List[ModelSpec]:
     if not os.path.isfile(models_file):
         raise FileNotFoundError(f"Models CSV not found: {models_file}")
@@ -90,7 +118,7 @@ def load_model_specs(models_file: str) -> List[ModelSpec]:
             specs.append(
                 ModelSpec(
                     name=name,
-                    path=path,
+                    path=resolve_model_path(path, models_file),
                     n_gpu_layers=to_optional_int(row.get("n_gpu_layers")),
                     n_ctx=to_optional_int(row.get("n_ctx")),
                     max_tokens=to_optional_int(row.get("max_tokens")),

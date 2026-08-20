@@ -2,11 +2,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -d "$SCRIPT_DIR/.venv" ]]; then
-  PROJECT_ROOT="$SCRIPT_DIR"
-else
-  PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-fi
+find_project_root() {
+  local current="$SCRIPT_DIR"
+
+  while [[ "$current" != "/" ]]; do
+    if [[ -d "$current/web" && -d "$current/models" ]]; then
+      echo "$current"
+      return 0
+    fi
+    current="$(dirname "$current")"
+  done
+
+  echo "$SCRIPT_DIR"
+}
+
+PROJECT_ROOT="$(find_project_root)"
 cd "$PROJECT_ROOT"
 
 PORT="${PORT:-8000}"

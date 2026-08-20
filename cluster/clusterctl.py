@@ -175,8 +175,9 @@ def _as_bool(value: str) -> bool:
 def load_nodes(path: Path, include_disabled: bool = False) -> List[Node]:
     if not path.exists():
         raise FileNotFoundError(
-            f"Inventory not found: {path}. Copy cluster/config/nodes.example.csv to "
-            ".run/cluster/nodes.local.csv and edit it."
+            f"Inventory not found: {path}. Run ./cluster/setup_head.sh to create "
+            "a platform-aware head inventory, or copy cluster/config/nodes.example.csv "
+            "to .run/cluster/nodes.local.csv for a manual setup."
         )
 
     nodes: List[Node] = []

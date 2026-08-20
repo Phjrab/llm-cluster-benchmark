@@ -57,11 +57,11 @@
           <div class="core-node">
             <span>HEAD</span>
             <strong id="headStatus">—</strong>
-            <small>192.168.0.26</small>
+            <small id="headAddress">연결 확인 중</small>
           </div>
-          <div class="satellite sat-one"><i></i><span>W01</span></div>
-          <div class="satellite sat-two"><i></i><span>W02</span></div>
-          <div class="satellite sat-three"><i></i><span>W03</span></div>
+          <div class="satellite sat-one" data-orbit-worker hidden><i></i><span></span></div>
+          <div class="satellite sat-two" data-orbit-worker hidden><i></i><span></span></div>
+          <div class="satellite sat-three" data-orbit-worker hidden><i></i><span></span></div>
           <div class="orbit-caption"><span id="onlineCount">0</span> / <span id="enabledCount">1</span> ONLINE</div>
         </div>
       </section>
@@ -77,11 +77,6 @@
         <div class="section-heading">
           <div><span class="section-index">02 / NODES</span><h2>클러스터 토폴로지</h2></div>
           <div class="heading-actions">
-            <div class="segmented" aria-label="빠른 노드 선택">
-              <button type="button" data-preset="1">1대</button>
-              <button type="button" data-preset="2">2대</button>
-              <button type="button" data-preset="4">4대</button>
-            </div>
             <button class="button ghost compact" id="checkEnvironmentButton" type="button">선택 노드 환경 점검</button>
             <button class="button secondary compact" id="installEnvironmentButton" type="button">선택 노드 자동 구성</button>
           </div>

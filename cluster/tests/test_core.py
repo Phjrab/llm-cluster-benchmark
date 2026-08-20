@@ -41,6 +41,12 @@ jetson-worker-02,worker,192.168.0.28,jetson,22,8000,/opt/llm,false,
 
 
 class InventoryTests(unittest.TestCase):
+    def test_example_inventory_starts_with_head_only(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "config" / "nodes.example.csv"
+        nodes = load_nodes(path, include_disabled=True)
+        self.assertEqual(len(nodes), 1)
+        self.assertEqual(nodes[0].role, "head")
+
     def test_loads_enabled_nodes_and_selects_by_name(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "nodes.csv"

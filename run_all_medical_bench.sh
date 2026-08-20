@@ -2,11 +2,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -d "$SCRIPT_DIR/.venv" && -d "$SCRIPT_DIR/bench" ]]; then
-  PROJECT_ROOT="$SCRIPT_DIR"
-else
-  PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-fi
+find_project_root() {
+  local current="$SCRIPT_DIR"
+
+  while [[ "$current" != "/" ]]; do
+    if [[ -d "$current/bench" && -d "$current/models" ]]; then
+      echo "$current"
+      return 0
+    fi
+    current="$(dirname "$current")"
+  done
+
+  echo "$SCRIPT_DIR"
+}
+
+PROJECT_ROOT="$(find_project_root)"
 cd "$PROJECT_ROOT"
 
 if [[ ! -d ".venv" ]]; then
@@ -23,6 +33,7 @@ MAX_POWER_MODE="${MAX_POWER_MODE:-auto}"
 MODEL_CSV_PATH="${MODEL_CSV_PATH:-$PROJECT_ROOT/models.example.csv}"
 LIST_MODELS_ONLY="${LIST_MODELS_ONLY:-0}"
 SKIP_UNLOADABLE_MODELS="${SKIP_UNLOADABLE_MODELS:-1}"
+PROBE_ERROR_TAIL_LINES="${PROBE_ERROR_TAIL_LINES:-6}"
 
 N_CTX="${N_CTX:-1024}"
 N_THREADS="${N_THREADS:-6}"
@@ -37,6 +48,8 @@ MEDICAL_OUTPUT_DIR="${MEDICAL_OUTPUT_DIR:-outputs/medical_benchmark}"
 MEDICAL_SUMMARY_CSV="${MEDICAL_SUMMARY_CSV:-$MEDICAL_OUTPUT_DIR/medical_compare_summary.csv}"
 MEDICAL_DETAILS_JSON="${MEDICAL_DETAILS_JSON:-$MEDICAL_OUTPUT_DIR/medical_compare_details.json}"
 MEDICAL_RANKED_CSV="${MEDICAL_RANKED_CSV:-$MEDICAL_OUTPUT_DIR/medical_compare_ranked.csv}"
+MEDICAL_PLOT_PNG="${MEDICAL_PLOT_PNG:-$MEDICAL_OUTPUT_DIR/medical_compare.png}"
+MEDICAL_PLOT_SORT_BY="${MEDICAL_PLOT_SORT_BY:-accuracy}"
 MEDICAL_LIMIT="${MEDICAL_LIMIT:-0}"
 
 TMP_CSV=""
@@ -326,7 +339,12 @@ find_safe_config() {
   local probe_max_tokens="$2"
   local candidate_ctx
   local adjusted
+  local probe_err_file
+  local probe_tail
+  local last_probe_reason=""
   IFS=',' read -r -a layer_candidates <<< "$PROBE_LAYERS"
+
+  probe_err_file="$(mktemp "${TMPDIR:-/tmp}/probe_err.XXXXXX.log")"
 
   while IFS= read -r candidate_ctx; do
     for n_gpu_layers in "${layer_candidates[@]}"; do
@@ -342,8 +360,9 @@ find_safe_config() {
         --top-p 1.0 \
         --seed "$SEED" \
         --warmup \
-        >/dev/null 2>&1
+        >/dev/null 2>"$probe_err_file"
       then
+        rm -f "$probe_err_file"
         adjusted=$(( n_gpu_layers - GPU_LAYER_MARGIN ))
         if (( adjusted < 0 )); then
           adjusted=0
@@ -351,9 +370,20 @@ find_safe_config() {
         echo "$adjusted,$candidate_ctx"
         return 0
       fi
+
+      if [[ -s "$probe_err_file" ]]; then
+        probe_tail="$(tail -n "$PROBE_ERROR_TAIL_LINES" "$probe_err_file" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//')"
+      else
+        probe_tail="(no stderr output captured)"
+      fi
+      last_probe_reason="ctx=$candidate_ctx layers=$n_gpu_layers -> $probe_tail"
     done
   done < <(build_ctx_schedule)
 
+  rm -f "$probe_err_file"
+  if [[ -n "$last_probe_reason" ]]; then
+    warn "Last probe failure detail: $last_probe_reason"
+  fi
   echo "-1,-1"
 }
 
@@ -443,7 +473,26 @@ with open(output_path, 'w', encoding='utf-8', newline='') as handle:
         )
 PY
 
+echo "[INFO] Running plot_medical_results.py"
+if python - <<'PY'
+import importlib.util
+raise SystemExit(0 if importlib.util.find_spec("matplotlib") else 1)
+PY
+then
+  python "$PROJECT_ROOT/bench/plot_medical_results.py" \
+    --summary-csv "$MEDICAL_SUMMARY_CSV" \
+    --output-png "$MEDICAL_PLOT_PNG" \
+    --sort-by "$MEDICAL_PLOT_SORT_BY"
+else
+  echo "[WARN] matplotlib is not installed; skipping medical PNG plot generation"
+fi
+
 echo "[DONE] Medical run-all completed"
 echo "[DONE] Summary CSV : $MEDICAL_SUMMARY_CSV"
 echo "[DONE] Details JSON : $MEDICAL_DETAILS_JSON"
 echo "[DONE] Ranked CSV   : $MEDICAL_RANKED_CSV"
+if [[ -f "$MEDICAL_PLOT_PNG" ]]; then
+  echo "[DONE] Plot PNG     : $MEDICAL_PLOT_PNG"
+else
+  echo "[DONE] Plot PNG     : skipped"
+fi

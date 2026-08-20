@@ -240,6 +240,15 @@ chmod +x run_all_medical_bench.sh
 - `outputs/medical_benchmark/medical_compare_summary.csv`
 - `outputs/medical_benchmark/medical_compare_details.json`
 - `outputs/medical_benchmark/medical_compare_ranked.csv`
+- `outputs/medical_benchmark/medical_compare.png`
+
+의료 벤치 결과 그래프만 다시 그리고 싶으면:
+
+```bash
+python bench/plot_medical_results.py \
+  --summary-csv outputs/medical_benchmark/medical_compare_summary.csv \
+  --output-png outputs/medical_benchmark/medical_compare.png
+```
 
 ## 7) 결과 그래프 자동 생성
 

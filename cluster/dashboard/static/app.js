@@ -76,6 +76,7 @@ const fmt = (value, digits = 1, fallback = "—") => finite(value) ? Number(valu
 const pct = value => finite(value) ? `${fmt(value, 0)}%` : "—";
 const DASHBOARD_COLORS = ["#718f17", "#e57c38", "#163126", "#0072b2", "#cc79a7", "#f0e442"];
 const PUBLICATION_COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#000000"];
+const MAX_CLUSTER_NODES = 4;
 const platformName = value => ({ jetson: "NVIDIA Jetson", "raspberry-pi": "Raspberry Pi 5", auto: "자동 감지", "generic-linux": "Linux" }[value] || value || "미확인");
 const STRATEGIES = {
   single_node: { label: "단일 노드 기준선", short: "SINGLE" },
@@ -278,19 +279,41 @@ function ingestStatus(items) {
   });
 }
 
-function initializeSelection() {
-  if (state.selectedNodes.size) return;
-  state.nodes.filter(node => node.enabled).slice(0, 4).forEach(node => state.selectedNodes.add(node.name));
+function topologyNodes() {
+  const heads = state.nodes.filter(node => node.role === "head");
+  const workers = state.nodes.filter(node => node.role === "worker" && node.enabled);
+  return [...heads, ...workers];
+}
+
+function reconcileSelection(nodes = topologyNodes()) {
+  const selectable = nodes.filter(node => node.enabled).slice(0, MAX_CLUSTER_NODES);
+  const selectableNames = new Set(selectable.map(node => node.name));
+  state.selectedNodes.forEach(name => {
+    if (!selectableNames.has(name)) state.selectedNodes.delete(name);
+  });
+  if (!state.selectedNodes.size) selectable.forEach(node => state.selectedNodes.add(node.name));
+}
+
+function clusterCapacity() {
+  const count = topologyNodes().length;
+  return { count, full: count >= MAX_CLUSTER_NODES, remaining: Math.max(0, MAX_CLUSTER_NODES - count) };
+}
+
+function openNodeOnboarding() {
+  const capacity = clusterCapacity();
+  if (capacity.full) {
+    toast("클러스터 구성 한도", `Head를 포함해 최대 ${MAX_CLUSTER_NODES}대까지 연결할 수 있습니다.`, "error");
+    return;
+  }
+  $("#nodeDialog").showModal();
+  scanNetwork();
 }
 
 function renderNodes() {
-  initializeSelection();
+  const nodes = topologyNodes();
+  reconcileSelection(nodes);
   const grid = $("#nodeGrid");
-  if (!state.nodes.length) {
-    grid.innerHTML = `<div class="empty-result"><strong>등록된 노드가 없습니다.</strong></div>`;
-    return;
-  }
-  grid.innerHTML = state.nodes.map(node => {
+  const nodeCards = nodes.map(node => {
     const live = statusFor(node.name);
     const online = Boolean(live.api);
     const metrics = live.metrics || {};
@@ -325,13 +348,23 @@ function renderNodes() {
         ${error ? `<span class="node-card-menu" title="${escapeHtml(error)}">!</span>` : ""}
       </article>`;
   }).join("");
+  const capacity = clusterCapacity();
+  const addCard = `
+    <button class="add-worker-card" type="button" data-add-worker-card ${capacity.full ? "disabled" : ""}
+      aria-label="${capacity.full ? `클러스터 연결 한도 ${MAX_CLUSTER_NODES}대에 도달했습니다` : "새 워커 노드 추가"}">
+      <span class="add-worker-icon" aria-hidden="true">+</span>
+      <strong>${capacity.full ? "구성 한도 도달" : "워커 추가"}</strong>
+      <span>${capacity.full ? `Head 포함 최대 ${MAX_CLUSTER_NODES}대가 연결되었습니다.` : "로컬 네트워크에서 SSH 기기를 찾아 연결합니다."}</span>
+      <small>${capacity.count} / ${MAX_CLUSTER_NODES} NODES${capacity.full ? " · FULL" : ` · ${capacity.remaining} AVAILABLE`}</small>
+    </button>`;
+  grid.innerHTML = `${nodeCards}${addCard}`;
 
   $$('[data-node-select]').forEach(input => input.addEventListener("change", event => {
     const name = event.currentTarget.dataset.nodeSelect;
     if (event.currentTarget.checked) {
-      if (state.selectedNodes.size >= 4) {
+      if (state.selectedNodes.size >= MAX_CLUSTER_NODES) {
         event.currentTarget.checked = false;
-        return toast("최대 4대", "한 실험에는 최대 네 대까지 참여할 수 있습니다.", "error");
+        return toast(`최대 ${MAX_CLUSTER_NODES}대`, "한 실험에는 최대 네 대까지 참여할 수 있습니다.", "error");
       }
       state.selectedNodes.add(name);
     } else {
@@ -345,6 +378,7 @@ function renderNodes() {
     renderNodes();
   }));
   $$('[data-node-detail]').forEach(button => button.addEventListener("click", () => openNodeDetail(button.dataset.nodeDetail)));
+  $("[data-add-worker-card]")?.addEventListener("click", openNodeOnboarding);
   updateSummary();
 }
 
@@ -370,7 +404,8 @@ function renderEnvironmentSummary() {
 }
 
 function updateSummary() {
-  const enabled = state.nodes.filter(node => node.enabled);
+  const visible = topologyNodes();
+  const enabled = visible.filter(node => node.enabled);
   const online = enabled.filter(node => statusFor(node.name).api);
   const selected = [...state.selectedNodes];
   const powers = online.map(node => Number(statusFor(node.name).metrics?.power_w)).filter(Number.isFinite);
@@ -383,10 +418,19 @@ function updateSummary() {
   $("#averagePower").textContent = powers.length ? fmt(powers.reduce((a, b) => a + b, 0)) : "—";
   const head = enabled.find(node => node.role === "head");
   $("#headStatus").textContent = head && statusFor(head.name).api ? "ONLINE" : "OFFLINE";
-  $$('.satellite').forEach((element, index) => {
-    const worker = enabled.filter(node => node.role === "worker")[index];
+  $("#headAddress").textContent = head ? head.host : "HEAD 미등록";
+  const workers = enabled.filter(node => node.role === "worker");
+  $$('[data-orbit-worker]').forEach((element, index) => {
+    const worker = workers[index];
+    element.hidden = !worker;
+    element.title = worker ? `${worker.name} · ${worker.host}` : "";
+    const label = $("span", element);
+    if (label) label.textContent = worker?.name || "";
     element.classList.toggle("online", Boolean(worker && statusFor(worker.name).api));
   });
+  const capacity = clusterCapacity();
+  $("#addNodeButton").disabled = capacity.full;
+  $("#addNodeButton").title = capacity.full ? `Head 포함 ${MAX_CLUSTER_NODES}대 구성이 완료되었습니다.` : `워커 ${capacity.remaining}대를 더 연결할 수 있습니다.`;
   const latest = state.runs.find(run => run.status === "completed");
   $("#recentThroughput").textContent = latest ? fmt(latest.cluster_tokens_per_s) : "—";
   updateStrategyGuidance();
@@ -1889,10 +1933,7 @@ function bindEvents() {
     if (interaction.hidden.has(label)) interaction.hidden.delete(label); else interaction.hidden.add(label);
     setChartModel(chartId, model);
   }));
-  $("#addNodeButton").addEventListener("click", () => {
-    $("#nodeDialog").showModal();
-    scanNetwork();
-  });
+  $("#addNodeButton").addEventListener("click", openNodeOnboarding);
   $("#settingsButton").addEventListener("click", () => {
     renderSettings();
     $("#settingsDialog").showModal();
@@ -2006,13 +2047,6 @@ function bindEvents() {
     const action = button.dataset.clusterAction;
     const options = action === "sync-models" ? { models: selectedModelIds() } : {};
     runAction(action, options);
-  }));
-  $$('.segmented button').forEach(button => button.addEventListener("click", () => {
-    const count = Number(button.dataset.preset);
-    const candidates = state.nodes.filter(node => node.enabled).slice(0, count);
-    state.selectedNodes = new Set(candidates.map(node => node.name));
-    $$('.segmented button').forEach(item => item.classList.toggle("active", item === button));
-    renderNodes();
   }));
   $("#experimentGroupSelect").addEventListener("change", event => {
     const group = state.experimentGroups.find(item => item.experiment_id === event.currentTarget.value);
