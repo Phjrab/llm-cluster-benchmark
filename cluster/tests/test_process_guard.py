@@ -309,6 +309,14 @@ class LauncherSourceSafetyTests(unittest.TestCase):
         self.assertNotIn('curl -fsS -H "X-Cluster-Worker-Token:', source)
         self.assertNotIn('-H "X-Cluster-Worker-Token: $CLUSTER_API_TOKEN"', source)
 
+    def test_worker_launchers_enter_project_before_importing_process_guard(self) -> None:
+        for script_name in ("start.sh", "stop.sh"):
+            with self.subTest(script=script_name):
+                source = (ROOT / "cluster" / "worker" / script_name).read_text(encoding="utf-8")
+                project_cd = source.index('cd "$PROJECT_ROOT"')
+                first_guard_call = source.index('"${PROCESS_GUARD[@]}"')
+                self.assertLess(project_cd, first_guard_call)
+
 
 if __name__ == "__main__":
     unittest.main()

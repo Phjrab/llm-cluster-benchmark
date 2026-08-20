@@ -4,6 +4,7 @@ umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
 RUN_DIR="$PROJECT_ROOT/.run/cluster"
@@ -125,7 +126,6 @@ case "$guard_status" in
     ;;
 esac
 
-cd "$PROJECT_ROOT"
 touch "$LOG_FILE"
 chmod 600 "$LOG_FILE"
 PYTHONDONTWRITEBYTECODE=1 nohup "$PYTHON_BIN" -m uvicorn cluster.worker.app:app \

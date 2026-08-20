@@ -4,6 +4,7 @@ umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
 PORT="${PORT:-8000}"
 RUN_DIR="$PROJECT_ROOT/.run/cluster"
 PID_FILE="$RUN_DIR/worker_server_${PORT}.pid"
@@ -37,7 +38,6 @@ if ! flock -w 30 9; then
   exit 1
 fi
 
-cd "$PROJECT_ROOT"
 had_pid_file=false
 [[ -f "$PID_FILE" ]] && had_pid_file=true
 set +e
