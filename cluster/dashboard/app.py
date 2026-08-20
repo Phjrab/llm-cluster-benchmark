@@ -87,10 +87,9 @@ def ensure_runtime() -> None:
     ENVIRONMENT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
     ENVIRONMENT_DIR.chmod(0o700)
     if not INVENTORY_PATH.exists():
-        raise RuntimeError(
-            f"Cluster inventory is missing: {INVENTORY_PATH}. "
-            "Run ./cluster/setup_head.sh before starting the dashboard."
-        )
+        # A Controller can start before its first inference worker is enrolled.
+        # Do not create a synthetic legacy head: the Controller is not a worker.
+        FilesystemInventoryRepository(INVENTORY_PATH).write_rows([])
     try:
         token = TOKEN_PATH.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
@@ -356,13 +355,22 @@ def write_settings(settings: Dict[str, Any]) -> None:
 
 def read_all_nodes() -> List[Node]:
     with inventory_lock:
-        return load_nodes(INVENTORY_PATH, include_disabled=True)
+        return load_nodes(
+            INVENTORY_PATH,
+            include_disabled=True,
+            require_legacy_head=False,
+        )
+
+
+def read_enabled_nodes() -> List[Node]:
+    """Dashboard inventory may be worker-only on a standalone Controller."""
+    return load_nodes(INVENTORY_PATH, require_legacy_head=False)
 
 
 def write_all_nodes(nodes: Sequence[Node]) -> None:
     enabled_heads = [node for node in nodes if node.role == "head" and node.enabled]
-    if len(enabled_heads) != 1:
-        raise ValueError("Exactly one enabled head node is required")
+    if len(enabled_heads) > 1:
+        raise ValueError("At most one legacy enabled head node is allowed")
     if len({node.name for node in nodes}) != len(nodes):
         raise ValueError("Node names must be unique")
     endpoints = [(node.host, node.ssh_port) for node in nodes]
@@ -909,7 +917,7 @@ class ActionManager:
     def start(self, payload: ActionPayload) -> Dict[str, Any]:
         if payload.action not in self.ALLOWED:
             raise ValueError(f"Unsupported action: {payload.action}")
-        enabled = load_nodes(INVENTORY_PATH)
+        enabled = read_enabled_nodes()
         selected = select_nodes(enabled, payload.node_names)
         if not selected:
             raise ValueError("Select at least one enabled node")
@@ -1417,7 +1425,7 @@ class ExperimentManager:
         payload_data = payload.model_dump()
         config = ExperimentConfig.from_dict(payload_data)
         config.validate()
-        selected = select_nodes(load_nodes(INVENTORY_PATH), config.node_names)
+        selected = select_nodes(read_enabled_nodes(), config.node_names)
         if len(selected) != len(config.node_names):
             raise ValueError("Some selected nodes are unavailable")
         validate_strategy(selected, config)
@@ -1517,7 +1525,7 @@ class ExperimentManager:
     @staticmethod
     def _unload_models(node_names: Sequence[str]) -> List[str]:
         """Best-effort concurrent unload with explicit errors for suite isolation."""
-        nodes = select_nodes(load_nodes(INVENTORY_PATH), node_names)
+        nodes = select_nodes(read_enabled_nodes(), node_names)
         errors: List[str] = []
 
         def unload(node: Node) -> None:
@@ -1854,7 +1862,25 @@ async def index(request: Request) -> HTMLResponse:
 
 @app.get("/dashboard/health")
 async def dashboard_health() -> Dict[str, Any]:
-    return {"ok": True, "service": "cluster-dashboard"}
+    return {
+        "ok": True,
+        "service": "cluster-dashboard",
+        "role": "controller",
+        "inference_enabled": False,
+    }
+
+
+@app.get("/api/controller/status", dependencies=[Depends(verify_token)])
+async def controller_status() -> Dict[str, Any]:
+    """Expose the Dashboard host as a control-plane service, never a worker."""
+    return {
+        "role": "controller",
+        "inference_enabled": False,
+        "runtime_dir": str(PROJECT_LAYOUT.controller_runtime_dir),
+        "results_dir": str(RESULTS_DIR),
+        "dashboard": {"service": "cluster-dashboard", "healthy": True},
+        "at": utc_now(),
+    }
 
 
 @app.get("/api/bootstrap", dependencies=[Depends(verify_token)])
@@ -1922,7 +1948,7 @@ async def update_settings(payload: ClusterSettingsPayload, request: Request) -> 
         write_settings(updated)
         if previous["worker_api_auth"] != updated["worker_api_auth"]:
             try:
-                enabled_names = [node.name for node in load_nodes(INVENTORY_PATH)]
+                enabled_names = [node.name for node in read_enabled_nodes()]
                 action = actions.start(
                     ActionPayload(action="restart", node_names=enabled_names, options={})
                 )

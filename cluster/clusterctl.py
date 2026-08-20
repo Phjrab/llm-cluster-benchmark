@@ -176,7 +176,12 @@ def _as_bool(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on", "enabled"}
 
 
-def load_nodes(path: Path, include_disabled: bool = False) -> List[Node]:
+def load_nodes(
+    path: Path,
+    include_disabled: bool = False,
+    *,
+    require_legacy_head: bool = True,
+) -> List[Node]:
     if not path.exists():
         raise FileNotFoundError(
             f"Inventory not found: {path}. Run ./cluster/setup_head.sh to create "
@@ -237,7 +242,7 @@ def load_nodes(path: Path, include_disabled: bool = False) -> List[Node]:
     names = [node.name for node in nodes]
     if len(names) != len(set(names)):
         raise ValueError("Inventory contains duplicate node names")
-    if sum(1 for node in nodes if node.role == "head" and node.enabled) != 1:
+    if require_legacy_head and sum(1 for node in nodes if node.role == "head" and node.enabled) != 1:
         raise ValueError("Inventory must contain exactly one enabled head node")
     return nodes if include_disabled else [node for node in nodes if node.enabled]
 

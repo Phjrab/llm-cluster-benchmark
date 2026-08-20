@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Install only the local macOS/Linux control-plane runtime for this checkout.
+set -euo pipefail
+umask 077
+
+if [[ $# -ne 0 ]]; then
+  echo "Usage: ./scripts/setup-controller" >&2
+  exit 64
+fi
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -P "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+VENV_DIR="$PROJECT_ROOT/.venv"
+VENV_PYTHON="$VENV_DIR/bin/python"
+RUNTIME_DIR="$PROJECT_ROOT/.run/cluster"
+CONTROLLER_RUNTIME_DIR="$PROJECT_ROOT/.run/controller"
+INVENTORY_FILE="$RUNTIME_DIR/nodes.local.csv"
+LOCAL_BIN="$HOME/.local/bin"
+LINK_PATH="$LOCAL_BIN/llm-cluster"
+TARGET_PATH="$PROJECT_ROOT/scripts/llm-cluster"
+
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "[ERROR] Python 3 is required for the Controller: $PYTHON_BIN" >&2
+  exit 1
+fi
+
+"$PYTHON_BIN" - <<'PY'
+import sys
+if sys.version_info < (3, 10):
+    raise SystemExit("[ERROR] Python 3.10 or newer is required for the Controller")
+PY
+
+if [[ ! -x "$VENV_PYTHON" ]]; then
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
+fi
+
+"$VENV_PYTHON" -m pip install --upgrade pip
+"$VENV_PYTHON" -m pip install --requirement "$PROJECT_ROOT/requirements-controller.txt"
+
+mkdir -p "$RUNTIME_DIR" "$CONTROLLER_RUNTIME_DIR" "$LOCAL_BIN"
+chmod 700 "$RUNTIME_DIR" "$CONTROLLER_RUNTIME_DIR" "$LOCAL_BIN"
+
+# An empty worker inventory is valid for a standalone Controller.  It is not a
+# legacy head row, so the Mac is never represented as an inference worker.
+if [[ ! -e "$INVENTORY_FILE" ]]; then
+  printf '%s\n' 'name,role,host,user,ssh_port,api_port,project_dir,enabled,identity_file,platform' >"$INVENTORY_FILE"
+  chmod 600 "$INVENTORY_FILE"
+  echo "[OK] created empty Worker inventory: $INVENTORY_FILE"
+elif [[ ! -f "$INVENTORY_FILE" ]]; then
+  echo "[ERROR] inventory path exists but is not a file: $INVENTORY_FILE" >&2
+  exit 1
+else
+  chmod 600 "$INVENTORY_FILE"
+  echo "[INFO] preserved existing Worker inventory: $INVENTORY_FILE"
+fi
+
+if [[ -e "$LINK_PATH" || -L "$LINK_PATH" ]]; then
+  if [[ ! -L "$LINK_PATH" ]]; then
+    echo "[ERROR] refusing to replace non-symlink command: $LINK_PATH" >&2
+    exit 1
+  fi
+  if [[ "$(cd -P "$(dirname "$LINK_PATH")" && readlink "$LINK_PATH")" != "$TARGET_PATH" ]]; then
+    echo "[ERROR] refusing to replace a symlink owned by another installation: $LINK_PATH" >&2
+    exit 1
+  fi
+else
+  ln -s "$TARGET_PATH" "$LINK_PATH"
+fi
+
+case ":${PATH}:" in
+  *":$LOCAL_BIN:"*) ;;
+  *)
+    PROFILE_PATH="${CLUSTER_SHELL_PROFILE:-$HOME/.zprofile}"
+    MARKER="# llm-cluster-controller-path"
+    if [[ -e "$PROFILE_PATH" && ! -f "$PROFILE_PATH" ]]; then
+      echo "[WARN] $LOCAL_BIN is not in PATH; add it manually because $PROFILE_PATH is not a regular file." >&2
+    elif [[ ! -e "$PROFILE_PATH" ]] || ! grep -Fqx "$MARKER" "$PROFILE_PATH"; then
+      {
+        printf '\n%s\n' "$MARKER"
+        printf 'export PATH="$HOME/.local/bin:$PATH"\n'
+      } >>"$PROFILE_PATH"
+      echo "[INFO] added $LOCAL_BIN to PATH in $PROFILE_PATH; open a new shell or run: export PATH=\"$HOME/.local/bin:\$PATH\""
+    fi
+    ;;
+esac
+
+echo "[OK] Controller runtime installed in $VENV_DIR"
+echo "[OK] command link: $LINK_PATH -> $TARGET_PATH"
+echo "[INFO] This setup installs Dashboard dependencies only; it never installs CUDA, OpenBLAS inference, jtop, JetPack, apt packages, or worker services."
+echo "[INFO] Next: llm-cluster start"

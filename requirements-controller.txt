@@ -3,3 +3,7 @@ fastapi==0.136.0
 uvicorn==0.44.0
 jinja2==3.1.6
 pydantic==2.13.1
+psutil==7.2.2
+# Dashboard API contract tests use FastAPI/Starlette's TestClient.  This is a
+# Controller HTTP dependency, not a Worker inference dependency.
+httpx==0.28.1

@@ -1,4 +1,38 @@
-# Local LLM Benchmark (Jetson Orin Nano)
+# LLM Cluster Benchmark
+
+## macOS Controller quick start
+
+The Mac is the **Controller only**: it runs the Dashboard, schedules
+experiments, and persists results. It never installs an inference backend,
+loads GGUF models, or participates as a Jetson/Raspberry Pi worker.
+
+```bash
+git clone https://github.com/Phjrab/llm-cluster-benchmark
+cd llm-cluster-benchmark
+./scripts/setup-controller
+llm-cluster start
+llm-cluster status
+```
+
+`setup-controller` creates a project-local `.venv`, installs only
+FastAPI/Uvicorn/Jinja/Pydantic/psutil, creates an empty Worker inventory when
+needed, and installs a user-level `~/.local/bin/llm-cluster` symbolic link. It
+does not install CUDA, OpenBLAS inference, jtop, JetPack, apt packages, or a
+Worker API. The dashboard is available at `http://127.0.0.1:8080/`.
+
+```bash
+llm-cluster logs
+llm-cluster restart
+llm-cluster stop
+```
+
+The lifecycle command manages the local Dashboard process only. Worker APIs
+remain under the existing compatibility CLI, for example
+`python -m cluster.clusterctl --help`; it never starts or stops remote Workers.
+On a Jetson or Raspberry Pi Worker, use `./scripts/setup-worker` after the
+repository has been deployed to that worker.
+
+## Legacy Jetson benchmark guide
 
 Jetson Orin Nano(8GB)에서 GGUF 모델을 로컬 추론하고, 모델별 성능을 같은 조건으로 비교하는 프로젝트입니다.
 
