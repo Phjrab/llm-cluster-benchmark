@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Protocol, Sequence, Tuple
 from cluster.domain.experiment import ExperimentConfig
 from cluster.domain.strategy import ExecutionStrategy
 
+from .rpc_selection import select_rpc_coordinator
+
 
 class Participant(Protocol):
     name: str
@@ -139,7 +141,7 @@ class NodeSweepStrategy(BenchmarkStrategy):
 
 
 class ModelParallelRpcStrategy(BenchmarkStrategy):
-    """Legacy RPC plan only; coordinator role migration belongs to Phase 07."""
+    """Plan a sharded model around a selected worker coordinator."""
 
     description = StrategyDescription(
         "model_parallel_rpc", "모델 분할 추론 · RPC", "sharded_model", "one_coordinator", 2, 4, True,
@@ -151,18 +153,16 @@ class ModelParallelRpcStrategy(BenchmarkStrategy):
     def validate(self, nodes, config):
         count = len(nodes)
         if not self.description.min_nodes <= count <= self.description.max_nodes:
-            raise ValueError("선택한 실험 방식은 2대 이상의 노드가 필요합니다")
-        heads = [node for node in nodes if getattr(node, "role", None) == "head"]
-        workers = [node for node in nodes if getattr(node, "role", None) == "worker"]
-        if len(heads) != 1 or not workers:
-            raise ValueError("모델 분할 RPC는 coordinator인 head 1대와 worker 1대 이상을 선택해야 합니다")
+            raise ValueError("모델 분할 RPC는 2대 이상의 worker가 필요합니다")
+        self._validate_workers_only(nodes)
+        select_rpc_coordinator(nodes, config.rpc_coordinator_node)
         if not config.acknowledge_experimental_rpc:
             raise ValueError("모델 분할 RPC의 실험적 특성과 LAN 보안 경고를 확인해야 합니다")
         if str(config.rpc_split_policy) == "custom" and len(config.rpc_tensor_split) != count:
             raise ValueError("사용자 지정 분할 비율 수는 선택한 노드 수와 같아야 합니다")
 
     def definitions(self, nodes, config):
-        coordinator = next(node for node in nodes if getattr(node, "role", None) == "head")
+        coordinator = select_rpc_coordinator(nodes, config.rpc_coordinator_node)
         return [ScenarioDefinition(
             "rpc-sharded", "RPC 모델 분할", tuple(nodes), f"coordinator:{coordinator.name}",
             execution_backend="rpc",

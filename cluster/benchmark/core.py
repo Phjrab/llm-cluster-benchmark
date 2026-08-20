@@ -7,7 +7,7 @@ import hashlib
 import threading
 import time
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
@@ -76,8 +76,11 @@ class BenchmarkRunner:
         validate_strategy(nodes, config)
         self.validate_platform(nodes, config)
         strategy = get_strategy(config.execution_strategy)
-        scenarios = build_strategy_scenarios(config, nodes)
-        total_work_units = sum(len(scenario.tasks) for scenario in scenarios)
+        scenarios = (
+            [] if strategy.execution_backend == "rpc"
+            else build_strategy_scenarios(config, nodes)
+        )
+        total_work_units = strategy.work_units(config, len(nodes))
 
         run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
         persistence = RunPersistence(results_root, run_id, config, progress)
@@ -100,6 +103,10 @@ class BenchmarkRunner:
                 )
                 rpc_session = self.rpc_backend.start(nodes, config, persistence.emit)
                 topology = rpc_session.topology
+                effective_config = replace(
+                    config, rpc_coordinator_node=rpc_session.coordinator.name
+                )
+                scenarios = build_strategy_scenarios(effective_config, nodes)
                 loaded = [{
                     "node": node.name,
                     "loaded": True,
@@ -204,11 +211,7 @@ class BenchmarkRunner:
                     "phase", phase="rpc_cleanup",
                     message="RPC 모델 분할 프로세스를 종료하는 중",
                 )
-                cleanup_errors = self.rpc_backend.stop(
-                    rpc_session.coordinator, rpc_session.started_devices
-                )
-                if cleanup_errors:
-                    raise RuntimeError("RPC cleanup failed: " + "; ".join(cleanup_errors))
+                rpc_session.close()
                 rpc_session = None
 
             summary.update({
@@ -254,6 +257,7 @@ class BenchmarkRunner:
                 "nodes": [node.name for node in nodes],
                 "actual_model_config": loaded,
                 "benchmark_parameters": benchmark_parameters(config),
+                "topology": topology,
                 "error": str(exc),
                 "result_dir": str(persistence.run_dir),
             }
@@ -269,11 +273,10 @@ class BenchmarkRunner:
                     "phase", phase="rpc_cleanup",
                     message="RPC 모델 분할 프로세스를 종료하는 중",
                 )
-                cleanup_errors = self.rpc_backend.stop(
-                    rpc_session.coordinator, rpc_session.started_devices
-                )
-                if cleanup_errors:
-                    persistence.emit("rpc_cleanup_failed", errors=cleanup_errors)
+                try:
+                    rpc_session.close()
+                except Exception as cleanup_exc:
+                    persistence.emit("rpc_cleanup_failed", errors=[str(cleanup_exc)])
 
 
 __all__ = ["BenchmarkRunner", "benchmark_parameters"]

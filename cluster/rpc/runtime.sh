@@ -117,13 +117,13 @@ start_worker() {
 }
 
 start_coordinator() {
-  port=$1 model=$2 context=$3 gpu_layers=$4 endpoints=$5 split_mode=$6 split_csv=$7
+  port=$1 model=$2 context=$3 gpu_layers=$4 endpoints=$5 split_mode=$6 split_csv=$7 bind_host=${8:-127.0.0.1}
   check_runtime >/dev/null
   pid_file="$RUN_DIR/rpc_coordinator_${port}.pid"
   log_file="$RUN_DIR/rpc_coordinator_${port}.log"
   stop_pid_file "$pid_file" llama-server
   command=(
-    "$llama_server_bin" --host 127.0.0.1 --port "$port"
+    "$llama_server_bin" --host "$bind_host" --port "$port"
     --model "$model" --ctx-size "$context" --gpu-layers "$gpu_layers"
     --rpc "$endpoints" --split-mode "$split_mode" --metrics
     --parallel 1 --cont-batching --no-webui
@@ -151,7 +151,7 @@ case "$action" in
   check) check_runtime ;;
   start-worker) start_worker "${2:?port required}" "${3:-0.0.0.0}" ;;
   stop-worker) stop_pid_file "$RUN_DIR/rpc_worker_${2:?port required}.pid" rpc-server ;;
-  start-coordinator) start_coordinator "${2:?}" "${3:?}" "${4:?}" "${5:?}" "${6:?}" "${7:?}" "${8:--}" ;;
+  start-coordinator) start_coordinator "${2:?}" "${3:?}" "${4:?}" "${5:?}" "${6:?}" "${7:?}" "${8:--}" "${9:-127.0.0.1}" ;;
   stop-coordinator) stop_pid_file "$RUN_DIR/rpc_coordinator_${2:?port required}.pid" llama-server ;;
   *) die "usage: runtime.sh prepare|check|start-worker|stop-worker|start-coordinator|stop-coordinator" ;;
 esac

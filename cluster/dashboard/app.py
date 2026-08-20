@@ -37,6 +37,7 @@ from cluster.benchmark.runner import (
     strategy_work_units,
     validate_strategy,
 )
+from cluster.benchmark.rpc_selection import select_rpc_coordinator
 from cluster.clusterctl import (
     Node,
     discover_node,
@@ -46,6 +47,7 @@ from cluster.clusterctl import (
     select_nodes,
 )
 from cluster.integrations.runtime_layout import resolve_runtime_paths
+from cluster.domain.errors import ClusterError
 from cluster.infrastructure.storage import (
     FilesystemEnvironmentReportRepository,
     FilesystemExperimentRepository,
@@ -282,6 +284,7 @@ class ExperimentPayload(BaseModel):
     rpc_split_mode: str = "layer"
     rpc_split_policy: str = "auto"
     rpc_tensor_split: List[float] = Field(default_factory=list, max_length=4)
+    rpc_coordinator_node: Optional[str] = Field(None, max_length=80)
     acknowledge_experimental_rpc: bool = False
 
     @model_validator(mode="after")
@@ -568,6 +571,7 @@ def validate_experiment_environment(
     live_status: Dict[str, Dict[str, Any]],
     model_ids: Sequence[str],
     execution_strategy: str,
+    rpc_coordinator_node: Optional[str] = None,
 ) -> None:
     """Reject experiments whose most recent persisted preflight is unsafe or stale."""
     reports = {item["node"]: item for item in read_environment_reports()}
@@ -625,9 +629,12 @@ def validate_experiment_environment(
         if live.get("api") is not True:
             problems.append(f"{node.name}: 워커 API가 오프라인입니다 (노드 시작 후 다시 시도하세요)")
 
-        # RPC model-parallel loads the GGUF only on its head coordinator. All
+        # RPC model-parallel loads the GGUF only on its selected worker coordinator. All
         # replicated strategies require every selected node to have every model.
-        requires_models = execution_strategy != "model_parallel_rpc" or node.role == "head"
+        requires_models = (
+            execution_strategy != "model_parallel_rpc"
+            or node.name == rpc_coordinator_node
+        )
         if requires_models and live.get("api") is True:
             available = set(live.get("model_ids") or [])
             missing_models = [model_id for model_id in model_ids if model_id not in available]
@@ -2064,6 +2071,24 @@ async def start_experiment(payload: ExperimentPayload) -> Dict[str, Any]:
         status_by_name = {item.get("name"): item for item in status_monitor.snapshot()}
         inventory_by_name = {item.name: item for item in read_all_nodes()}
         selected_nodes = [inventory_by_name[name] for name in payload.node_names if name in inventory_by_name]
+        readiness_platforms = {
+            item.get("node"): item.get("platform") for item in read_environment_reports()
+        }
+        if payload.execution_strategy == "model_parallel_rpc":
+            platform_by_name = {}
+            for node in selected_nodes:
+                detected = (status_by_name.get(node.name, {}).get("profile") or {}).get(
+                    "platform_kind"
+                )
+                platform_by_name[node.name] = (
+                    detected or readiness_platforms.get(node.name) or node.platform
+                )
+            coordinator = select_rpc_coordinator(
+                selected_nodes, payload.rpc_coordinator_node, platform_by_name
+            )
+            payload = payload.model_copy(
+                update={"rpc_coordinator_node": coordinator.name}
+            )
         strategy_config = ExperimentConfig.from_dict(payload.model_dump())
         validate_strategy(selected_nodes, strategy_config)
         validate_experiment_environment(
@@ -2071,6 +2096,7 @@ async def start_experiment(payload: ExperimentPayload) -> Dict[str, Any]:
             status_by_name,
             payload.model_ids,
             payload.execution_strategy,
+            payload.rpc_coordinator_node,
         )
         if payload.execution_strategy == "model_parallel_rpc" and read_settings()["worker_api_auth"]:
             raise ValueError(
@@ -2078,9 +2104,6 @@ async def start_experiment(payload: ExperimentPayload) -> Dict[str, Any]:
                 "SSH 터널 모드가 추가되기 전에는 신뢰 LAN에서만 보안을 끄고 실행하세요."
             )
         pi_nodes = []
-        readiness_platforms = {
-            item.get("node"): item.get("platform") for item in read_environment_reports()
-        }
         for name in payload.node_names:
             detected = (status_by_name.get(name, {}).get("profile") or {}).get("platform_kind")
             configured = inventory_by_name.get(name).platform if inventory_by_name.get(name) else "auto"
@@ -2094,14 +2117,15 @@ async def start_experiment(payload: ExperimentPayload) -> Dict[str, Any]:
             raise ValueError(
                 "Raspberry Pi nodes require n_gpu_layers=0: " + ", ".join(str(item) for item in pi_nodes)
             )
-        catalog_ids = {item["id"] for item in list_models()}
-        missing_models = [model_id for model_id in payload.model_ids if model_id not in catalog_ids]
-        if missing_models:
-            raise ValueError("Unknown model_ids: " + ", ".join(missing_models))
+        if payload.execution_strategy != "model_parallel_rpc":
+            catalog_ids = {item["id"] for item in list_models()}
+            missing_models = [model_id for model_id in payload.model_ids if model_id not in catalog_ids]
+            if missing_models:
+                raise ValueError("Unknown model_ids: " + ", ".join(missing_models))
         definition = save_experiment_definition(payload)
         linked_payload = payload.model_copy(update={"experiment_id": definition["experiment_id"]})
         active = experiments.start(linked_payload)
-    except ValueError as exc:
+    except (ValueError, ClusterError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "experiment": active, "definition": definition}
 

@@ -26,8 +26,8 @@ from .metrics import aggregate_records, percentile
 from .models import RequestTask, StrategyScenario
 from .planner import build_strategy_scenarios, strategy_work_units, validate_strategy
 from .rpc import (
-    LegacyRpcBackend, RPC_COORDINATOR_PORT, RPC_SERVER_PORT,
-    default_legacy_rpc_backend, legacy_runtime_command,
+    RPC_COORDINATOR_PORT, RPC_SERVER_PORT, WorkerRpcBackend,
+    default_rpc_backend, worker_runtime_command,
 )
 from .strategies import get_strategy, strategy_catalog
 from .transport import stream_rpc_request, stream_worker_request, utc_now
@@ -111,11 +111,11 @@ def validate_platform_layers(nodes: Sequence[Node], config: ExperimentConfig) ->
 def _rpc_runtime_command(
     node: Node, action: str, *arguments: str, timeout: int = 120
 ) -> Dict[str, Any]:
-    return legacy_runtime_command(node, action, *arguments, timeout=timeout)
+    return worker_runtime_command(node, action, *arguments, timeout=timeout)
 
 
-def _rpc_backend() -> LegacyRpcBackend:
-    return default_legacy_rpc_backend(
+def _rpc_backend() -> WorkerRpcBackend:
+    return default_rpc_backend(
         runtime_command=_rpc_runtime_command, project_root=PROJECT_ROOT
     )
 
@@ -125,7 +125,7 @@ def rpc_preflight(nodes: Sequence[Node]) -> List[Dict[str, Any]]:
 
 
 def _rpc_platform_from_check(node: Node, check: Dict[str, Any]) -> str:
-    return LegacyRpcBackend.platform_from_check(node, check)
+    return WorkerRpcBackend.platform_from_check(node, check)
 
 
 def _start_rpc_topology(

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from cluster.clusterctl import worker_auth_headers
 from cluster.domain.experiment import ExperimentConfig
+from cluster.domain.errors import ErrorCode
 from cluster.infrastructure.sse import parse_sse_events
 
 from .models import RequestTask
@@ -113,6 +114,7 @@ def stream_rpc_request(
     output_parts: List[str] = []
     generated_tokens = 0
     error = ""
+    error_code = ""
     ok = False
     try:
         with urllib.request.urlopen(request, timeout=config.request_timeout_s) as response:
@@ -140,6 +142,7 @@ def stream_rpc_request(
                         ok = True
     except (OSError, ValueError, urllib.error.URLError) as exc:
         error = str(exc)
+        error_code = ErrorCode.RPC_CONNECTION_FAILED.value
     finished = time.perf_counter()
     output = "".join(output_parts)
     if ok and generated_tokens <= 0:
@@ -164,6 +167,7 @@ def stream_rpc_request(
         "output_chars": len(output),
         "output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest() if ok else "",
         "error": error,
+        "error_code": error_code,
         "warmup": False,
         "token_count_source": "server_usage" if generated_tokens and generated_tokens != len(output_parts) else "stream_chunk_estimate",
     }

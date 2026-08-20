@@ -105,19 +105,20 @@ class StrategyGoldenTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "worker만"):
             build_strategy_scenarios(config, [controller])
 
-    def test_rpc_planning_keeps_legacy_head_coordinator_until_phase_07(self) -> None:
-        head = Node("legacy-head", "head", "127.0.0.1", "bench", 22, 8000, "/opt/bench/cluster", True)
-        remote = Node("w1", "worker", "192.168.10.11", "bench", 22, 8000, "/opt/bench/cluster", True)
+    def test_rpc_planning_targets_explicit_worker_coordinator(self) -> None:
+        first = worker("w1", 11)
+        coordinator = worker("w2", 12)
         config = ExperimentConfig(
-            node_names=["legacy-head", "w1"],
+            node_names=["w1", "w2"],
             requests=2,
             execution_strategy="model_parallel_rpc",
+            rpc_coordinator_node="w2",
             acknowledge_experimental_rpc=True,
         )
-        scenario = build_strategy_scenarios(config, [head, remote])[0]
+        scenario = build_strategy_scenarios(config, [first, coordinator])[0]
         self.assertEqual(scenario.execution_backend, "rpc")
-        self.assertEqual(scenario.node_names, ["legacy-head", "w1"])
-        self.assertEqual([task.target_node for task in scenario.tasks], ["legacy-head", "legacy-head"])
+        self.assertEqual(scenario.node_names, ["w1", "w2"])
+        self.assertEqual([task.target_node for task in scenario.tasks], ["w2", "w2"])
 
 
 class MetricsGoldenTests(unittest.TestCase):

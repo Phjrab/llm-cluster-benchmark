@@ -23,6 +23,7 @@ const state = {
   chartModels: new Map(),
   chartInteraction: new Map(),
   publicationChartId: "",
+  rpcCoordinatorNode: "",
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -457,6 +458,33 @@ function updatePlatformGuidance() {
     : hasPi ? "Pi 포함 · CPU 모드" : "설정 준비됨";
 }
 
+function renderRpcCoordinatorOptions() {
+  const select = $("#rpcCoordinatorSelect");
+  if (!select) return;
+  const workers = plannedNodeNames()
+    .map(name => state.nodes.find(node => node.name === name))
+    .filter(node => node?.role === "worker");
+  const preferred = state.rpcCoordinatorNode || select.value;
+  select.innerHTML = [
+    `<option value="">자동 · Jetson 우선, 없으면 Pi</option>`,
+    ...workers.map(node => `<option value="${escapeHtml(node.name)}">${escapeHtml(node.name)} · ${escapeHtml(platformName(actualPlatform(node)))}</option>`),
+  ].join("");
+  select.value = workers.some(node => node.name === preferred) ? preferred : "";
+  state.rpcCoordinatorNode = select.value;
+}
+
+function plannedRpcCoordinatorName() {
+  const explicit = $("#rpcCoordinatorSelect")?.value;
+  if (explicit) return explicit;
+  const workers = plannedNodeNames()
+    .map(name => state.nodes.find(node => node.name === name))
+    .filter(node => node?.role === "worker");
+  return workers.find(node => actualPlatform(node) === "jetson")?.name
+    || workers.find(node => actualPlatform(node) === "raspberry-pi")?.name
+    || workers[0]?.name
+    || "";
+}
+
 function updateStrategyGuidance() {
   const strategy = selectedStrategy();
   const meta = strategyMeta(strategy);
@@ -465,6 +493,7 @@ function updateStrategyGuidance() {
   const requests = Math.max(0, Number($("#requestsInput").value) || 0);
   const sweepMode = $("#sweepModeSelect").value;
   const splitPolicy = $("#rpcSplitPolicySelect").value;
+  renderRpcCoordinatorOptions();
   $("#sweepOptions").hidden = strategy !== "node_sweep";
   $("#rpcOptions").hidden = strategy !== "model_parallel_rpc";
   $("#rpcTensorField").hidden = splitPolicy !== "custom";
@@ -543,7 +572,7 @@ function updateModelAvailability() {
   }
   const plannedNames = plannedNodeNames();
   const placementNames = selectedStrategy() === "model_parallel_rpc"
-    ? plannedNames.filter(name => state.nodes.find(node => node.name === name)?.role === "head")
+    ? [plannedRpcCoordinatorName()].filter(Boolean)
     : plannedNames;
   const missing = placementNames.filter(name => {
     const live = statusFor(name);
@@ -563,7 +592,7 @@ function updateModelAvailability() {
       ? selectedStrategy() === "model_parallel_rpc" ? " · Pi는 RPC CPU 장치로 참여" : " · Pi CPU/OpenBLAS · GPU 레이어 0"
       : "";
     const placementNote = selectedStrategy() === "model_parallel_rpc"
-      ? " · GGUF는 head에만 필요, worker는 텐서 수신"
+      ? ` · GGUF는 coordinator worker(${plannedRpcCoordinatorName() || "자동 선택"})에 필요`
       : " · 선택 노드 모델 상태 정상";
     hint.textContent = `${modelIds.length}개 · 합계 ${fmt(totalSize, 2)} GB${placementNote}${piNote}`;
     hint.style.color = "";
@@ -623,6 +652,7 @@ function applyConfig(defaults, includeName = true) {
   if (defaults.sweep_mode !== undefined) $("#sweepModeSelect").value = defaults.sweep_mode;
   if (defaults.rpc_split_mode !== undefined) $("#rpcSplitModeSelect").value = defaults.rpc_split_mode;
   if (defaults.rpc_split_policy !== undefined) $("#rpcSplitPolicySelect").value = defaults.rpc_split_policy;
+  state.rpcCoordinatorNode = defaults.rpc_coordinator_node || "";
   if (Array.isArray(defaults.rpc_tensor_split)) $("#rpcTensorSplitInput").value = defaults.rpc_tensor_split.join(", ");
   if (defaults.acknowledge_experimental_rpc !== undefined) $("#rpcAcknowledgeInput").checked = Boolean(defaults.acknowledge_experimental_rpc);
   const configModels = Array.isArray(defaults.model_ids) && defaults.model_ids.length ? defaults.model_ids : [defaults.model_id].filter(Boolean);
@@ -1772,9 +1802,11 @@ function experimentPayload() {
   }
   if (executionStrategy === "model_parallel_rpc") {
     const selectedNodes = selectedNodeNames.map(name => state.nodes.find(node => node.name === name)).filter(Boolean);
-    if (selectedNodes.filter(node => node.role === "head").length !== 1 || !selectedNodes.some(node => node.role === "worker")) {
-      throw new Error("모델 분할 RPC에는 coordinator인 head 1대와 worker 1대 이상을 선택해야 합니다.");
+    if (selectedNodes.length < 2 || selectedNodes.some(node => node.role !== "worker")) {
+      throw new Error("모델 분할 RPC에는 선택된 worker가 2대 이상 필요합니다. Controller/head는 참여할 수 없습니다.");
     }
+    const coordinator = $("#rpcCoordinatorSelect").value;
+    if (coordinator && !selectedNodeNames.includes(coordinator)) throw new Error("RPC 코디네이터는 선택된 worker여야 합니다.");
     if (!$("#rpcAcknowledgeInput").checked) throw new Error("모델 분할 RPC의 실험적 특성과 위험을 먼저 확인하세요.");
   }
   const tensorSplit = executionStrategy === "model_parallel_rpc" && $("#rpcSplitPolicySelect").value === "custom" ? parseRpcTensorSplit(true) : [];
@@ -1791,6 +1823,7 @@ function experimentPayload() {
     rpc_split_mode: $("#rpcSplitModeSelect").value,
     rpc_split_policy: $("#rpcSplitPolicySelect").value,
     rpc_tensor_split: tensorSplit,
+    rpc_coordinator_node: $("#rpcCoordinatorSelect").value || null,
     acknowledge_experimental_rpc: $("#rpcAcknowledgeInput").checked,
     requests: Number($("#requestsInput").value),
     concurrency: Number($("#concurrencyInput").value),
@@ -2036,12 +2069,15 @@ function bindEvents() {
   $("#prepareRpcButton").addEventListener("click", () => {
     const nodes = [...state.selectedNodes];
     const records = nodes.map(name => state.nodes.find(node => node.name === name)).filter(Boolean);
-    if (records.filter(node => node.role === "head").length !== 1 || !records.some(node => node.role === "worker")) {
-      return toast("노드 구성 확인", "RPC coordinator인 head 1대와 worker 1대 이상을 선택하세요.", "error");
+    if (records.length < 2 || records.some(node => node.role !== "worker")) {
+      return toast("노드 구성 확인", "RPC 환경 준비에는 worker 2대 이상을 선택하세요. Controller/head는 참여하지 않습니다.", "error");
     }
     if (confirm(`선택한 ${nodes.length}대에 모델 분할 RPC 실행 환경을 준비합니다. 실제 성능은 네트워크 상태에 따라 저하될 수 있습니다. 계속할까요?`)) {
       runActionOnNodes("prepare-rpc", nodes, { confirmed: true });
     }
+  });
+  $("#rpcCoordinatorSelect").addEventListener("input", event => {
+    state.rpcCoordinatorNode = event.currentTarget.value;
   });
   $$('[data-cluster-action]').forEach(button => button.addEventListener("click", () => {
     const action = button.dataset.clusterAction;

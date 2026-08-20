@@ -200,8 +200,9 @@
             </div>
             <div class="strategy-options rpc-options" id="rpcOptions" hidden>
               <div class="strategy-options-head"><div><strong>모델 분할 RPC 설정</strong><small>GGUF 한 개를 분할해 한 번의 생성에 여러 장치를 사용합니다.</small></div><span>실험 기능</span></div>
-              <div class="rpc-warning"><strong>성능 향상을 보장하지 않습니다.</strong> coordinator인 head 1대와 worker 1대 이상을 함께 선택해야 합니다. 네트워크 전송과 동기화 비용 때문에 단일 노드보다 느릴 수 있으며, 연결이 끊기면 해당 답변 전체가 실패합니다. RPC 포트는 인증 기능이 없어 신뢰 LAN에서 워커 API 보안 설정이 꺼진 동안에만 실행됩니다.</div>
+              <div class="rpc-warning"><strong>성능 향상을 보장하지 않습니다.</strong> 선택한 worker 2대 이상 중 한 대가 coordinator가 됩니다. Mac Controller는 모델을 로드하거나 추론에 참여하지 않습니다. 네트워크 전송과 동기화 비용 때문에 단일 노드보다 느릴 수 있으며, 연결이 끊기면 해당 답변 전체가 실패합니다. RPC 포트는 인증 기능이 없어 신뢰 LAN에서 워커 API 보안 설정이 꺼진 동안에만 실행됩니다.</div>
               <div class="rpc-option-grid">
+                <div class="field full-field"><label for="rpcCoordinatorSelect">RPC 코디네이터</label><div class="select-wrap"><select id="rpcCoordinatorSelect" name="rpc_coordinator_node"><option value="">자동 · Jetson 우선, 없으면 Pi</option></select></div><small>명시하지 않으면 선택 순서 안에서 Jetson을 우선하고, Jetson이 없으면 첫 Raspberry Pi를 사용합니다.</small></div>
                 <div class="field"><label for="rpcSplitModeSelect">분할 단위</label><div class="select-wrap"><select id="rpcSplitModeSelect" name="rpc_split_mode"><option value="layer">레이어 분할</option><option value="row">텐서 행 분할</option></select></div></div>
                 <div class="field"><label for="rpcSplitPolicySelect">분할 비율</label><div class="select-wrap"><select id="rpcSplitPolicySelect" name="rpc_split_policy"><option value="auto">자동 · 장치 메모리 기준</option><option value="equal">균등 분할</option><option value="custom">직접 입력</option></select></div></div>
                 <div class="field full-field" id="rpcTensorField" hidden><label for="rpcTensorSplitInput">노드별 비율</label><input id="rpcTensorSplitInput" name="rpc_tensor_split" inputmode="decimal" placeholder="예: 1, 1, 2"><small>선택 노드 순서대로 양수를 쉼표로 구분합니다. JSON에는 숫자 배열로 저장됩니다.</small></div>

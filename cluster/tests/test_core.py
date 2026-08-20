@@ -566,16 +566,19 @@ class ExperimentTests(unittest.TestCase):
         self.assertEqual(sum(len(scenario.tasks) for scenario in plan), 6)
         self.assertEqual(strategy_work_units(config, len(nodes)), 6)
 
-    def test_rpc_requires_head_worker_and_acknowledgement(self) -> None:
-        head = Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True)
-        worker = Node("worker", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True)
+    def test_rpc_requires_two_workers_and_acknowledgement(self) -> None:
+        first = Node("worker-1", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True)
+        second = Node("worker-2", "worker", "192.168.0.3", "jetson", 22, 8000, "/opt/llm", True)
         config = ExperimentConfig(
-            node_names=["head", "worker"], execution_strategy="model_parallel_rpc"
+            node_names=["worker-1", "worker-2"], execution_strategy="model_parallel_rpc"
         )
         with self.assertRaisesRegex(ValueError, "실험적"):
-            validate_strategy([head, worker], config)
+            validate_strategy([first, second], config)
         config.acknowledge_experimental_rpc = True
-        validate_strategy([head, worker], config)
+        validate_strategy([first, second], config)
+        head = Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True)
+        with self.assertRaisesRegex(ValueError, "worker만"):
+            validate_strategy([head, second], config)
 
     def test_cancellation_does_not_queue_the_entire_scenario(self) -> None:
         head = Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True)
