@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>MediFlow Cluster Lab</title>
-  <meta name="description" content="Jetson head/worker LLM 클러스터를 구성하고 벤치마크하는 내부 대시보드">
+  <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
@@ -18,12 +18,13 @@
       <nav class="nav-list">
         <a class="nav-link active" href="#overview" data-section="overview"><span>01</span>개요</a>
         <a class="nav-link" href="#nodes" data-section="nodes"><span>02</span>노드</a>
-        <a class="nav-link" href="#experiment" data-section="experiment"><span>03</span>실험 설계</a>
-        <a class="nav-link" href="#runs" data-section="runs"><span>04</span>실행 기록</a>
+        <a class="nav-link" href="#models" data-section="models"><span>03</span>모델</a>
+        <a class="nav-link" href="#experiment" data-section="experiment"><span>04</span>실험</a>
+        <a class="nav-link" href="#results" data-section="results"><span>05</span>결과</a>
       </nav>
       <div class="sidebar-foot">
         <div class="live-indicator"><i></i><span id="streamLabel">연결 준비 중</span></div>
-        <p>HEAD CONTROL PLANE</p>
+        <p>MAC CONTROL PLANE</p>
       </div>
     </aside>
 
@@ -50,14 +51,20 @@
             <a class="button primary" href="#experiment">새 실험 설계</a>
             <button class="button ghost" id="quickHealthButton" type="button">환경 점검 실행</button>
           </div>
+          <section class="controller-panel" aria-label="Controller 상태">
+            <div><span>CONTROLLER</span><strong id="controllerName">Mac Control Plane</strong><small id="controllerPlatform">macOS</small></div>
+            <div><span>DASHBOARD</span><strong id="controllerDashboard">ONLINE</strong><small>관리 API</small></div>
+            <div><span>SCHEDULER</span><strong id="controllerScheduler">READY</strong><small>실험 작업</small></div>
+            <div><span>STORAGE</span><strong id="controllerStorage">READY</strong><small>결과·이벤트</small></div>
+          </section>
         </div>
         <div class="cluster-orbit" aria-label="현재 클러스터 요약">
           <div class="orbit-ring ring-one"></div>
           <div class="orbit-ring ring-two"></div>
           <div class="core-node">
-            <span>HEAD</span>
-            <strong id="headStatus">—</strong>
-            <small id="headAddress">연결 확인 중</small>
+            <span>CONTROLLER</span>
+            <strong id="controllerStatus">—</strong>
+            <small id="controllerAddress">상태 확인 중</small>
           </div>
           <div class="satellite sat-one" data-orbit-worker hidden><i></i><span></span></div>
           <div class="satellite sat-two" data-orbit-worker hidden><i></i><span></span></div>
@@ -68,7 +75,7 @@
 
       <section class="metric-strip" aria-label="클러스터 주요 지표">
         <article><span>참여 노드</span><strong id="selectedCount">1</strong><small>SELECTED</small></article>
-        <article><span>설치 모델</span><strong id="modelCount">—</strong><small>GGUF · HEAD</small></article>
+        <article><span>설치 모델</span><strong id="modelCount">—</strong><small>GGUF · WORKERS</small></article>
         <article><span>클러스터 전력</span><strong id="averagePower">—</strong><small>SUM · WATTS</small></article>
         <article><span>최근 처리량</span><strong id="recentThroughput">—</strong><small>TOKENS / SEC</small></article>
       </section>
@@ -111,11 +118,25 @@
               <button class="button primary compact" id="environmentInstallAllButton" type="button">선택 노드 자동 구성</button>
             </div>
           </div>
+          <div class="terminal-toolbar node-terminal-toolbar" aria-label="노드 작업 로그 제어"><label><input type="checkbox" data-terminal-autoscroll="node" checked> 자동 스크롤</label><button type="button" data-terminal-copy="node">복사</button><button type="button" data-terminal-clear="node">지우기</button></div>
           <div class="environment-log" id="environmentLog" aria-live="polite" aria-label="노드 환경 작업 로그">
             <p><time>READY</time>노드를 선택한 뒤 환경을 점검하세요. 설치 가능한 항목은 프로젝트 전용 가상환경에 구성합니다.</p>
           </div>
           <p class="environment-footnote">자동 구성은 비밀번호·토큰·SSH 키를 저장하지 않습니다. 시스템 패키지는 고정 허용 목록과 <code>sudo -n</code>에서만 설치하며, 승인이 필요하면 해당 노드에서 실행할 명령만 안내합니다.</p>
         </section>
+      </section>
+
+      <section id="models" class="section panel-section models-section">
+        <div class="section-heading">
+          <div><span class="section-index">03 / MODELS</span><h2>모델 라이브러리</h2></div>
+          <div class="heading-actions">
+            <label class="library-search" for="libraryModelSearch"><span>⌕</span><input id="libraryModelSearch" type="search" placeholder="이름·벤더·양자화 검색"></label>
+            <button class="button ghost compact" id="refreshModelsButton" type="button">모델 상태 새로고침</button>
+          </div>
+        </div>
+        <p class="section-intro">카탈로그 정보와 각 워커의 실제 GGUF 설치 상태를 함께 표시합니다. 설치·동기화는 실험 시간에 포함되지 않으며, 선택한 워커에만 실행됩니다.</p>
+        <div class="model-library-summary" id="modelLibrarySummary" aria-live="polite"><span>모델 인벤토리 불러오는 중</span></div>
+        <div class="model-library-grid" id="modelLibrary" aria-live="polite"><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
       </section>
 
       <section id="experiment" class="section experiment-section">
@@ -127,6 +148,7 @@
           <div class="form-main">
             <div class="field full-field">
               <label for="experimentGroupSelect">실험 묶음</label>
+              <input id="experimentPickerSearch" type="search" autocomplete="off" placeholder="실험 이름·전략·완료 상태 검색" aria-controls="experimentGroupSelect">
               <div class="select-wrap"><select id="experimentGroupSelect" name="experiment_id"><option value="">+ 새 실험 만들기</option></select></div>
               <small>기존 실험을 선택하면 설정과 결과가 같은 실험 ID로 연결됩니다.</small>
             </div>
@@ -143,7 +165,7 @@
                 <div class="model-checklist" id="modelChecklist" role="group" aria-label="벤치마크할 모델 선택"></div>
               </div>
               <select id="modelSelect" name="model_id" hidden aria-hidden="true"></select>
-              <small id="modelHint">head 노드에 설치된 GGUF 모델</small>
+              <small id="modelHint">선택 워커에 설치된 GGUF 모델</small>
             </div>
             <fieldset class="strategy-fieldset">
               <legend>실행 방식</legend>
@@ -244,6 +266,7 @@
           </div>
           <aside class="run-console">
             <div class="console-head"><span>RUN CONTROL</span><span class="console-strategy" id="runStrategyBadge">복제 · 요청 분산</span><i id="runStateDot"></i></div>
+            <div class="terminal-toolbar" aria-label="실험 로그 제어"><label><input type="checkbox" data-terminal-autoscroll="experiment" checked> 자동 스크롤</label><button type="button" data-terminal-copy="experiment">복사</button><button type="button" data-terminal-clear="experiment">지우기</button></div>
             <div class="run-summary">
               <div><small>NODES</small><strong id="runNodes">1</strong></div>
               <div><small>REQUESTS</small><strong id="runRequests">20</strong></div>
@@ -262,7 +285,7 @@
         </form>
       </section>
 
-      <section id="runs" class="section panel-section runs-section">
+      <section id="results" class="section panel-section runs-section">
         <div class="section-heading">
           <div><span class="section-index">04 / RESULTS</span><h2>실험별 결과</h2></div>
           <div class="results-filter"><label for="resultExperimentFilter">실험 선택</label><select id="resultExperimentFilter"><option value="all">전체 실험</option></select></div>
@@ -290,10 +313,14 @@
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>실험</th><th>모델 / Suite</th><th>실행 방식</th><th>노드</th><th>성공률</th><th>TTFT p50</th><th>E2E p95</th><th>처리량</th><th>상태</th></tr></thead>
-            <tbody id="runsTable"><tr><td colspan="9" class="empty-cell">실행 기록 없음</td></tr></tbody>
+            <thead><tr><th>실험</th><th>모델 / Suite</th><th>실행 방식</th><th>노드</th><th>성공률</th><th>TTFT p50</th><th>E2E p95</th><th>처리량</th><th>상태</th><th>검토</th></tr></thead>
+            <tbody id="runsTable"><tr><td colspan="10" class="empty-cell">실행 기록 없음</td></tr></tbody>
           </table>
         </div>
+        <section class="result-inspector" aria-labelledby="resultInspectorTitle">
+          <div class="result-inspector-head"><div><span class="section-index">RAW RESPONSES &amp; FAILURES</span><h3 id="resultInspectorTitle">프롬프트와 실제 응답 검토</h3><p>실행 기록의 <code>responses.jsonl</code>을 그대로 읽습니다. broadcast는 동일 논리 요청의 워커별 응답과 해시 일치 여부를 나란히 비교합니다.</p></div><span class="inspector-status" id="resultInspectorStatus">실행을 선택하세요</span></div>
+          <div id="resultInspector" class="result-inspector-body"><div class="empty-result"><strong>아직 선택한 실행이 없습니다.</strong><span>표의 <em>응답 보기</em>를 눌러 프롬프트, 모델별 생성 결과, 구조화된 실패를 확인하세요.</span></div></div>
+        </section>
       </section>
 
       <footer><span>MediFlow Cluster Lab</span><span>Internal LAN · Reproducible Edge LLM Evaluation</span></footer>
@@ -303,7 +330,7 @@
   <dialog id="nodeDialog" class="modal">
     <form id="nodeForm" method="dialog">
       <div class="modal-head"><div><span class="section-index">WORKER ONBOARDING</span><h2>엣지 워커 찾기</h2></div><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div>
-      <p class="modal-intro">Head와 같은 사설 LAN에서 SSH가 열린 기기를 찾습니다. 기기를 선택한 뒤 공개 키 인증과 Jetson/Pi 환경을 확인하고 자동 준비합니다.</p>
+      <p class="modal-intro">Controller와 같은 사설 LAN에서 SSH가 열린 기기를 찾습니다. 기기를 선택한 뒤 공개 키 인증과 Jetson/Pi 환경을 확인하고 자동 준비합니다.</p>
       <div class="device-discovery">
         <div><strong>연결된 기기</strong><span id="scanStatus">검색을 시작하세요.</span><button type="button" class="button secondary compact" id="scanNetworkButton">기기 다시 검색</button></div>
         <div class="device-list" id="deviceList"><div class="device-empty">아직 검색하지 않았습니다.</div></div>
@@ -317,7 +344,7 @@
         <div class="field"><label for="nodeApiPort">API 포트</label><input id="nodeApiPort" type="number" min="1" max="65535" value="8000"></div>
         <div class="field full-field"><label for="nodeProjectDir">프로젝트 경로</label><input id="nodeProjectDir" required value="/home/jetson_orin_nano/project/llm/local_llm_bench"></div>
       </div>
-      <div class="key-panel"><span>HEAD SSH PUBLIC KEY</span><code id="publicKey">키가 아직 생성되지 않았습니다.</code><button type="button" id="copyKeyButton">복사</button></div>
+      <div class="key-panel"><span>CONTROLLER SSH PUBLIC KEY</span><code id="publicKey">키가 아직 생성되지 않았습니다.</code><button type="button" id="copyKeyButton">복사</button></div>
       <p class="pairing-note">최초 한 번 이 키를 워커의 <code>~/.ssh/authorized_keys</code>에 등록해야 합니다. SSH 또는 sudo 비밀번호는 대시보드가 받거나 저장하지 않습니다.</p>
       <div class="probe-result" id="probeResult" hidden></div>
       <div class="modal-actions"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="button" class="button secondary" id="probeNodeButton">SSH 환경 확인</button><button type="submit" class="button primary" id="savePrepareButton">저장 후 자동 준비</button></div>
@@ -334,7 +361,7 @@
   <dialog id="authDialog" class="modal auth-modal">
     <form id="authForm" method="dialog">
       <div class="modal-head"><div><span class="section-index">SECURE ACCESS</span><h2>대시보드 토큰</h2></div></div>
-      <p class="modal-intro">head 노드의 <code>.run/cluster/dashboard.token</code> 값을 입력하세요. 브라우저에만 저장됩니다.</p>
+      <p class="modal-intro">Controller의 <code>.run/cluster/dashboard.token</code> 값을 입력하세요. 브라우저에만 저장됩니다.</p>
       <div class="field"><label for="tokenInput">Access token</label><input id="tokenInput" type="password" required autocomplete="off"></div>
       <div class="modal-actions"><button type="submit" class="button primary">대시보드 연결</button></div>
     </form>
@@ -358,7 +385,7 @@
       <label class="settings-toggle">
         <input id="workerAuthInput" type="checkbox">
         <span></span>
-        <div><strong>워커 API 토큰 인증</strong><small>상태 조회, 모델 변경, 추론 요청을 head/worker 공유 토큰으로 보호</small></div>
+        <div><strong>워커 API 토큰 인증</strong><small>상태 조회, 모델 변경, 추론 요청을 Controller/worker 공유 토큰으로 보호</small></div>
       </label>
       <div class="settings-notice" id="workerAuthNotice">현재 꺼짐 · 신뢰 LAN 전용 모드</div>
       <p class="settings-help">워커 API 인증을 변경할 때만 연결된 노드 API가 자동 재시작됩니다. 대시보드 인증은 즉시 적용되며 기본값은 꺼짐입니다. 워커 보안이 켜진 동안에는 인증되지 않은 llama.cpp RPC 모델 분할 실험이 차단됩니다.</p>
@@ -387,5 +414,9 @@
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
   <script src="/static/app.js" defer></script>
+  <script src="/static/js/utils.js" defer></script>
+  <script src="/static/js/console.js" defer></script>
+  <script src="/static/js/models.js" defer></script>
+  <script src="/static/js/results.js" defer></script>
 </body>
 </html>

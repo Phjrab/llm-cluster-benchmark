@@ -7,6 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const appPath = path.resolve(__dirname, "../dashboard/static/app.js");
+const dashboardRoot = path.resolve(__dirname, "../dashboard");
 const context = vm.createContext({
   console,
   TextEncoder,
@@ -21,7 +22,36 @@ const context = vm.createContext({
   JSON,
   document: { addEventListener() {} },
 });
+context.window = context;
 vm.runInContext(fs.readFileSync(appPath, "utf8"), context, { filename: appPath });
+for (const moduleName of ["utils.js", "console.js", "models.js", "results.js"]) {
+  const modulePath = path.join(dashboardRoot, "static/js", moduleName);
+  vm.runInContext(fs.readFileSync(modulePath, "utf8"), context, { filename: modulePath });
+}
+
+const template = fs.readFileSync(path.join(dashboardRoot, "templates/index.html"), "utf8");
+const appSource = fs.readFileSync(appPath, "utf8");
+assert.match(template, /01<\/span>개요[\s\S]*02<\/span>노드[\s\S]*03<\/span>모델[\s\S]*04<\/span>실험[\s\S]*05<\/span>결과/);
+assert.match(template, /CONTROLLER[\s\S]*DASHBOARD[\s\S]*SCHEDULER[\s\S]*STORAGE/);
+assert.doesNotMatch(template, /HEAD · CONTROL \+ INFERENCE/);
+for (const moduleName of ["utils.js", "console.js", "models.js", "results.js"]) {
+  assert.match(template, new RegExp(`/static/js/${moduleName.replace(".", "\\.")}`));
+}
+
+assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("completed").tone`, context), "completed");
+assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("cancelled").icon`, context), "−");
+assert.equal(vm.runInContext(`ClusterDashboard.terminals.limit`, context), 200);
+assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.recordProgress`, context), "function");
+assert.match(appSource, /return state\.nodes\.filter\(node => node\.role === "worker"\)/);
+assert.match(appSource, /telemetryDegraded/);
+assert.match(appSource, /channel === "experiment"/);
+assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/results.js"), "utf8"), /output_sha256/);
+const responseGrouping = vm.runInContext(`ClusterDashboard.results.responseGroups([
+  { logical_request_id: 1, node: "jetson-a" },
+  { logical_request_id: 1, node: "pi-b" },
+  { logical_request_id: 2, node: "jetson-a" }
+]).map(([id, records]) => [id, records.length])`, context);
+assert.deepEqual(JSON.parse(JSON.stringify(responseGrouping)), [["1", 2], ["2", 1]]);
 
 const publication = vm.runInContext(`buildPublicationSvg({
   type: "bar",
@@ -124,10 +154,10 @@ const topology = vm.runInContext(`(() => {
     capacity: clusterCapacity()
   };
 })()`, context);
-assert.deepEqual([...topology.names], ["edge-head", "pi-worker"]);
-assert.deepEqual([...topology.selected], ["edge-head", "pi-worker"]);
-assert.equal(topology.capacity.count, 2);
-assert.equal(topology.capacity.remaining, 2);
+assert.deepEqual([...topology.names], ["pi-worker", "legacy-placeholder"]);
+assert.deepEqual([...topology.selected], ["pi-worker"]);
+assert.equal(topology.capacity.count, 3);
+assert.equal(topology.capacity.remaining, 1);
 assert.equal(topology.capacity.full, false);
 
 const wrappedLegend = vm.runInContext(`buildPublicationSvg({

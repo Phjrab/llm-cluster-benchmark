@@ -7,6 +7,7 @@ const state = {
   runs: [],
   experimentGroups: [],
   actions: [],
+  controller: { role: "controller", inference_enabled: false },
   activeExperiment: null,
   onboarding: {},
   settings: { worker_api_auth: false, dashboard_token_auth: false },
@@ -281,9 +282,10 @@ function ingestStatus(items) {
 }
 
 function topologyNodes() {
-  const heads = state.nodes.filter(node => node.role === "head");
-  const workers = state.nodes.filter(node => node.role === "worker" && node.enabled);
-  return [...heads, ...workers];
+  // The legacy inventory can still retain a `head` row for read compatibility,
+  // but Controller status is rendered separately and never becomes a worker UI
+  // card or benchmark participant.
+  return state.nodes.filter(node => node.role === "worker");
 }
 
 function reconcileSelection(nodes = topologyNodes()) {
@@ -296,14 +298,16 @@ function reconcileSelection(nodes = topologyNodes()) {
 }
 
 function clusterCapacity() {
-  const count = topologyNodes().length;
+  // Keep the existing inventory limit intact while Phase 13 hides the legacy
+  // controller row from worker cards.  The backend remains authoritative.
+  const count = state.nodes.length;
   return { count, full: count >= MAX_CLUSTER_NODES, remaining: Math.max(0, MAX_CLUSTER_NODES - count) };
 }
 
 function openNodeOnboarding() {
   const capacity = clusterCapacity();
   if (capacity.full) {
-    toast("클러스터 구성 한도", `Head를 포함해 최대 ${MAX_CLUSTER_NODES}대까지 연결할 수 있습니다.`, "error");
+    toast("클러스터 구성 한도", `최대 ${MAX_CLUSTER_NODES}대까지 연결할 수 있습니다.`, "error");
     return;
   }
   $("#nodeDialog").showModal();
@@ -321,8 +325,11 @@ function renderNodes() {
     const model = live.current?.model_id || "모델 로드 안 됨";
     const selected = state.selectedNodes.has(node.name);
     const kind = actualPlatform(node);
-    const roleLabel = node.role === "head" ? "HEAD · CONTROL + INFERENCE" : `WORKER · ${platformName(kind).toUpperCase()}`;
+    const roleLabel = `WORKER · ${platformName(kind).toUpperCase()}`;
     const error = live.error && live.error !== "disabled" ? live.error : "";
+    const capabilities = live.capabilities || {};
+    const inferenceReady = online && capabilities.inference_ready !== false;
+    const telemetryDegraded = Boolean(capabilities.telemetry_degraded);
     const environment = environmentFor(node.name);
     const readiness = readinessMeta(environment.status);
     return `
@@ -335,7 +342,9 @@ function renderNodes() {
           <div class="node-title"><strong>${escapeHtml(node.name)}</strong><small>${escapeHtml(roleLabel)}<br>${escapeHtml(node.host)}:${node.api_port}</small></div>
           <div class="node-status-stack">
             <span class="status-pill ${online ? "online" : ""}"><i></i>${online ? "ONLINE" : node.enabled ? "OFFLINE" : "DISABLED"}</span>
+            <span class="inference-pill ${inferenceReady ? "ready" : "not-ready"}"><i></i>${inferenceReady ? "INFERENCE READY" : "INFERENCE CHECK"}</span>
             <span class="readiness-pill ${readiness.status}" title="${escapeHtml(readiness.detail)}"><i></i>${readiness.label}</span>
+            ${telemetryDegraded ? `<span class="telemetry-pill" title="${escapeHtml(capabilities.telemetry_error || "고급 텔레메트리를 사용할 수 없어 기본 지표만 표시합니다.")}">! TELEMETRY DEGRADED</span>` : ""}
           </div>
         </div>
         <div class="node-model"><span>ACTIVE MODEL · ${live.model_count || 0} AVAILABLE</span><strong title="${escapeHtml(model)}">${escapeHtml(model)}</strong></div>
@@ -355,8 +364,8 @@ function renderNodes() {
       aria-label="${capacity.full ? `클러스터 연결 한도 ${MAX_CLUSTER_NODES}대에 도달했습니다` : "새 워커 노드 추가"}">
       <span class="add-worker-icon" aria-hidden="true">+</span>
       <strong>${capacity.full ? "구성 한도 도달" : "워커 추가"}</strong>
-      <span>${capacity.full ? `Head 포함 최대 ${MAX_CLUSTER_NODES}대가 연결되었습니다.` : "로컬 네트워크에서 SSH 기기를 찾아 연결합니다."}</span>
-      <small>${capacity.count} / ${MAX_CLUSTER_NODES} NODES${capacity.full ? " · FULL" : ` · ${capacity.remaining} AVAILABLE`}</small>
+      <span>${capacity.full ? `최대 ${MAX_CLUSTER_NODES}대가 연결되었습니다.` : "로컬 네트워크에서 SSH 기기를 찾아 연결합니다."}</span>
+      <small>${capacity.count} / ${MAX_CLUSTER_NODES} REGISTERED${capacity.full ? " · FULL" : ` · ${capacity.remaining} AVAILABLE`}</small>
     </button>`;
   grid.innerHTML = `${nodeCards}${addCard}`;
 
@@ -417,10 +426,18 @@ function updateSummary() {
   $("#selectionSummary").textContent = `선택 노드 ${selected.length}대 · ${selected.join(", ")}`;
   $("#modelCount").textContent = state.models.length || "—";
   $("#averagePower").textContent = powers.length ? fmt(powers.reduce((a, b) => a + b, 0)) : "—";
-  const head = enabled.find(node => node.role === "head");
-  $("#headStatus").textContent = head && statusFor(head.name).api ? "ONLINE" : "OFFLINE";
-  $("#headAddress").textContent = head ? head.host : "HEAD 미등록";
-  const workers = enabled.filter(node => node.role === "worker");
+  const controller = state.controller || {};
+  const dashboardReady = controller.dashboard?.healthy !== false;
+  const schedulerReady = controller.scheduler?.ready !== false;
+  const storageReady = controller.storage?.ready !== false;
+  $("#controllerStatus").textContent = dashboardReady ? "ONLINE" : "OFFLINE";
+  $("#controllerAddress").textContent = controller.host || controller.platform || "macOS";
+  $("#controllerName").textContent = controller.host || "Mac Control Plane";
+  $("#controllerPlatform").textContent = controller.platform || "macOS";
+  $("#controllerDashboard").textContent = dashboardReady ? "ONLINE" : "OFFLINE";
+  $("#controllerScheduler").textContent = schedulerReady ? "READY" : "CHECKING";
+  $("#controllerStorage").textContent = storageReady ? "READY" : "CHECKING";
+  const workers = enabled;
   $$('[data-orbit-worker]').forEach((element, index) => {
     const worker = workers[index];
     element.hidden = !worker;
@@ -431,12 +448,13 @@ function updateSummary() {
   });
   const capacity = clusterCapacity();
   $("#addNodeButton").disabled = capacity.full;
-  $("#addNodeButton").title = capacity.full ? `Head 포함 ${MAX_CLUSTER_NODES}대 구성이 완료되었습니다.` : `워커 ${capacity.remaining}대를 더 연결할 수 있습니다.`;
+  $("#addNodeButton").title = capacity.full ? `${MAX_CLUSTER_NODES}대 연결 구성이 완료되었습니다.` : `워커 ${capacity.remaining}대를 더 연결할 수 있습니다.`;
   const latest = state.runs.find(run => run.status === "completed");
   $("#recentThroughput").textContent = latest ? fmt(latest.cluster_tokens_per_s) : "—";
   updateStrategyGuidance();
   updatePlatformGuidance();
   updateModelAvailability();
+  window.ClusterDashboard?.renderModelLibrary?.();
   renderEnvironmentSummary();
 }
 
@@ -607,6 +625,7 @@ function renderModels(defaults = {}) {
   syncLegacyModelSelect();
   renderModelPicker();
   updateModelAvailability();
+  window.ClusterDashboard?.renderModelLibrary?.();
 }
 
 function renderSettings() {
@@ -693,7 +712,9 @@ function renderExperimentGroups() {
   const options = state.experimentGroups.map(group => {
     const strategy = group.default_config?.execution_strategy;
     const strategySuffix = strategy ? ` · ${strategyMeta(strategy).label}` : "";
-    return `<option value="${escapeHtml(group.experiment_id)}">${escapeHtml(group.name)} · ${group.run_count || 0}회${escapeHtml(strategySuffix)}${group.legacy ? " · 이전 기록" : ""}</option>`;
+    const latest = group.latest_run || group.runs?.[0];
+    const statusSuffix = latest?.status ? ` · ${(latest.status || "unknown").toUpperCase()}` : " · NO RUN";
+    return `<option value="${escapeHtml(group.experiment_id)}">${escapeHtml(group.name)} · ${group.run_count || 0}회${escapeHtml(strategySuffix)}${escapeHtml(statusSuffix)}${group.legacy ? " · 이전 기록" : ""}</option>`;
   }).join("");
   formSelect.innerHTML = `<option value="">+ 새 실험 만들기</option>${options}`;
   resultSelect.innerHTML = `<option value="all">전체 실험</option>${options}`;
@@ -782,7 +803,7 @@ function renderRuns() {
     : baseContext;
   const table = $("#runsTable");
   if (!runs.length && !suites.length) {
-    table.innerHTML = `<tr><td colspan="9" class="empty-cell">이 실험의 실행 기록 없음</td></tr>`;
+    table.innerHTML = `<tr><td colspan="10" class="empty-cell">이 실험의 실행 기록 없음</td></tr>`;
     $("#resultHighlight").innerHTML = `<div class="empty-result"><strong>연결된 벤치마크 결과가 없습니다.</strong><span>이 실험을 실행하면 결과가 같은 experiment_id에 누적됩니다.</span></div>`;
     $("#chartGrid").hidden = true;
     updateSummary();
@@ -798,8 +819,9 @@ function renderRuns() {
       <td>${run.ttft_p50_s != null ? `${fmt(run.ttft_p50_s, 2)}s` : "—"}</td>
       <td>${run.e2e_p95_s != null ? `${fmt(run.e2e_p95_s, 2)}s` : "—"}</td>
       <td>${runThroughputCell(run)}</td>
-      <td><span class="run-status ${run.status === "failed" || ["failed", "partial", "cancelled"].includes(run.suite_status) ? "failed" : ""}">${escapeHtml((run.status || "unknown").toUpperCase())}</span>${run.suite_status && run.suite_status !== "completed" ? `<br><small>SUITE ${escapeHtml(run.suite_status.toUpperCase())}</small>` : ""}</td>
-    </tr>`).join("") : `<tr><td colspan="9" class="empty-cell">최근 suite는 모델 실행 전 종료되었습니다.</td></tr>`;
+      <td><span class="run-status ${window.ClusterDashboard?.utils?.statusPresentation(run.status).tone || "unknown"}">${escapeHtml(window.ClusterDashboard?.utils?.statusPresentation(run.status).icon || "?")} ${escapeHtml(window.ClusterDashboard?.utils?.statusPresentation(run.status).label || (run.status || "unknown").toUpperCase())}</span>${run.suite_status && run.suite_status !== "completed" ? `<br><small>SUITE ${escapeHtml(run.suite_status.toUpperCase())}</small>` : ""}</td>
+      <td><button type="button" class="table-action" data-view-run="${escapeHtml(run.run_id || "")}" ${run.run_id ? "" : "disabled"}>응답 보기</button></td>
+    </tr>`).join("") : `<tr><td colspan="10" class="empty-cell">최근 suite는 모델 실행 전 종료되었습니다.</td></tr>`;
   const latestArtifact = latestResultArtifact(runs, suites);
   const newestSuite = latestArtifact.suite;
   const newest = newestSuite
@@ -1531,6 +1553,7 @@ function setRunState(active) {
 }
 
 function logLine(label, message) {
+  if (window.ClusterDashboard?.terminals?.append("experiment", label, message)) return;
   const log = $("#consoleLog");
   const line = document.createElement("p");
   line.innerHTML = `<time>${escapeHtml(label)}</time>${escapeHtml(message)}`;
@@ -1540,6 +1563,7 @@ function logLine(label, message) {
 }
 
 function environmentLogLine(label, message) {
+  if (window.ClusterDashboard?.terminals?.append("node", label, message)) return;
   const log = $("#environmentLog");
   if (!log) return;
   const line = document.createElement("p");
@@ -1627,8 +1651,12 @@ async function runEnvironmentAction(action, nodeNames = [...state.selectedNodes]
 
 async function bootstrap() {
   try {
-    const data = await api("/api/bootstrap");
+    const [data, controller] = await Promise.all([
+      api("/api/bootstrap"),
+      api("/api/controller/status").catch(() => ({ role: "controller", dashboard: { healthy: false } })),
+    ]);
     state.nodes = data.nodes || [];
+    state.controller = controller || state.controller;
     state.status = data.status || [];
     state.models = data.models || [];
     state.runs = data.runs || [];
@@ -1639,6 +1667,7 @@ async function bootstrap() {
     setEnvironmentReports(data.environment || data.node_readiness || []);
     state.onboarding = data.onboarding || {};
     state.settings = data.settings || { worker_api_auth: false, dashboard_token_auth: false };
+    state.modelCatalog = data.model_catalog || [];
     if (!state.settings.dashboard_token_auth && state.token) {
       state.token = "";
       sessionStorage.removeItem("clusterToken");
@@ -1651,6 +1680,7 @@ async function bootstrap() {
     setRunState(data.active_experiment);
     $("#publicKey").textContent = state.onboarding.public_key || "키가 아직 생성되지 않았습니다.";
     renderSettings();
+    window.ClusterDashboard?.renderModelLibrary?.();
     state.environmentActionIds.clear();
     const runningEnvironmentActions = state.actions.filter(action => actionName(action).startsWith("environment-") && ["queued", "running"].includes(action.status));
     runningEnvironmentActions.forEach(action => { const id = actionId(action); if (id) state.environmentActionIds.add(id); });
@@ -1747,6 +1777,9 @@ function connectEvents() {
         const status = action?.status || message.status;
         const nodes = Array.isArray(action?.nodes) ? action.nodes : [];
         toast(status === "completed" ? "작업 완료" : "작업 실패", `${actionName(action)} · ${nodes.join(", ")}`, status === "completed" ? "success" : "error");
+        if (["sync-models", "delete-models", "install-model-url"].includes(actionName(action))) {
+          window.ClusterDashboard?.modelLibrary?.refresh().catch(error => environmentLogLine("WARN", `모델 인벤토리 갱신 실패 · ${error.message}`));
+        }
       }
     } else if (message.type === "model_progress" && channel === "node_ops") {
       const progress = message.progress || {};
@@ -1754,6 +1787,7 @@ function connectEvents() {
       const node = progress.node || "worker";
       const percent = Number.isFinite(Number(progress.percent)) ? ` · ${Number(progress.percent).toFixed(1)}%` : "";
       environmentLogLine("MODEL", `${node} · ${model} · ${progress.state || "working"}${percent}`);
+      window.ClusterDashboard?.modelLibrary?.recordProgress(progress);
     } else if (message.type === "experiment_event" && channel === "experiment") {
       const inner = message.event || {};
       setRunState(message.active);
@@ -1819,7 +1853,7 @@ function experimentPayload() {
   if (executionStrategy === "model_parallel_rpc") {
     const selectedNodes = selectedNodeNames.map(name => state.nodes.find(node => node.name === name)).filter(Boolean);
     if (selectedNodes.length < 2 || selectedNodes.some(node => node.role !== "worker")) {
-      throw new Error("모델 분할 RPC에는 선택된 worker가 2대 이상 필요합니다. Controller/head는 참여할 수 없습니다.");
+      throw new Error("모델 분할 RPC에는 선택된 worker가 2대 이상 필요합니다. Controller는 참여할 수 없습니다.");
     }
     const coordinator = $("#rpcCoordinatorSelect").value;
     if (coordinator && !selectedNodeNames.includes(coordinator)) throw new Error("RPC 코디네이터는 선택된 worker여야 합니다.");
@@ -1874,7 +1908,7 @@ function renderDevices(scan) {
   }
   list.innerHTML = state.devices.map(device => `
     <button type="button" class="device-card ${device.is_head ? "head-device" : ""}" data-device-host="${escapeHtml(device.host)}" ${device.is_head ? "disabled" : ""}>
-      <i></i><span><strong>${escapeHtml(device.known_node || device.host)}</strong><small>${escapeHtml(device.host)} · SSH ${device.ssh_port}${device.is_head ? " · HEAD" : device.known_node ? " · 등록됨" : " · 새 기기"}</small><code>${escapeHtml(device.fingerprint || "fingerprint 확인 불가")}</code></span><b>선택</b>
+      <i></i><span><strong>${escapeHtml(device.known_node || device.host)}</strong><small>${escapeHtml(device.host)} · SSH ${device.ssh_port}${device.is_head ? " · CONTROLLER" : device.known_node ? " · 등록됨" : " · 새 기기"}</small><code>${escapeHtml(device.fingerprint || "fingerprint 확인 불가")}</code></span><b>선택</b>
     </button>`).join("");
   $$('[data-device-host]').forEach(button => button.addEventListener("click", () => {
     const device = state.devices.find(item => item.host === button.dataset.deviceHost);
@@ -1921,7 +1955,7 @@ function renderProbe(result) {
   if (!result.ok) {
     const paired = result.ssh_ok;
     panel.className = "probe-result failed";
-    panel.innerHTML = `<strong>${paired ? "지원하지 않는 환경" : "SSH 공개 키 인증 필요"}</strong><span>${paired ? "Jetson 또는 Raspberry Pi의 64-bit ARM OS가 필요합니다." : "Head 공개 키를 선택한 기기의 authorized_keys에 등록한 뒤 다시 확인하세요."}</span><small>${escapeHtml((result.warnings || []).join(" · ") || discovery.error || "연결할 수 없음")}</small>`;
+    panel.innerHTML = `<strong>${paired ? "지원하지 않는 환경" : "SSH 공개 키 인증 필요"}</strong><span>${paired ? "Jetson 또는 Raspberry Pi의 64-bit ARM OS가 필요합니다." : "Controller 공개 키를 선택한 기기의 authorized_keys에 등록한 뒤 다시 확인하세요."}</span><small>${escapeHtml((result.warnings || []).join(" · ") || discovery.error || "연결할 수 없음")}</small>`;
     return;
   }
   const missing = discovery.missing_packages || [];
@@ -2000,7 +2034,7 @@ function bindEvents() {
       const enablingDashboardAuth = dashboardAuth && !state.settings.dashboard_token_auth;
       const dashboardToken = enablingDashboardAuth ? $("#dashboardTokenInput").value.trim() : state.token;
       if (enablingDashboardAuth && !dashboardToken) {
-        return toast("대시보드 토큰 필요", "head의 .run/cluster/dashboard.token 값을 입력하세요.", "error");
+        return toast("대시보드 토큰 필요", "Controller의 .run/cluster/dashboard.token 값을 입력하세요.", "error");
       }
       const data = await api("/api/settings", {
         method: "PUT",
@@ -2056,7 +2090,7 @@ function bindEvents() {
     } catch (error) { toast("워커 등록 실패", error.message, "error"); }
   });
   $("#copyKeyButton").addEventListener("click", async () => {
-    if (!state.onboarding.public_key) return toast("SSH 키 없음", "head에서 키 생성 스크립트를 실행하세요.", "error");
+    if (!state.onboarding.public_key) return toast("SSH 키 없음", "Controller에서 키 생성 스크립트를 실행하세요.", "error");
     try {
       if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(state.onboarding.public_key);
       else {
@@ -2086,7 +2120,7 @@ function bindEvents() {
     const nodes = [...state.selectedNodes];
     const records = nodes.map(name => state.nodes.find(node => node.name === name)).filter(Boolean);
     if (records.length < 2 || records.some(node => node.role !== "worker")) {
-      return toast("노드 구성 확인", "RPC 환경 준비에는 worker 2대 이상을 선택하세요. Controller/head는 참여하지 않습니다.", "error");
+      return toast("노드 구성 확인", "RPC 환경 준비에는 worker 2대 이상을 선택하세요. Controller는 참여하지 않습니다.", "error");
     }
     if (confirm(`선택한 ${nodes.length}대에 모델 분할 RPC 실행 환경을 준비합니다. 실제 성능은 네트워크 상태에 따라 저하될 수 있습니다. 계속할까요?`)) {
       runActionOnNodes("prepare-rpc", nodes, { confirmed: true });
@@ -2109,6 +2143,15 @@ function bindEvents() {
     renderRuns();
   });
   $("#resultExperimentFilter").addEventListener("change", renderRuns);
+  $("#experimentPickerSearch").addEventListener("input", event => {
+    const query = event.currentTarget.value.trim().toLowerCase();
+    const select = $("#experimentGroupSelect");
+    [...select.options].forEach(option => {
+      option.hidden = Boolean(option.value && query && !option.textContent.toLowerCase().includes(query));
+    });
+    const visible = [...select.options].filter(option => !option.hidden && option.value);
+    if (query && visible.length === 1) select.value = visible[0].value;
+  });
   $("#experimentForm").addEventListener("input", updateFormMirrors);
   $("#modelSearchInput").addEventListener("input", renderModelPicker);
   $("#modelChecklist").addEventListener("change", event => {
@@ -2152,6 +2195,16 @@ function bindEvents() {
     resizeTimer = setTimeout(() => { renderRuns(); renderNodeDetail(); }, 140);
   });
 }
+
+// Transitional browser façade for the focused frontend modules.  The legacy
+// orchestration remains here for compatibility; Model Library, terminals, and
+// raw-result inspection consume only this explicit presentation surface.
+globalThis.ClusterDashboard = Object.assign(globalThis.ClusterDashboard || {}, {
+  state, $, $$, api, toast, escapeHtml, finite, fmt, pct,
+  platformName, strategyMeta, runStrategy, runModelId, shortModelName,
+  topologyNodes, renderNodes, renderModels, renderRuns,
+  runActionOnNodes, refreshExperimentData, selectedModelIds,
+});
 
 document.addEventListener("DOMContentLoaded", () => {
   if ("scrollRestoration" in history) history.scrollRestoration = "manual";
