@@ -329,7 +329,7 @@ class ExperimentTests(unittest.TestCase):
             inventory.write_text(INVENTORY, encoding="utf-8")
             config = ExperimentConfig(
                 experiment_id="multi-model-comparison",
-                node_names=["jetson-head"],
+                node_names=["jetson-worker-01"],
                 model_id="models/example.gguf",
                 n_ctx=128,
                 n_gpu_layers=0,
@@ -367,7 +367,7 @@ class ExperimentTests(unittest.TestCase):
                 }
 
             loaded = {
-                "node": "jetson-head",
+                "node": "jetson-worker-01",
                 "loaded": True,
                 "model_id": config.model_id,
                 "n_ctx": config.n_ctx,
@@ -390,9 +390,38 @@ class ExperimentTests(unittest.TestCase):
             self.assertEqual(summary["model_count"], 3)
             saved_config = json.loads((Path(summary["result_dir"]) / "config.json").read_text(encoding="utf-8"))
             self.assertEqual(saved_config["suite_id"], config.suite_id)
+            self.assertEqual(
+                set(summary),
+                {
+                    "actual_model_config", "all_replicas_success_rate", "answer_agreement_rate",
+                    "benchmark_parameters", "cluster_tokens_per_s", "e2e_p50_s", "e2e_p95_s",
+                    "execution_strategy", "experiment_id", "failed", "finished_at", "logical_requests",
+                    "model_count", "model_id", "model_index", "model_placement", "name", "nodes",
+                    "per_node", "physical_requests", "requests", "requests_per_s", "result_dir", "run_id",
+                    "scenario_summaries", "schema_version", "started_at", "status", "success_rate",
+                    "successful", "suite_id", "topology", "total_generated_tokens", "ttft_p50_s",
+                    "ttft_p95_s", "wall_s", "warnings",
+                },
+            )
+            requests_header = (Path(summary["result_dir"]) / "requests.csv").read_text(
+                encoding="utf-8"
+            ).splitlines()[0]
+            self.assertEqual(
+                requests_header,
+                "request_id,logical_request_id,scenario_id,replica_index,node,assigned_node,"
+                "node_host,started_at,ok,ttft_s,e2e_s,server_ttft_s,server_generation_s,"
+                "generated_tokens,tokens_per_s,output_chars,output_sha256,error,warmup",
+            )
             self.assertTrue(emitted)
             self.assertTrue(all(event["suite_id"] == config.suite_id for event in emitted))
             self.assertTrue(all(event["model_id"] == config.model_id for event in emitted))
+            self.assertEqual(
+                {event["type"] for event in emitted},
+                {
+                    "run_started", "phase", "node_model_loaded", "scenario_started",
+                    "request_completed", "scenario_finished", "run_finished",
+                },
+            )
 
     def test_percentile_interpolates(self) -> None:
         self.assertEqual(percentile([1.0, 2.0, 3.0, 4.0], 0.50), 2.5)
@@ -427,19 +456,24 @@ class ExperimentTests(unittest.TestCase):
 
     def test_round_robin_strategy_plan_is_balanced(self) -> None:
         nodes = [
-            Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True),
-            Node("worker", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True),
+            Node("w1", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True),
+            Node("w2", "worker", "192.168.0.3", "jetson", 22, 8000, "/opt/llm", True),
         ]
         config = ExperimentConfig(node_names=[node.name for node in nodes], requests=5)
         plan = build_strategy_scenarios(config, nodes)
         counts = {node.name: sum(task.target_node == node.name for task in plan[0].tasks) for node in nodes}
         self.assertEqual(len(plan[0].tasks), 5)
-        self.assertLessEqual(abs(counts["head"] - counts["worker"]), 1)
+        self.assertLessEqual(abs(counts["w1"] - counts["w2"]), 1)
+
+    def test_non_rpc_strategy_rejects_legacy_head_participant(self) -> None:
+        head = Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True)
+        with self.assertRaisesRegex(ValueError, "worker만"):
+            build_strategy_scenarios(ExperimentConfig(node_names=["head"]), [head])
 
     def test_broadcast_plan_expands_logical_requests(self) -> None:
         nodes = [
-            Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True),
-            Node("worker", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True),
+            Node("w1", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True),
+            Node("w2", "worker", "192.168.0.3", "jetson", 22, 8000, "/opt/llm", True),
         ]
         config = ExperimentConfig(
             node_names=[node.name for node in nodes],
@@ -452,8 +486,8 @@ class ExperimentTests(unittest.TestCase):
 
     def test_broadcast_concurrency_releases_slots_by_logical_group(self) -> None:
         nodes = [
-            Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True),
-            Node("worker", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True),
+            Node("w1", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True),
+            Node("w2", "worker", "192.168.0.3", "jetson", 22, 8000, "/opt/llm", True),
         ]
         config = ExperimentConfig(
             node_names=[node.name for node in nodes],
@@ -476,7 +510,7 @@ class ExperimentTests(unittest.TestCase):
                     if first_started == 2:
                         both_started.set()
                 self.assertTrue(both_started.wait(1))
-                if node.name == "worker":
+                if node.name == "w2":
                     time.sleep(0.08)
                 with lock:
                     first_completed += 1
@@ -520,15 +554,15 @@ class ExperimentTests(unittest.TestCase):
 
     def test_node_sweep_preserves_selected_order(self) -> None:
         nodes = [
-            Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True),
             Node("w1", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True),
             Node("w2", "worker", "192.168.0.3", "jetson", 22, 8000, "/opt/llm", True),
+            Node("w3", "worker", "192.168.0.4", "jetson", 22, 8000, "/opt/llm", True),
         ]
         config = ExperimentConfig(
             node_names=[node.name for node in nodes], execution_strategy="node_sweep", requests=2
         )
         plan = build_strategy_scenarios(config, nodes)
-        self.assertEqual([scenario.node_names for scenario in plan], [["head"], ["head", "w1"], ["head", "w1", "w2"]])
+        self.assertEqual([scenario.node_names for scenario in plan], [["w1"], ["w1", "w2"], ["w1", "w2", "w3"]])
         self.assertEqual(sum(len(scenario.tasks) for scenario in plan), 6)
         self.assertEqual(strategy_work_units(config, len(nodes)), 6)
 
@@ -582,10 +616,10 @@ class ExperimentTests(unittest.TestCase):
         self.assertLessEqual(len(records), config.concurrency)
 
     def test_warmup_cancellation_does_not_queue_every_request(self) -> None:
-        head = Node("head", "head", "127.0.0.1", "jetson", 22, 8000, "/opt/llm", True)
-        worker = Node("worker", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True)
+        head = Node("w1", "worker", "192.168.0.2", "jetson", 22, 8000, "/opt/llm", True)
+        worker = Node("w2", "worker", "192.168.0.3", "jetson", 22, 8000, "/opt/llm", True)
         config = ExperimentConfig(
-            node_names=["head", "worker"],
+            node_names=["w1", "w2"],
             model_id="models/test.gguf",
             requests=1,
             max_tokens=1,
