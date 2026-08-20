@@ -21,6 +21,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import Field
 
+from cluster.integrations.runtime_layout import default_project_layout
 from web.app import ChatStreamRequest, app, as_sse, manager
 
 try:
@@ -29,7 +30,7 @@ except ImportError:  # pragma: no cover
     jtop = None
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = default_project_layout().root
 NODE_NAME = os.getenv("CLUSTER_NODE_NAME", socket.gethostname())
 NODE_ROLE = os.getenv("CLUSTER_NODE_ROLE", "worker")
 CLUSTER_API_TOKEN = os.getenv("CLUSTER_API_TOKEN", "").strip()

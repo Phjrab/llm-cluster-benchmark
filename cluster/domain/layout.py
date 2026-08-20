@@ -60,6 +60,14 @@ class ProjectLayout:
         return self.runtime_dir / "settings.json"
 
     @property
+    def worker_token_path(self) -> Path:
+        return self.runtime_dir / "worker.token"
+
+    @property
+    def dashboard_token_path(self) -> Path:
+        return self.runtime_dir / "dashboard.token"
+
+    @property
     def results_dir(self) -> Path:
         return self.runtime_dir / "results"
 
@@ -70,6 +78,10 @@ class ProjectLayout:
     @property
     def environment_dir(self) -> Path:
         return self.runtime_dir / "environment"
+
+    @property
+    def jobs_dir(self) -> Path:
+        return self.runtime_dir / "jobs"
 
     @property
     def suites_dir(self) -> Path:

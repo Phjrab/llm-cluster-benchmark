@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
-import csv
 import hashlib
 import ipaddress
 import json
@@ -31,7 +30,6 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from cluster.benchmark.runner import (
-    DEFAULT_RESULTS_DIR,
     ExperimentConfig,
     experiment_strategy_catalog,
     normalize_model_ids,
@@ -40,7 +38,6 @@ from cluster.benchmark.runner import (
     validate_strategy,
 )
 from cluster.clusterctl import (
-    DEFAULT_INVENTORY,
     Node,
     discover_node,
     load_nodes,
@@ -48,20 +45,32 @@ from cluster.clusterctl import (
     run_on_node,
     select_nodes,
 )
+from cluster.integrations.runtime_layout import resolve_runtime_paths
+from cluster.infrastructure.storage import (
+    FilesystemEnvironmentReportRepository,
+    FilesystemExperimentRepository,
+    FilesystemInventoryRepository,
+    FilesystemRunRepository,
+    FilesystemSettingsRepository,
+    FilesystemSuiteRepository,
+    StorageCorruptionError,
+)
 
 
-DASHBOARD_DIR = Path(__file__).resolve().parent
-CLUSTER_DIR = DASHBOARD_DIR.parent
-PROJECT_ROOT = CLUSTER_DIR.parent
-RUNTIME_DIR = Path(os.getenv("CLUSTER_RUNTIME_DIR", PROJECT_ROOT / ".run" / "cluster"))
-INVENTORY_PATH = Path(os.getenv("CLUSTER_INVENTORY", DEFAULT_INVENTORY))
-RESULTS_DIR = Path(os.getenv("CLUSTER_RESULTS_DIR", DEFAULT_RESULTS_DIR))
-EXPERIMENTS_DIR = RUNTIME_DIR / "experiments"
+RUNTIME_PATHS = resolve_runtime_paths()
+PROJECT_LAYOUT = RUNTIME_PATHS.layout
+PROJECT_ROOT = PROJECT_LAYOUT.root
+CLUSTER_DIR = PROJECT_LAYOUT.cluster_dir
+DASHBOARD_DIR = CLUSTER_DIR / "dashboard"
+RUNTIME_DIR = RUNTIME_PATHS.runtime_dir
+INVENTORY_PATH = RUNTIME_PATHS.inventory_path
+RESULTS_DIR = RUNTIME_PATHS.results_dir
+EXPERIMENTS_DIR = RUNTIME_PATHS.experiments_dir
 DEFAULTS_PATH = CLUSTER_DIR / "config" / "experiment_defaults.json"
 EXAMPLE_INVENTORY = CLUSTER_DIR / "config" / "nodes.example.csv"
-TOKEN_PATH = RUNTIME_DIR / "dashboard.token"
-SETTINGS_PATH = RUNTIME_DIR / "settings.json"
-ENVIRONMENT_DIR = RUNTIME_DIR / "environment"
+TOKEN_PATH = RUNTIME_PATHS.dashboard_token_path
+SETTINGS_PATH = RUNTIME_PATHS.settings_path
+ENVIRONMENT_DIR = RUNTIME_PATHS.environment_dir
 ENVIRONMENT_MARKER = "CLUSTER_ENVIRONMENT_JSON="
 
 
@@ -294,15 +303,37 @@ inventory_lock = threading.RLock()
 settings_lock = threading.RLock()
 
 
+def _settings_repository() -> FilesystemSettingsRepository:
+    return FilesystemSettingsRepository(SETTINGS_PATH)
+
+
+def _inventory_repository() -> FilesystemInventoryRepository:
+    return FilesystemInventoryRepository(INVENTORY_PATH)
+
+
+def _environment_repository() -> FilesystemEnvironmentReportRepository:
+    return FilesystemEnvironmentReportRepository(ENVIRONMENT_DIR)
+
+
+def _experiment_repository() -> FilesystemExperimentRepository:
+    return FilesystemExperimentRepository(EXPERIMENTS_DIR)
+
+
+def _run_repository() -> FilesystemRunRepository:
+    return FilesystemRunRepository(RESULTS_DIR)
+
+
+def _suite_repository() -> FilesystemSuiteRepository:
+    return FilesystemSuiteRepository(RESULTS_DIR / "_suites")
+
+
 def read_settings() -> Dict[str, Any]:
     with settings_lock:
         try:
-            raw = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-            if not isinstance(raw, dict):
-                raise ValueError("settings must be a JSON object")
+            raw = _settings_repository().read()
         except FileNotFoundError:
             raw = {}
-        except (OSError, ValueError):
+        except (OSError, StorageCorruptionError):
             # A damaged existing settings file must not silently disable a
             # dashboard protection that may previously have been enabled.
             return {"worker_api_auth": False, "dashboard_token_auth": True}
@@ -320,12 +351,7 @@ def read_settings() -> Dict[str, Any]:
 
 def write_settings(settings: Dict[str, Any]) -> None:
     with settings_lock:
-        temporary = SETTINGS_PATH.with_suffix(f".tmp.{uuid.uuid4().hex}")
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(settings, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-        os.replace(temporary, SETTINGS_PATH)
+        _settings_repository().write(settings)
 
 
 def read_all_nodes() -> List[Node]:
@@ -344,28 +370,7 @@ def write_all_nodes(nodes: Sequence[Node]) -> None:
         raise ValueError("Each physical host and SSH port can be registered only once")
     if sum(1 for node in nodes if node.enabled) > 4:
         raise ValueError("At most four nodes can be enabled in one cluster")
-    INVENTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temporary = INVENTORY_PATH.with_suffix(f".tmp.{uuid.uuid4().hex}")
-    fieldnames = [
-        "name",
-        "role",
-        "host",
-        "user",
-        "ssh_port",
-        "api_port",
-        "project_dir",
-        "enabled",
-        "identity_file",
-        "platform",
-    ]
-    with temporary.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for node in nodes:
-            row = asdict(node)
-            row["enabled"] = "true" if node.enabled else "false"
-            writer.writerow(row)
-    os.replace(temporary, INVENTORY_PATH)
+    _inventory_repository().write_rows([asdict(node) for node in nodes])
 
 
 def serialize_node(node: Node) -> Dict[str, Any]:
@@ -373,12 +378,6 @@ def serialize_node(node: Node) -> Dict[str, Any]:
     item.pop("identity_file", None)
     item["api_url"] = node.api_url
     return item
-
-
-def _environment_path(node_name: str) -> Path:
-    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,39}", node_name):
-        raise ValueError("Invalid node name for environment report")
-    return ENVIRONMENT_DIR / f"{node_name}.json"
 
 
 def _node_environment_fingerprint(node: Node) -> str:
@@ -397,10 +396,7 @@ def _node_environment_fingerprint(node: Node) -> str:
 
 
 def _invalidate_environment_report(node_name: str) -> None:
-    try:
-        _environment_path(node_name).unlink()
-    except FileNotFoundError:
-        pass
+    _environment_repository().delete(node_name)
 
 
 def _environment_placeholder(node: Node) -> Dict[str, Any]:
@@ -530,24 +526,7 @@ def write_environment_report(raw: Dict[str, Any]) -> Dict[str, Any]:
         "inventory_fingerprint": _node_environment_fingerprint(nodes[node_name]),
     }
     report = normalize_environment_report(received, nodes[node_name])
-    ENVIRONMENT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    ENVIRONMENT_DIR.chmod(0o700)
-    target = _environment_path(node_name)
-    temporary = target.with_suffix(f".tmp.{uuid.uuid4().hex}")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(report, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, target)
-        target.chmod(0o600)
-    finally:
-        try:
-            temporary.unlink()
-        except FileNotFoundError:
-            pass
+    _environment_repository().write(node_name, report)
     return report
 
 
@@ -555,9 +534,7 @@ def read_environment_reports() -> List[Dict[str, Any]]:
     reports = []
     for node in read_all_nodes():
         try:
-            raw = json.loads(_environment_path(node.name).read_text(encoding="utf-8"))
-            if not isinstance(raw, dict):
-                raise ValueError("environment report must be an object")
+            raw = _environment_repository().read(node.name)
             if raw.get("inventory_fingerprint") != _node_environment_fingerprint(node):
                 placeholder = _environment_placeholder(node)
                 placeholder["status"] = "not_checked"
@@ -573,7 +550,7 @@ def read_environment_reports() -> List[Dict[str, Any]]:
                 reports.append(placeholder)
                 continue
             reports.append(normalize_environment_report(raw, node))
-        except (FileNotFoundError, OSError, ValueError, TypeError):
+        except (FileNotFoundError, OSError, StorageCorruptionError, TypeError):
             reports.append(_environment_placeholder(node))
     return reports
 
@@ -1255,13 +1232,8 @@ def write_suite_summary(summary: Dict[str, Any]) -> Path:
     suite_id = str(summary.get("suite_id") or "")
     if not suite_id or not suite_id.replace("-", "").replace("_", "").isalnum():
         raise ValueError("suite_id contains unsupported characters")
-    suites_dir = RESULTS_DIR / "_suites"
-    suites_dir.mkdir(parents=True, exist_ok=True)
-    path = suites_dir / f"{suite_id}.json"
-    temporary = path.with_suffix(f".tmp.{uuid.uuid4().hex}")
-    temporary.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
-    return path
+    _suite_repository().write(suite_id, summary)
+    return RESULTS_DIR / "_suites" / f"{suite_id}.json"
 
 
 def reconcile_interrupted_suites() -> int:
@@ -1318,18 +1290,11 @@ def reconcile_interrupted_suites() -> int:
 
 
 def read_suite_summaries(limit: int = 100) -> List[Dict[str, Any]]:
-    suites = []
-    suites_dir = RESULTS_DIR / "_suites"
-    if suites_dir.exists():
-        paths = sorted(suites_dir.glob("*.json"), reverse=True)
-        for path in paths if limit <= 0 else paths[:limit]:
-            try:
-                suite = json.loads(path.read_text(encoding="utf-8"))
-                if suite.get("artifact_type") == "experiment_suite" and suite.get("suite_id"):
-                    suites.append(suite)
-            except (OSError, ValueError):
-                continue
-    return suites
+    return [
+        suite
+        for suite in _suite_repository().list(limit=limit)
+        if suite.get("artifact_type") == "experiment_suite" and suite.get("suite_id")
+    ]
 
 
 def _with_suite_metadata(
@@ -1351,19 +1316,13 @@ def _with_suite_metadata(
 
 
 def read_run_summaries(limit: int = 100) -> List[Dict[str, Any]]:
-    summaries = []
     suites_by_id = {
         str(suite["suite_id"]): suite for suite in read_suite_summaries(limit=0)
     }
-    if RESULTS_DIR.exists():
-        paths = sorted(RESULTS_DIR.glob("*/summary.json"), reverse=True)
-        for path in paths[:limit]:
-            try:
-                summary = json.loads(path.read_text(encoding="utf-8"))
-                summaries.append(_with_suite_metadata(summary, suites_by_id))
-            except (OSError, ValueError):
-                continue
-    return summaries
+    return [
+        _with_suite_metadata(summary, suites_by_id)
+        for summary in _run_repository().list_summaries(limit=limit)
+    ]
 
 
 reconcile_interrupted_suites()
@@ -1382,13 +1341,11 @@ def save_experiment_definition(payload: ExperimentPayload) -> Dict[str, Any]:
         experiment_id = payload.experiment_id
         if not experiment_id:
             experiment_id = f"{_experiment_slug(payload.name)}-{uuid.uuid4().hex[:6]}"
-        path = EXPERIMENTS_DIR / f"{experiment_id}.json"
         existing: Dict[str, Any] = {}
-        if path.exists():
-            try:
-                existing = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                existing = {}
+        try:
+            existing = _experiment_repository().read(experiment_id)
+        except (FileNotFoundError, OSError, StorageCorruptionError):
+            existing = {}
         if existing:
             previous_strategy = (existing.get("default_config") or {}).get(
                 "execution_strategy", "replicated_round_robin"
@@ -1410,20 +1367,17 @@ def save_experiment_definition(payload: ExperimentPayload) -> Dict[str, Any]:
                 if key not in {"experiment_id", "name"}
             },
         }
-        temporary = path.with_suffix(f".tmp.{uuid.uuid4().hex}")
-        temporary.write_text(json.dumps(definition, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        os.replace(temporary, path)
+        _experiment_repository().write(experiment_id, definition)
         return definition
 
 
 def read_experiment_groups() -> List[Dict[str, Any]]:
     definitions: Dict[str, Dict[str, Any]] = {}
     with experiment_catalog_lock:
-        for path in sorted(EXPERIMENTS_DIR.glob("*.json")):
+        for definition in _experiment_repository().list():
             try:
-                definition = json.loads(path.read_text(encoding="utf-8"))
                 definitions[definition["experiment_id"]] = definition
-            except (OSError, ValueError, KeyError):
+            except KeyError:
                 continue
     for run in read_run_summaries(limit=500):
         experiment_id = run.get("experiment_id")
@@ -2154,10 +2108,12 @@ async def cancel_experiment() -> Dict[str, Any]:
 async def get_run(run_id: str) -> Dict[str, Any]:
     if not run_id.replace("_", "").isalnum():
         raise HTTPException(status_code=400, detail="Invalid run id")
-    summary_path = RESULTS_DIR / run_id / "summary.json"
-    if not summary_path.exists():
+    try:
+        summary = _run_repository().read_summary(run_id)
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Run not found")
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except StorageCorruptionError as exc:
+        raise HTTPException(status_code=500, detail="Run summary is corrupted") from exc
     suites_by_id = {
         str(suite["suite_id"]): suite for suite in read_suite_summaries(limit=0)
     }

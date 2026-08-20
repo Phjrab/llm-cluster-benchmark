@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import csv
 import hashlib
 import json
 import math
@@ -32,10 +31,13 @@ from cluster.clusterctl import (
 # callers migrate to cluster.domain.
 from cluster.domain.experiment import ExperimentConfig, normalize_model_ids, validate_model_id
 from cluster.domain.strategy import EXECUTION_STRATEGIES
+from cluster.infrastructure.storage import FilesystemRunRepository
+from cluster.integrations.runtime_layout import default_project_layout
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_RESULTS_DIR = PROJECT_ROOT / ".run" / "cluster" / "results"
+PROJECT_LAYOUT = default_project_layout()
+PROJECT_ROOT = PROJECT_LAYOUT.root
+DEFAULT_RESULTS_DIR = PROJECT_LAYOUT.results_dir
 ProgressCallback = Callable[[Dict[str, Any]], None]
 
 def experiment_strategy_catalog() -> List[Dict[str, Any]]:
@@ -838,16 +840,10 @@ def run_experiment(
     total_work_units = sum(len(scenario.tasks) for scenario in scenarios)
 
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
-    run_dir = results_root / run_id
-    run_dir.mkdir(parents=True, exist_ok=False)
-    (run_dir / "config.json").write_text(
-        json.dumps(asdict(config), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    events_path = run_dir / "events.jsonl"
-    events_lock = threading.Lock()
+    run_repository = FilesystemRunRepository(results_root)
+    run_dir = run_repository.create(run_id, asdict(config))
 
-    def emit(event_type: str, **payload: Any) -> None:
+    def emit(event_type: str, **payload: Any) -> Dict[str, Any]:
         event = {
             "type": event_type,
             "at": utc_now(),
@@ -858,13 +854,12 @@ def run_experiment(
             "model_count": config.model_count,
             **payload,
         }
-        with events_lock:
-            with events_path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+        run_repository.append_event(run_id, event)
         if progress:
             progress(event)
+        return event
 
-    emit(
+    started_event = emit(
         "run_started",
         config=asdict(config),
         nodes=[node.name for node in nodes],
@@ -1042,7 +1037,7 @@ def run_experiment(
                 "execution_strategy": config.execution_strategy,
                 "model_placement": "sharded" if config.execution_strategy == "model_parallel_rpc" else "replicated",
                 "status": "cancelled" if cancel_event.is_set() else "completed",
-                "started_at": json.loads(events_path.read_text(encoding="utf-8").splitlines()[0])["at"],
+                "started_at": started_event["at"],
                 "finished_at": utc_now(),
                 "nodes": [node.name for node in nodes],
                 "actual_model_config": loaded,
@@ -1054,16 +1049,8 @@ def run_experiment(
             }
         )
 
-        fieldnames = list(records[0].keys()) if records else []
-        if fieldnames:
-            with (run_dir / "requests.csv").open("w", newline="", encoding="utf-8") as handle:
-                writer = csv.DictWriter(handle, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(records)
-        (run_dir / "summary.json").write_text(
-            json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        run_repository.write_requests(run_id, records)
+        run_repository.write_summary(run_id, summary)
         emit("run_finished", summary=summary)
         return summary
     except Exception as exc:
@@ -1087,10 +1074,7 @@ def run_experiment(
             "error": str(exc),
             "result_dir": str(run_dir),
         }
-        (run_dir / "summary.json").write_text(
-            json.dumps(failure, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        run_repository.write_summary(run_id, failure)
         if cancelled:
             emit("run_finished", summary=failure)
             return failure

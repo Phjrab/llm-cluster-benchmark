@@ -22,13 +22,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from cluster.integrations.runtime_layout import default_project_layout
 
-CLUSTER_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = CLUSTER_DIR.parent
-DEFAULT_INVENTORY = PROJECT_ROOT / ".run" / "cluster" / "nodes.local.csv"
+PROJECT_LAYOUT = default_project_layout()
+CLUSTER_DIR = PROJECT_LAYOUT.cluster_dir
+PROJECT_ROOT = PROJECT_LAYOUT.root
+DEFAULT_INVENTORY = PROJECT_LAYOUT.inventory_path
 DEFAULT_IDENTITY = Path.home() / ".ssh" / "id_ed25519_llm_cluster"
-DEFAULT_WORKER_TOKEN = PROJECT_ROOT / ".run" / "cluster" / "worker.token"
-DEFAULT_SETTINGS = PROJECT_ROOT / ".run" / "cluster" / "settings.json"
+DEFAULT_WORKER_TOKEN = PROJECT_LAYOUT.worker_token_path
+DEFAULT_SETTINGS = PROJECT_LAYOUT.settings_path
 _worker_token_lock = threading.Lock()
 SYSTEM_PACKAGE_ALLOWLIST = {
     "ca-certificates",

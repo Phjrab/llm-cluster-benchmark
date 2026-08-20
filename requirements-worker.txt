@@ -1,0 +1,3 @@
+# Shared worker API dependencies.  Platform-specific llama-cpp-python builds
+# remain managed by cluster/worker_setup.sh (CUDA on Jetson, OpenBLAS on Pi).
+-r cluster/requirements-runtime.txt
