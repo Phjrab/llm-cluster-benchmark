@@ -76,10 +76,35 @@ Date: 2026-08-20 (Asia/Seoul)
 
 ## Tests not run / reason
 
-- No Jetson/Raspberry Pi Worker package installation, model load with a real
-  GGUF, jtop service, CUDA/OpenBLAS runtime, worker process lifecycle, SSH,
-  model synchronization, or RPC action was executed.  Hardware is unavailable
-  and Phase 05 does not authorize deployment.
+- Raspberry Pi Worker package installation, model load with a real GGUF,
+  OpenBLAS runtime, worker process lifecycle, SSH model synchronization, and
+  RPC action were not run.  Pi 1 has no project virtual environment, native
+  build toolchain, FastAPI/Uvicorn/psutil installation, or GGUF model yet.
+
+## Hardware validation — 2026-08-20
+
+- Jetson `192.168.0.26` was validated with a temporary, isolated archive of
+  implementation commit `acf1123` under `/tmp`. The existing project checkout
+  (`main@98d88c2`) and its 32 unrelated uncommitted changes were not modified.
+- The isolated Worker used the existing project virtual environment and models,
+  bound only to `127.0.0.1:18000`, and was unloaded, stopped, and removed after
+  the test. The project Worker port `8000` was never started or changed.
+- Platform confirmation: Jetson Orin Nano Super, Ubuntu 22.04.5, CUDA 12.6,
+  llama-cpp-python 0.3.20 with GPU offload available, and jtop service active.
+- `/cluster/health` reported CUDA backend verified and inference ready. jtop
+  telemetry was unavailable to the Worker process, so the tested psutil
+  fallback correctly reported `telemetry_degraded=true` while inference stayed
+  ready.
+- `/api/models` listed nine GGUF files. The relative-ID containment rule
+  correctly rejected a basename-only request, then loaded
+  `llama3.2-1b/Llama-3.2-1B-Instruct-Q4_K_M.gguf` with `n_ctx=512`,
+  `n_gpu_layers=8`, and `n_batch=256` without adjustment.
+- `/cluster/chat/stream` produced eight SSE tokens and a `done.metrics` event:
+  TTFT `0.744735 s`, end-to-end `1.245638 s`, and eight generated tokens.
+- Raspberry Pi 1 (`192.168.0.16`) is Ubuntu 24.04.4/aarch64 with 8 GiB RAM and
+  ample free disk, but is not ready for Worker validation. Its `vcgencmd
+  get_throttled` result was `0x50000`, showing a historical undervoltage and
+  throttling event. Resolve the power-supply warning before benchmarking.
 
 ## Remaining issues
 
