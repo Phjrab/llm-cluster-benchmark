@@ -58,6 +58,14 @@ class WorkerSetupPathSafetyTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertIn("project directory", result.stderr)
 
+    def test_jetson_telemetry_client_tracks_system_service_version(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('system_jtop_version=', source)
+        self.assertIn('version("jetson-stats")', source)
+        self.assertIn('pip install "jetson-stats==$system_jtop_version"', source)
+        self.assertIn('^[0-9]+([.][0-9]+){1,3}$', source)
+        self.assertNotIn("jetson-stats==4.3.2", source)
+
 
 if __name__ == "__main__":
     unittest.main()

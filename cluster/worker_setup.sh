@@ -515,13 +515,21 @@ else
 fi
 
 if [[ "$PLATFORM_KIND" == "jetson" && -x "$python_bin" ]]; then
-  if "$python_bin" -c 'import jtop' >/dev/null 2>&1; then
-    add_check "telemetry_package" "Jetson 원격 측정 패키지" "pass" "false" "jetson-stats Python 패키지 사용 가능"
-  elif [[ "$MODE" == "install" && "$LOCK_FD_OPEN" -eq 1 && "$blocked_failures" -eq 0 && "$manual_failures" -eq 0 ]] && \
-       "$python_bin" -m pip install 'jetson-stats==4.3.2'; then
-    add_check "telemetry_package" "Jetson 원격 측정 패키지" "pass" "false" "jetson-stats 4.3.2 설치 완료"
+  system_jtop_version="$(/usr/bin/python3 -c 'from importlib.metadata import version; print(version("jetson-stats"))' 2>/dev/null || true)"
+  if [[ ! "$system_jtop_version" =~ ^[0-9]+([.][0-9]+){1,3}$ ]]; then
+    system_jtop_version=""
+  fi
+  venv_jtop_version="$($python_bin -c 'from importlib.metadata import version; print(version("jetson-stats"))' 2>/dev/null || true)"
+  if [[ -n "$system_jtop_version" && "$venv_jtop_version" == "$system_jtop_version" ]]; then
+    add_check "telemetry_package" "Jetson 원격 측정 패키지" "pass" "false" "jetson-stats $venv_jtop_version · system jtop.service 버전 일치"
+  elif [[ "$MODE" == "install" && -n "$system_jtop_version" && "$LOCK_FD_OPEN" -eq 1 && "$blocked_failures" -eq 0 && "$manual_failures" -eq 0 ]] && \
+       "$python_bin" -m pip install "jetson-stats==$system_jtop_version" && \
+       [[ "$($python_bin -c 'from importlib.metadata import version; print(version("jetson-stats"))' 2>/dev/null || true)" == "$system_jtop_version" ]]; then
+    add_check "telemetry_package" "Jetson 원격 측정 패키지" "pass" "false" "jetson-stats $system_jtop_version · system jtop.service에 맞춰 설치 완료"
+  elif [[ -n "$venv_jtop_version" && -z "$system_jtop_version" ]]; then
+    add_check "telemetry_package" "Jetson 원격 측정 패키지" "warn" "false" "jetson-stats $venv_jtop_version 사용 가능 · system service 버전은 확인할 수 없습니다."
   else
-    add_check "telemetry_package" "Jetson 원격 측정 패키지" "warn" "true" "jtop 없이도 psutil 기본 지표와 LLM 실험은 가능합니다."
+    add_check "telemetry_package" "Jetson 원격 측정 패키지" "warn" "true" "system jtop.service와 같은 jetson-stats client가 필요합니다. psutil 기본 지표와 LLM 실험은 가능합니다."
   fi
   if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet jtop.service; then
     add_check "telemetry_service" "jtop 고급 측정 서비스" "pass" "false" "jtop.service active"
