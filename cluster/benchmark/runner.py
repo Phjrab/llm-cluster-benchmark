@@ -32,6 +32,7 @@ from cluster.clusterctl import (
 from cluster.domain.experiment import ExperimentConfig, normalize_model_ids, validate_model_id
 from cluster.domain.strategy import EXECUTION_STRATEGIES
 from cluster.infrastructure.storage import FilesystemRunRepository
+from cluster.infrastructure.sse import parse_sse_events
 from cluster.integrations.runtime_layout import default_project_layout
 
 
@@ -251,11 +252,7 @@ def _stream_request(
     ok = False
     try:
         with urllib.request.urlopen(request, timeout=config.request_timeout_s) as response:
-            for raw_line in response:
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line.startswith("data: "):
-                    continue
-                event = json.loads(line[6:])
+            for event in parse_sse_events(response):
                 event_type = event.get("type")
                 if event_type == "token":
                     if first_token_at is None:

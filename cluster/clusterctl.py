@@ -8,9 +8,9 @@ import concurrent.futures
 import csv
 import json
 import os
+import platform
 import re
 import secrets
-import shlex
 import socket
 import subprocess
 import sys
@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from cluster.integrations.runtime_layout import default_project_layout
+from cluster.infrastructure.remote import CommandResult, SshRemoteExecutor, build_ssh_command
+from cluster.infrastructure.platform import controller_capabilities
 
 PROJECT_LAYOUT = default_project_layout()
 CLUSTER_DIR = PROJECT_LAYOUT.cluster_dir
@@ -264,24 +266,7 @@ def _identity_path(node: Node) -> Optional[Path]:
 
 
 def ssh_base(node: Node) -> List[str]:
-    command = [
-        "ssh",
-        "-o",
-        "BatchMode=yes",
-        "-o",
-        "ConnectTimeout=8",
-        "-o",
-        "ServerAliveInterval=5",
-        "-o",
-        "StrictHostKeyChecking=accept-new",
-        "-p",
-        str(node.ssh_port),
-    ]
-    identity = _identity_path(node)
-    if identity is not None:
-        command.extend(["-i", str(identity), "-o", "IdentitiesOnly=yes"])
-    command.append(node.ssh_target)
-    return command
+    return build_ssh_command(node, _identity_path(node))
 
 
 def run_on_node(
@@ -289,19 +274,12 @@ def run_on_node(
     args: Sequence[str],
     timeout: int = 120,
     check: bool = False,
-) -> subprocess.CompletedProcess[str]:
-    if node.is_local:
-        command = list(args)
-    else:
-        remote_command = " ".join(shlex.quote(part) for part in args)
-        command = ssh_base(node) + [remote_command]
-    return subprocess.run(
-        command,
-        text=True,
-        capture_output=True,
-        timeout=timeout,
-        check=check,
-    )
+) -> CommandResult:
+    if check:
+        # Existing callers never request check=True; retain explicit behavior
+        # instead of leaking subprocess.CompletedProcess into application code.
+        raise ValueError("check=True is not supported by the remote executor boundary")
+    return SshRemoteExecutor().run(node, args, timeout=timeout, identity_file=_identity_path(node))
 
 
 def discover_node(node: Node, timeout: int = 20) -> Dict[str, Any]:
@@ -342,6 +320,13 @@ def discover_node(node: Node, timeout: int = 20) -> Dict[str, Any]:
 
 
 def bootstrap_system_one(node: Node) -> Dict[str, Any]:
+    if node.is_local and not controller_capabilities(platform.system()).allows_linux_worker_setup:
+        return {
+            "name": node.name,
+            "ok": False,
+            "stdout": "",
+            "stderr": "The macOS Controller never runs Linux worker package setup locally",
+        }
     discovery = discover_node(node)
     if not discovery["ssh"]:
         return {"name": node.name, "ok": False, "stdout": "", "stderr": discovery["error"]}
