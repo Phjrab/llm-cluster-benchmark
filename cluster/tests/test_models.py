@@ -104,6 +104,7 @@ class ModelPreflightTests(unittest.TestCase):
 class ModelControllerBoundaryTests(unittest.TestCase):
     def test_local_catalog_cache_remains_usable_without_remote_metadata(self) -> None:
         from cluster.dashboard import app as dashboard
+        service = dashboard.services
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -111,26 +112,27 @@ class ModelControllerBoundaryTests(unittest.TestCase):
             cache = root / "cache.json"
             static.write_text(json.dumps({"models": [{"id": MODEL_ID, "vendor": "static"}]}), encoding="utf-8")
             cache.write_text(json.dumps({"models": [{"id": MODEL_ID, "vendor": "cached", "estimated_memory_mb": 64}]}), encoding="utf-8")
-            with mock.patch.object(dashboard, "MODEL_CATALOG_PATH", static), mock.patch.object(dashboard, "MODEL_CATALOG_CACHE_PATH", cache):
-                catalog = dashboard.read_model_catalog()
+            with mock.patch.object(service, "MODEL_CATALOG_PATH", static), mock.patch.object(service, "MODEL_CATALOG_CACHE_PATH", cache):
+                catalog = service.read_model_catalog()
         self.assertEqual(len(catalog), 1)
         self.assertEqual(catalog[0].vendor, "cached")
         self.assertEqual(catalog[0].estimated_memory_mb, 64)
 
     def test_controller_aggregation_never_scans_controller_models_directory(self) -> None:
         from cluster.dashboard import app as dashboard
-        worker = dashboard.Node("worker-01", "worker", "192.168.0.27", "edge", 22, 8000, "/opt/cluster", True)
-        head = dashboard.Node("legacy-head", "head", "192.168.0.26", "edge", 22, 8000, "/opt/cluster", True)
+        service = dashboard.services
+        worker = service.Node("worker-01", "worker", "192.168.0.27", "edge", 22, 8000, "/opt/cluster", True)
+        head = service.Node("legacy-head", "head", "192.168.0.26", "edge", 22, 8000, "/opt/cluster", True)
         inventory = WorkerModelInventory("worker-01", (ModelInventoryEntry(MODEL_ID, "tiny-Q4_K_M.gguf", 4, MODEL_HASH, "Q4_K_M"),))
-        with mock.patch.object(dashboard, "read_enabled_nodes", return_value=[head, worker]), mock.patch.object(
-            dashboard, "fetch_worker_model_inventory", return_value=inventory
+        with mock.patch.object(service, "read_enabled_nodes", return_value=[head, worker]), mock.patch.object(
+            service, "fetch_worker_model_inventory", return_value=inventory
         ) as fetch:
-            models = dashboard.list_models()
+            models = service.list_models()
         self.assertEqual([item["id"] for item in models], [MODEL_ID, "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"])
         self.assertEqual(fetch.call_count, 1)
 
     def test_controller_model_operations_are_node_events_and_experiment_never_syncs_models(self) -> None:
-        dashboard_source = (Path(__file__).resolve().parents[1] / "dashboard" / "app.py").read_text(encoding="utf-8")
+        dashboard_source = (Path(__file__).resolve().parents[1] / "dashboard" / "services.py").read_text(encoding="utf-8")
         tree = ast.parse(dashboard_source)
         model_progress_channels = []
         for node in ast.walk(tree):
@@ -146,7 +148,8 @@ class ModelControllerBoundaryTests(unittest.TestCase):
             next(
                 node
                 for node in ast.walk(tree)
-                if isinstance(node, ast.AsyncFunctionDef) and node.name == "start_experiment"
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "start_experiment"
             ),
         ) or ""
         self.assertNotIn("sync_models", start_source)

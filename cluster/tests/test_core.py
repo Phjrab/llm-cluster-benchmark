@@ -716,6 +716,7 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dashboard = self._load_dashboard(root)
+            service = dashboard.services
             results = root / "results"
             run_dir = results / "run_1"
             run_dir.mkdir(parents=True)
@@ -731,7 +732,7 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
             (run_dir / "summary.json").write_text(
                 json.dumps(model_summary), encoding="utf-8"
             )
-            suite = dashboard._suite_document(
+            suite = service._suite_document(
                 suite_id="suite_test_cancelled",
                 experiment_id="experiment-1",
                 name="cancelled suite",
@@ -749,10 +750,10 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
                 errors=[],
             )
 
-            with mock.patch.object(dashboard, "RESULTS_DIR", results):
-                dashboard.write_suite_summary(suite)
-                runs = dashboard.read_run_summaries()
-                suites = dashboard.read_suite_summaries()
+            with mock.patch.object(service, "RESULTS_DIR", results):
+                service.write_suite_summary(suite)
+                runs = service.read_run_summaries()
+                suites = service.read_suite_summaries()
 
             self.assertEqual(len(runs), 1)
             self.assertEqual(runs[0]["suite_status"], "cancelled")
@@ -764,8 +765,9 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dashboard = self._load_dashboard(root)
+            service = dashboard.services
             results = root / "results"
-            running = dashboard._suite_document(
+            running = service._suite_document(
                 suite_id="suite_interrupted",
                 experiment_id="experiment-1",
                 name="interrupted suite",
@@ -791,13 +793,13 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
             )
             completed = {**running, "suite_id": "suite_completed", "status": "completed"}
 
-            with mock.patch.object(dashboard, "RESULTS_DIR", results):
-                dashboard.write_suite_summary(running)
-                dashboard.write_suite_summary(completed)
-                self.assertEqual(dashboard.reconcile_interrupted_suites(), 1)
+            with mock.patch.object(service, "RESULTS_DIR", results):
+                service.write_suite_summary(running)
+                service.write_suite_summary(completed)
+                self.assertEqual(service.reconcile_interrupted_suites(), 1)
                 suites = {
                     suite["suite_id"]: suite
-                    for suite in dashboard.read_suite_summaries(limit=0)
+                    for suite in service.read_suite_summaries(limit=0)
                 }
 
             interrupted = suites["suite_interrupted"]
@@ -868,13 +870,14 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dashboard = self._load_dashboard(root)
+            service = dashboard.services
             settings = root / "settings.json"
             settings.write_text(
                 '{"worker_api_auth": false, "dashboard_token_auth": false}\n',
                 encoding="utf-8",
             )
-            with mock.patch.object(dashboard, "SETTINGS_PATH", settings), mock.patch.object(
-                dashboard, "DASHBOARD_TOKEN", "test-dashboard-token"
+            with mock.patch.object(service, "SETTINGS_PATH", settings), mock.patch.object(
+                service, "DASHBOARD_TOKEN", "test-dashboard-token"
             ):
                 client = TestClient(dashboard.app)
                 response = client.get("/api/settings")
@@ -886,7 +889,7 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
                     json={"dashboard_token_auth": True, "dashboard_token": "wrong"},
                 )
                 self.assertEqual(rejected.status_code, 403)
-                self.assertFalse(dashboard.read_settings()["dashboard_token_auth"])
+                self.assertFalse(service.read_settings()["dashboard_token_auth"])
 
                 enabled = client.put(
                     "/api/settings",
@@ -921,23 +924,25 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dashboard = self._load_dashboard(root)
+            service = dashboard.services
             settings = root / "settings.json"
-            with mock.patch.object(dashboard, "SETTINGS_PATH", settings):
-                self.assertFalse(dashboard.read_settings()["dashboard_token_auth"])
+            with mock.patch.object(service, "SETTINGS_PATH", settings):
+                self.assertFalse(service.read_settings()["dashboard_token_auth"])
                 settings.write_text("{broken", encoding="utf-8")
-                self.assertTrue(dashboard.read_settings()["dashboard_token_auth"])
+                self.assertTrue(service.read_settings()["dashboard_token_auth"])
                 settings.write_text(
                     '{"dashboard_token_auth": "false"}\n', encoding="utf-8"
                 )
-                self.assertTrue(dashboard.read_settings()["dashboard_token_auth"])
+                self.assertTrue(service.read_settings()["dashboard_token_auth"])
 
     def test_existing_tokenless_event_stream_closes_when_auth_is_enabled(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             dashboard = self._load_dashboard(Path(directory))
+            service = dashboard.services
             settings = {"worker_api_auth": False, "dashboard_token_auth": False}
-            bus = dashboard.EventBus()
+            bus = service.EventBus()
             with mock.patch.object(
-                dashboard, "read_settings", side_effect=lambda: dict(settings)
+                service, "read_settings", side_effect=lambda: dict(settings)
             ):
                 stream = bus.stream("")
                 self.assertIn('"type": "connected"', next(stream))
@@ -953,6 +958,7 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dashboard = self._load_dashboard(root)
+            service = dashboard.services
             environment_dir = root / "environment"
             raw = {
                 "node": "jetson-head",
@@ -975,8 +981,8 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
                 "backend": "cuda",
                 "model_count": 2,
             }
-            with mock.patch.object(dashboard, "ENVIRONMENT_DIR", environment_dir):
-                report = dashboard.write_environment_report(raw)
+            with mock.patch.object(service, "ENVIRONMENT_DIR", environment_dir):
+                report = service.write_environment_report(raw)
                 target = environment_dir / "jetson-head.json"
                 self.assertEqual(target.stat().st_mode & 0o777, 0o600)
                 self.assertEqual(environment_dir.stat().st_mode & 0o777, 0o700)
@@ -1008,12 +1014,13 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
     def test_experiment_environment_requires_fresh_ready_report_api_and_model(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             dashboard = self._load_dashboard(Path(directory))
-            head = dashboard.read_all_nodes()[0]
+            service = dashboard.services
+            head = service.read_all_nodes()[0]
             ready = {
                 "node": head.name,
                 "status": "ready",
-                "checked_at": dashboard.utc_now(),
-                "received_at": dashboard.utc_now(),
+                "checked_at": service.utc_now(),
+                "received_at": service.utc_now(),
                 "platform": "jetson",
                 "project_dir": head.project_dir,
                 "venv_path": f"{head.project_dir}/.venv",
@@ -1023,22 +1030,22 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
                 "backend": {"kind": "cuda", "verified": True},
                 "model_count": 1,
             }
-            with mock.patch.object(dashboard, "read_environment_reports", return_value=[ready]):
-                dashboard.validate_experiment_environment(
+            with mock.patch.object(service, "read_environment_reports", return_value=[ready]):
+                service.validate_experiment_environment(
                     [head],
                     {head.name: {"api": True, "model_ids": ["models/a.gguf"]}},
                     ["models/a.gguf"],
                     "single_node",
                 )
                 with self.assertRaisesRegex(ValueError, "모델 없음"):
-                    dashboard.validate_experiment_environment(
+                    service.validate_experiment_environment(
                         [head],
                         {head.name: {"api": True, "model_ids": []}},
                         ["models/a.gguf"],
                         "single_node",
                     )
                 with self.assertRaisesRegex(ValueError, "오프라인"):
-                    dashboard.validate_experiment_environment(
+                    service.validate_experiment_environment(
                         [head],
                         {head.name: {"api": False, "model_ids": ["models/a.gguf"]}},
                         ["models/a.gguf"],
@@ -1057,7 +1064,7 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
                     "raspberry-pi",
                 )
                 with self.assertRaisesRegex(ValueError, "플랫폼"):
-                    dashboard.validate_experiment_environment(
+                    service.validate_experiment_environment(
                         [mismatched_head],
                         {head.name: {"api": True, "model_ids": ["models/a.gguf"]}},
                         ["models/a.gguf"],
@@ -1065,9 +1072,9 @@ class DashboardSuitePersistenceTests(unittest.TestCase):
                     )
             missing_timestamp = {**ready, "checked_at": None, "received_at": None}
             with mock.patch.object(
-                dashboard, "read_environment_reports", return_value=[missing_timestamp]
+                service, "read_environment_reports", return_value=[missing_timestamp]
             ), self.assertRaisesRegex(ValueError, "24시간"):
-                dashboard.validate_experiment_environment(
+                service.validate_experiment_environment(
                     [head],
                     {head.name: {"api": True, "model_ids": ["models/a.gguf"]}},
                     ["models/a.gguf"],

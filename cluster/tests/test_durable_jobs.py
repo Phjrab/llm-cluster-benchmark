@@ -316,7 +316,7 @@ class JobRegistryRecoveryTests(unittest.TestCase):
 class JobProcessTests(unittest.TestCase):
     def test_dashboard_manager_is_only_a_durable_job_facade(self) -> None:
         source = (
-            Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
+            Path(__file__).resolve().parents[1] / "dashboard" / "services.py"
         ).read_text(encoding="utf-8")
         tree = ast.parse(source)
         manager = next(

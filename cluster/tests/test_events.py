@@ -74,7 +74,7 @@ class TypedEventTests(unittest.TestCase):
         stream.close()
 
     def test_dashboard_producers_use_explicit_channels(self) -> None:
-        source_path = Path(__file__).resolve().parents[1] / "dashboard" / "app.py"
+        source_path = Path(__file__).resolve().parents[1] / "dashboard" / "services.py"
         source = source_path.read_text(encoding="utf-8")
         tree = ast.parse(source, filename=str(source_path))
         calls = []
