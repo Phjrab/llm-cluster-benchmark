@@ -11,14 +11,14 @@ from typing import Dict, List
 from pydantic import BaseModel, Field
 
 
-DEFAULT_N_CTX = 1024
+DEFAULT_N_CTX = 4096
 DEFAULT_N_GPU_LAYERS = 8
 DEFAULT_MAX_TOKENS = 256
 
 
 class SelectModelRequest(BaseModel):
     model_id: str = Field(..., description="Relative model path from the worker models directory")
-    n_ctx: int = Field(DEFAULT_N_CTX, ge=128, le=4096)
+    n_ctx: int = Field(DEFAULT_N_CTX, ge=128, le=16384)
     n_gpu_layers: int = Field(DEFAULT_N_GPU_LAYERS, ge=0, le=120)
 
 
@@ -35,6 +35,7 @@ class InstallModelRequest(BaseModel):
     model_id: str = Field(..., description="Relative GGUF path from the worker models directory")
     source_url: str = Field(..., min_length=8, max_length=2048)
     expected_sha256: str = Field(..., min_length=64, max_length=64)
+    metadata: Dict[str, object] = Field(default_factory=dict, description="Pinned source and accepted-license metadata")
 
 
 class ChatStreamRequest(BaseModel):

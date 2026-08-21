@@ -105,7 +105,7 @@ class ExperimentPayload(BaseModel):
     model_ids: List[str] = Field(default_factory=list, max_length=32)
     continue_on_model_error: bool = True
     model_cooldown_s: float = Field(2.0, ge=0.0, le=300.0)
-    n_ctx: int = Field(1024, ge=128, le=4096)
+    n_ctx: int = Field(4096, ge=128, le=16384)
     n_gpu_layers: int = Field(30, ge=0, le=120)
     requests: int = Field(20, ge=1, le=10_000)
     concurrency: int = Field(4, ge=1, le=256)

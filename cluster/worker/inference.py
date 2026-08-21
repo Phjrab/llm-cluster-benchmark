@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import gc
 import hashlib
+import json
 import os
 import re
 import threading
@@ -35,7 +36,7 @@ class InferenceBackend(Protocol):
 
     def delete_model(self, model_id: str) -> Dict[str, object]: ...
 
-    def install_model(self, model_id: str, source_url: str, expected_sha256: str) -> Dict[str, object]: ...
+    def install_model(self, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]: ...
 
     def current_model_info(self) -> Dict[str, object]: ...
 
@@ -78,6 +79,39 @@ class LlamaCppInferenceBackend:
         self.requested_n_ctx: Optional[int] = None
         self.requested_n_gpu_layers: Optional[int] = None
         self._model_hash_cache: Dict[Path, tuple[int, int, str]] = {}
+        self._metadata_path = self.models_dir / ".cluster-model-metadata.json"
+
+    def _read_model_metadata(self) -> Dict[str, Dict[str, object]]:
+        try:
+            raw = json.loads(self._metadata_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, ValueError):
+            return {}
+        records = raw.get("models") if isinstance(raw, dict) else None
+        if not isinstance(records, dict):
+            return {}
+        return {str(key): dict(value) for key, value in records.items() if isinstance(key, str) and isinstance(value, dict)}
+
+    def _write_model_metadata(self, records: Dict[str, Dict[str, object]]) -> None:
+        self.models_dir.mkdir(parents=True, exist_ok=True)
+        temporary = self._metadata_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"schema_version": 1, "models": records}, sort_keys=True), encoding="utf-8")
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, self._metadata_path)
+        os.chmod(self._metadata_path, 0o600)
+
+    @staticmethod
+    def _safe_install_metadata(metadata: Optional[Dict[str, object]]) -> Dict[str, object]:
+        source = metadata if isinstance(metadata, dict) else {}
+        allowed = {"source_revision", "architecture", "chat_template_hash", "license_accepted", "source_repo", "provenance_status"}
+        cleaned: Dict[str, object] = {}
+        for key in allowed:
+            value = source.get(key)
+            if key == "license_accepted":
+                if value is True:
+                    cleaned[key] = True
+            elif isinstance(value, str) and value.strip() and len(value) <= 256:
+                cleaned[key] = value.strip()
+        return cleaned
 
     def _factory(self) -> Any:
         if self._llama_factory is not None:
@@ -111,6 +145,7 @@ class LlamaCppInferenceBackend:
         if not self.models_dir.exists():
             return []
         models: List[Dict[str, object]] = []
+        metadata_by_id = self._read_model_metadata()
         for path in sorted(self.models_dir.rglob("*.gguf")):
             try:
                 resolved = path.resolve()
@@ -123,6 +158,7 @@ class LlamaCppInferenceBackend:
                 size_mb = round(size_bytes / (1024 * 1024), 2)
             except OSError:
                 continue
+            metadata = metadata_by_id.get(relative.as_posix(), {})
             models.append(
                 {
                     "id": relative.as_posix(),
@@ -133,6 +169,11 @@ class LlamaCppInferenceBackend:
                     "size_mb": size_mb,
                     "quantization": self._quantization_from_filename(resolved.name),
                     "is_loaded": self.loaded_model_path is not None and resolved == self.loaded_model_path,
+                    "source_revision": metadata.get("source_revision", ""),
+                    "architecture": metadata.get("architecture", ""),
+                    "chat_template_hash": metadata.get("chat_template_hash", ""),
+                    "license_accepted": metadata.get("license_accepted") is True,
+                    "metadata_inspected": bool(metadata.get("architecture")),
                 }
             )
         return models
@@ -180,6 +221,7 @@ class LlamaCppInferenceBackend:
             expected = expected_sha256.strip().lower() if expected_sha256 else ""
             if expected and (not re.fullmatch(r"[0-9a-f]{64}", expected) or digest != expected):
                 raise ValueError(f"Model checksum mismatch: {model_id}")
+            metadata = self._read_model_metadata().get(model_id, {})
             return {
                 "id": model_id,
                 "filename": path.name,
@@ -187,6 +229,11 @@ class LlamaCppInferenceBackend:
                 "sha256": digest,
                 "quantization": self._quantization_from_filename(path.name),
                 "checksum_valid": True,
+                "source_revision": metadata.get("source_revision", ""),
+                "architecture": metadata.get("architecture", ""),
+                "chat_template_hash": metadata.get("chat_template_hash", ""),
+                "license_accepted": metadata.get("license_accepted") is True,
+                "metadata_inspected": bool(metadata.get("architecture")),
             }
 
     def delete_model(self, model_id: str) -> Dict[str, object]:
@@ -197,9 +244,12 @@ class LlamaCppInferenceBackend:
             size_bytes = path.stat().st_size
             path.unlink()
             self._model_hash_cache.pop(path, None)
+            metadata = self._read_model_metadata()
+            if metadata.pop(model_id, None) is not None:
+                self._write_model_metadata(metadata)
             return {"id": model_id, "filename": path.name, "size_bytes": size_bytes, "deleted": True}
 
-    def install_model(self, model_id: str, source_url: str, expected_sha256: str) -> Dict[str, object]:
+    def install_model(self, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]:
         """Download directly to this Worker and atomically verify before READY."""
         from cluster.domain.experiment import validate_model_id
 
@@ -207,6 +257,7 @@ class LlamaCppInferenceBackend:
         expected = expected_sha256.strip().lower()
         if not re.fullmatch(r"[0-9a-f]{64}", expected):
             raise ValueError("A 64-character expected_sha256 is required for direct model installation")
+        install_metadata = self._safe_install_metadata(metadata)
         parsed = urllib.parse.urlparse(source_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
             raise ValueError("Model source_url must be a credential-free http(s) URL")
@@ -223,6 +274,8 @@ class LlamaCppInferenceBackend:
                 raise RuntimeError("Unload the selected model before replacing it")
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.is_file() and self._cached_sha256(target) == expected:
+                if install_metadata:
+                    records = self._read_model_metadata(); records[model_id] = install_metadata; self._write_model_metadata(records)
                 return {**self.verify_model(model_id, expected), "downloaded_bytes": 0, "already_present": True}
             temporary = target.with_name(target.name + ".part")
             temporary.unlink(missing_ok=True)
@@ -244,6 +297,8 @@ class LlamaCppInferenceBackend:
                     raise ValueError(f"Model checksum mismatch: {model_id}")
                 os.replace(temporary, target)
                 self._model_hash_cache.pop(target, None)
+                if install_metadata:
+                    records = self._read_model_metadata(); records[model_id] = install_metadata; self._write_model_metadata(records)
                 return {**self.verify_model(model_id, expected), "downloaded_bytes": downloaded, "already_present": False}
             except Exception:
                 temporary.unlink(missing_ok=True)

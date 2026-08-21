@@ -7,7 +7,7 @@
   "model_ids": ["qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"],
   "continue_on_model_error": true,
   "model_cooldown_s": 3,
-  "n_ctx": 1024,
+  "n_ctx": 4096,
   "n_gpu_layers": 30,
   "requests": 20,
   "concurrency": 4,

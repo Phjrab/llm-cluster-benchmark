@@ -1510,7 +1510,7 @@ def command_delete_models(nodes: Sequence[Node], args: argparse.Namespace) -> in
     return 0 if results and all(item["ok"] for item in results) else 1
 
 
-def install_model_url_one(node: Node, model_id: str, source_url: str, expected_sha256: str) -> Dict[str, Any]:
+def install_model_url_one(node: Node, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None) -> Dict[str, Any]:
     _print_model_progress(node.name, model_id, "queued", 0, 0)
     _print_model_progress(node.name, model_id, "downloading", 0, 0)
     try:
@@ -1521,6 +1521,7 @@ def install_model_url_one(node: Node, model_id: str, source_url: str, expected_s
                 "model_id": model_id,
                 "source_url": source_url,
                 "expected_sha256": expected_sha256,
+                "metadata": metadata or {},
             },
             timeout=7200.0,
         )
@@ -1542,7 +1543,12 @@ def command_install_model_url(nodes: Sequence[Node], args: argparse.Namespace) -
     if not workers:
         print("No enabled worker nodes; nothing to install.")
         return 0
-    results = [install_model_url_one(node, args.model_id, args.source_url, args.expected_sha256) for node in workers]
+    metadata = {
+        "source_revision": args.source_revision,
+        "architecture": args.architecture,
+        "license_accepted": args.license_accepted,
+    }
+    results = [install_model_url_one(node, args.model_id, args.source_url, args.expected_sha256, metadata) for node in workers]
     for item in results:
         print(f"[{item['name']}] {'OK' if item['ok'] else 'FAIL'}")
         if item["stdout"]:
@@ -1649,6 +1655,9 @@ def build_parser() -> argparse.ArgumentParser:
     install_url_parser.add_argument("--model-id", required=True)
     install_url_parser.add_argument("--source-url", required=True)
     install_url_parser.add_argument("--expected-sha256", required=True)
+    install_url_parser.add_argument("--source-revision", default="", help="Immutable source revision recorded with the Worker model")
+    install_url_parser.add_argument("--architecture", default="", help="GGUF architecture recorded after manual metadata inspection")
+    install_url_parser.add_argument("--license-accepted", action="store_true", help="Confirm the selected model license/access conditions were accepted")
 
     prepare_parser = subparsers.add_parser(
         "prepare",
@@ -1671,7 +1680,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     select_parser = subparsers.add_parser("select-model", help="Load the same model on enabled nodes")
     select_parser.add_argument("--model-id", required=True)
-    select_parser.add_argument("--n-ctx", type=int, default=1024)
+    select_parser.add_argument("--n-ctx", type=int, default=4096)
     select_parser.add_argument("--n-gpu-layers", type=int, default=20)
     return parser
 

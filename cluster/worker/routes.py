@@ -223,9 +223,14 @@ def mount_worker_routes(
     @app.post("/cluster/models/install")
     async def install_model(payload: InstallModelRequest) -> Dict[str, Any]:
         try:
-            model = backend.install_model(
-                payload.model_id, payload.source_url, payload.expected_sha256
-            )
+            if payload.metadata:
+                model = backend.install_model(
+                    payload.model_id, payload.source_url, payload.expected_sha256, payload.metadata
+                )
+            else:
+                # Preserve the Phase 05 custom backend contract for callers
+                # that have not adopted additive install provenance metadata.
+                model = backend.install_model(payload.model_id, payload.source_url, payload.expected_sha256)
         except Exception as exc:
             failure = failure_from_exception(exc, stage="model_install", model_id=payload.model_id)
             raise HTTPException(

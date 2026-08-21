@@ -3,6 +3,9 @@ const state = {
   nodes: [],
   status: [],
   models: [],
+  modelRecommendations: {},
+  modelStarterPacks: [],
+  modelCatalogPolicy: {},
   selectedNodes: new Set(),
   runs: [],
   experimentGroups: [],
@@ -1758,6 +1761,9 @@ async function bootstrap() {
     state.onboarding = data.onboarding || {};
     state.settings = data.settings || { worker_api_auth: false, dashboard_token_auth: false };
     state.modelCatalog = data.model_catalog || [];
+    state.modelRecommendations = data.model_recommendations || {};
+    state.modelStarterPacks = data.model_starter_packs || [];
+    state.modelCatalogPolicy = data.model_catalog_policy || {};
     if (!state.settings.dashboard_token_auth && state.token) {
       state.token = "";
       sessionStorage.removeItem("clusterToken");
@@ -2448,7 +2454,7 @@ globalThis.ClusterDashboard = Object.assign(globalThis.ClusterDashboard || {}, {
   state, $, $$, api, toast, escapeHtml, finite, fmt, pct,
   platformName, strategyMeta, runStrategy, runModelId, shortModelName,
   topologyNodes, renderNodes, renderModels, renderRuns,
-  runActionOnNodes, refreshExperimentData, selectedModelIds,
+  runActionOnNodes, refreshExperimentData, selectedModelIds, setSelectedModels,
 });
 
 document.addEventListener("DOMContentLoaded", () => {

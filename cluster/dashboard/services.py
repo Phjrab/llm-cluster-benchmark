@@ -63,7 +63,7 @@ from cluster.clusterctl import (
 from cluster.integrations.runtime_layout import resolve_runtime_paths
 from cluster.domain.errors import ClusterError, ErrorCode
 from cluster.domain.failures import http_status_for_failure
-from cluster.domain.model import ModelCatalogEntry, recommend_models
+from cluster.domain.model import ModelCatalogEntry, estimate_memory_fit, recommend_model_candidates, recommend_models
 from cluster.domain.power import (
     normalize_power_integrity_snapshot,
     power_semantic_signature,
@@ -682,6 +682,67 @@ def validate_experiment_environment(
         raise ValueError("실험 환경 준비가 필요합니다: " + " / ".join(problems))
 
 
+def validate_catalog_execution_preflight(
+    *,
+    nodes: Sequence[Node],
+    live_status: Dict[str, Dict[str, Any]],
+    inventories: Mapping[str, WorkerModelInventory],
+    catalog: Mapping[str, ModelCatalogEntry],
+    model_ids: Sequence[str],
+    n_ctx: int,
+    execution_strategy: str,
+    rpc_coordinator_node: Optional[str],
+) -> None:
+    """Apply context and conservative memory admission after file integrity checks.
+
+    Legacy/unmanaged models remain readable for backward compatibility. Catalog
+    entries with an immutable identity gain stricter revision/license checks in
+    ``validate_model_preflight``; all catalog entries use installed GGUF bytes
+    for the memory calculation and never parameter count alone.
+    """
+    required = list(nodes)
+    if execution_strategy == "model_parallel_rpc":
+        required = [node for node in nodes if node.name == rpc_coordinator_node]
+    for node in required:
+        profile = (live_status.get(node.name) or {}).get("profile") or {}
+        inventory = inventories.get(node.name)
+        if inventory is None:
+            continue
+        installed = inventory.by_id()
+        for model_id in model_ids:
+            entry = catalog.get(model_id)
+            model = installed.get(model_id)
+            if entry is None or model is None:
+                continue
+            if entry.context_length_advertised and n_ctx > entry.context_length_advertised:
+                raise ModelPreflightError(
+                    f"{node.name}: requested context exceeds catalog limit: {model_id}",
+                    code=ErrorCode.CONFIG_MISMATCH,
+                    stage="model_preflight",
+                    node=node.name,
+                    model_id=model_id,
+                    evidence={"requested_n_ctx": n_ctx, "context_length_advertised": entry.context_length_advertised},
+                    solutions=("더 작은 n_ctx를 사용하거나 해당 모델의 pinned GGUF metadata를 확인하세요.",),
+                )
+            estimate = estimate_memory_fit(
+                entry,
+                memory_total_mb=profile.get("memory_total_mb"),
+                memory_available_mb=profile.get("memory_available_mb"),
+                context_length=n_ctx,
+                observed_size_bytes=model.size_bytes,
+            )
+            if estimate.fits is False:
+                raise ModelPreflightError(
+                    f"{node.name}: model does not fit safe available memory: {model_id}",
+                    code=ErrorCode.MODEL_LOAD_OOM,
+                    stage="model_preflight",
+                    node=node.name,
+                    model_id=model_id,
+                    evidence=estimate.to_dict(),
+                    solutions=("더 작은 GGUF, 더 작은 n_ctx 또는 더 낮은 GPU layer 설정을 사용하세요.",),
+                )
+
+
 def experiment_power_warnings(
     nodes: Sequence[Node], live_status: Dict[str, Dict[str, Any]]
 ) -> List[Dict[str, object]]:
@@ -704,9 +765,11 @@ def experiment_power_warnings(
     return warnings
 
 
-def read_model_catalog() -> List[ModelCatalogEntry]:
+def read_model_catalog_document() -> Dict[str, Any]:
     """Read local/cache catalog metadata; no network is required for control plane use."""
     raw_by_id: Dict[str, Dict[str, Any]] = {}
+    starter_packs: Dict[str, Dict[str, Any]] = {}
+    policy: Dict[str, Any] = {}
     for path in (MODEL_CATALOG_PATH, MODEL_CATALOG_CACHE_PATH):
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
@@ -718,13 +781,27 @@ def read_model_catalog() -> List[ModelCatalogEntry]:
         for value in values:
             if isinstance(value, dict) and value.get("id"):
                 raw_by_id[str(value["id"])] = value
+        if isinstance(raw, dict):
+            for pack in raw.get("starter_packs") or []:
+                if isinstance(pack, dict) and isinstance(pack.get("id"), str):
+                    starter_packs[pack["id"]] = pack
+            if isinstance(raw.get("catalog_policy"), dict):
+                policy.update(raw["catalog_policy"])
     catalog: List[ModelCatalogEntry] = []
     for value in raw_by_id.values():
         try:
             catalog.append(ModelCatalogEntry.from_dict(value))
         except (TypeError, ValueError):
             continue
-    return sorted(catalog, key=lambda item: item.id)
+    return {
+        "catalog": sorted(catalog, key=lambda item: item.id),
+        "starter_packs": [starter_packs[key] for key in sorted(starter_packs)],
+        "catalog_policy": policy,
+    }
+
+
+def read_model_catalog() -> List[ModelCatalogEntry]:
+    return read_model_catalog_document()["catalog"]
 
 
 def fetch_worker_model_inventory(node: Node, timeout: float = 5.0) -> WorkerModelInventory:
@@ -756,6 +833,36 @@ def collect_worker_model_inventories(
 def list_models() -> List[Dict[str, Any]]:
     """Aggregate Worker filesystem inventories; the Controller model directory is never scanned."""
     return aggregate_catalog(collect_worker_model_inventories(), read_model_catalog())
+
+
+def model_recommendations(
+    catalog: Sequence[ModelCatalogEntry],
+    inventories: Sequence[WorkerModelInventory],
+    status_snapshot: Sequence[Dict[str, Any]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Build Worker-only recommendation evidence from current, local facts."""
+    status_by_name = {str(item.get("name") or ""): item for item in status_snapshot}
+    inventory_by_name = {item.node: item for item in inventories}
+    values: Dict[str, List[Dict[str, Any]]] = {}
+    for node in read_enabled_nodes():
+        if node.role != "worker":
+            continue
+        profile = (status_by_name.get(node.name) or {}).get("profile") or {}
+        backend = profile.get("runtime_backend") or {}
+        worker_models = inventory_by_name.get(node.name)
+        values[node.name] = [
+            item.to_dict()
+            for item in recommend_model_candidates(
+                catalog,
+                platform=str(profile.get("platform_kind") or node.platform),
+                memory_total_mb=profile.get("memory_total_mb"),
+                memory_available_mb=profile.get("memory_available_mb"),
+                backend_verified=backend.get("verified") is True,
+                runtime_commit=str(backend.get("runtime_fingerprint") or ""),
+                installed_models=worker_models.by_id() if worker_models else {},
+            )
+        ]
+    return values
 
 
 def probe_node(node: Node) -> Dict[str, Any]:
@@ -1789,12 +1896,17 @@ class DashboardFacade:
         defaults = json.loads(DEFAULTS_PATH.read_text(encoding="utf-8"))
         inventories = await asyncio.to_thread(collect_worker_model_inventories)
         catalog = read_model_catalog()
+        catalog_document = read_model_catalog_document()
+        snapshot = status_monitor.snapshot()
         return {
             "nodes": [serialize_node(node) for node in read_all_nodes()],
-            "status": status_monitor.snapshot(),
+            "status": snapshot,
             "models": aggregate_catalog(inventories, catalog),
             "model_inventories": [item.to_dict() for item in inventories],
             "model_catalog": [item.to_dict() for item in catalog],
+            "model_starter_packs": catalog_document["starter_packs"],
+            "model_catalog_policy": catalog_document["catalog_policy"],
+            "model_recommendations": model_recommendations(catalog, inventories, snapshot),
             "defaults": defaults,
             "active_experiment": experiments.active(),
             "jobs": experiments.jobs(),
@@ -1855,25 +1967,15 @@ class DashboardFacade:
     async def models(self) -> Dict[str, Any]:
         inventories = await asyncio.to_thread(collect_worker_model_inventories)
         catalog = read_model_catalog()
-        status_by_name = {item.get("name"): item for item in status_monitor.snapshot()}
-        recommendations: Dict[str, List[Dict[str, Any]]] = {}
-        for node in read_enabled_nodes():
-            if node.role != "worker":
-                continue
-            profile = (status_by_name.get(node.name) or {}).get("profile") or {}
-            recommendations[node.name] = [
-                item.to_dict()
-                for item in recommend_models(
-                    catalog,
-                    platform=str(profile.get("platform_kind") or node.platform),
-                    memory_total_mb=profile.get("memory_total_mb"),
-                )
-            ]
+        catalog_document = read_model_catalog_document()
+        recommendations = model_recommendations(catalog, inventories, status_monitor.snapshot())
         return {
             "models": aggregate_catalog(inventories, catalog),
             "inventories": [item.to_dict() for item in inventories],
             "catalog": [item.to_dict() for item in catalog],
             "recommendations": recommendations,
+            "starter_packs": catalog_document["starter_packs"],
+            "catalog_policy": catalog_document["catalog_policy"],
         }
 
     def refresh_status(self) -> Dict[str, Any]:
@@ -2095,6 +2197,16 @@ class DashboardFacade:
                 rpc_coordinator_node=payload.rpc_coordinator_node,
                 catalog=catalog,
             )
+            validate_catalog_execution_preflight(
+                nodes=selected_nodes,
+                live_status=status_by_name,
+                inventories={item.node: item for item in inventories},
+                catalog=catalog,
+                model_ids=payload.model_ids,
+                n_ctx=payload.n_ctx,
+                execution_strategy=payload.execution_strategy,
+                rpc_coordinator_node=payload.rpc_coordinator_node,
+            )
             definition = save_experiment_definition(payload)
             active = experiments.start(payload.model_copy(update={"experiment_id": definition["experiment_id"]}))
         except ClusterError as exc:
@@ -2156,9 +2268,9 @@ COMPATIBILITY_EXPORTS = (
     "MODEL_CATALOG_CACHE_PATH", "MODEL_CATALOG_PATH", "Node", "NodePayload", "PROJECT_LAYOUT", "PROJECT_ROOT", "RESULTS_DIR",
     "RUNTIME_DIR", "SETTINGS_PATH", "StatusMonitor", "_environment_placeholder",
     "_node_environment_fingerprint", "_suite_document", "_suite_model_records", "actions", "collect_worker_model_inventories", "ensure_runtime",
-    "events", "experiments", "list_models", "normalize_environment_report", "probe_candidate",
-    "read_all_nodes", "read_enabled_nodes", "read_environment_reports", "read_model_catalog",
+    "events", "experiments", "list_models", "model_recommendations", "normalize_environment_report", "probe_candidate",
+    "read_all_nodes", "read_enabled_nodes", "read_environment_reports", "read_model_catalog", "read_model_catalog_document",
     "read_run_summaries", "read_settings", "read_suite_summaries", "reconcile_interrupted_suites",
-    "serialize_node", "status_monitor", "utc_now", "validate_experiment_environment",
+    "serialize_node", "status_monitor", "utc_now", "validate_catalog_execution_preflight", "validate_experiment_environment",
     "write_all_nodes", "write_environment_report", "write_suite_summary",
 )

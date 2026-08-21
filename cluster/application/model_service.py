@@ -46,6 +46,11 @@ def parse_worker_inventory(node: str, raw_models: Iterable[Mapping[str, Any]]) -
                         if isinstance(raw.get("checksum_valid"), bool)
                         else False
                     ),
+                    source_revision=str(raw.get("source_revision") or ""),
+                    architecture=str(raw.get("architecture") or ""),
+                    chat_template_hash=str(raw.get("chat_template_hash") or ""),
+                    license_accepted=raw.get("license_accepted") is True,
+                    metadata_inspected=raw.get("metadata_inspected") is True,
                 )
             )
         except (TypeError, ValueError):
@@ -72,14 +77,16 @@ def aggregate_catalog(
                     "quantization": model.quantization,
                     "installed_nodes": [],
                     "checksums": {},
+                    "inventories": {},
                 },
             )
             item["installed_nodes"].append(inventory.node)
             item["checksums"][inventory.node] = model.sha256
+            item["inventories"][inventory.node] = model.to_dict()
     result: list[dict[str, Any]] = []
     for model_id in sorted(set(catalog_by_id).union(observed)):
         entry = catalog_by_id.get(model_id)
-        item = dict(observed.get(model_id) or {"id": model_id, "filename": model_id.rsplit("/", 1)[-1], "size_bytes": 0, "size_gb": 0.0, "quantization": None, "installed_nodes": [], "checksums": {}})
+        item = dict(observed.get(model_id) or {"id": model_id, "filename": model_id.rsplit("/", 1)[-1], "size_bytes": 0, "size_gb": 0.0, "quantization": None, "installed_nodes": [], "checksums": {}, "inventories": {}})
         if entry is not None:
             item["catalog"] = entry.to_dict()
             item["quantization"] = item.get("quantization") or entry.quantization
@@ -127,7 +134,8 @@ def validate_model_preflight(
                     model_id=model_id,
                     evidence={"installed_model_ids": sorted(installed)},
                 )
-            expected = catalog.get(model_id).sha256 if model_id in catalog else ""
+            catalog_entry = catalog.get(model_id)
+            expected = catalog_entry.sha256 if catalog_entry else ""
             if not model.checksum_valid or (expected and model.sha256 != expected):
                 raise ModelPreflightError(
                     f"{node_name}: model checksum is invalid: {model_id}",
@@ -137,6 +145,45 @@ def validate_model_preflight(
                     model_id=model_id,
                     evidence={"expected_sha256": expected or None, "actual_sha256": model.sha256},
                 )
+            if catalog_entry is not None:
+                if catalog_entry.quantization and model.quantization != catalog_entry.quantization:
+                    raise ModelPreflightError(
+                        f"{node_name}: model quantization differs from catalog: {model_id}",
+                        code=ErrorCode.CONFIG_MISMATCH,
+                        stage="model_preflight",
+                        node=node_name,
+                        model_id=model_id,
+                        evidence={"expected_quantization": catalog_entry.quantization, "actual_quantization": model.quantization},
+                    )
+                if catalog_entry.identity_locked:
+                    if model.source_revision != catalog_entry.hf_revision:
+                        raise ModelPreflightError(
+                            f"{node_name}: model revision differs from catalog: {model_id}",
+                            code=ErrorCode.CONFIG_MISMATCH,
+                            stage="model_preflight",
+                            node=node_name,
+                            model_id=model_id,
+                            evidence={"expected_revision": catalog_entry.hf_revision, "actual_revision": model.source_revision or None},
+                        )
+                    if catalog_entry.architecture and model.architecture and model.architecture != catalog_entry.architecture:
+                        raise ModelPreflightError(
+                            f"{node_name}: model architecture differs from catalog: {model_id}",
+                            code=ErrorCode.BACKEND_MISMATCH,
+                            stage="model_preflight",
+                            node=node_name,
+                            model_id=model_id,
+                            evidence={"expected_architecture": catalog_entry.architecture, "actual_architecture": model.architecture},
+                        )
+                    if catalog_entry.requires_license_acceptance and not model.license_accepted:
+                        raise ModelPreflightError(
+                            f"{node_name}: model license/access has not been accepted: {model_id}",
+                            code=ErrorCode.CONFIG_MISMATCH,
+                            stage="model_preflight",
+                            node=node_name,
+                            model_id=model_id,
+                            evidence={"license": catalog_entry.license, "gated": catalog_entry.gated},
+                            solutions=("Model Library에서 라이선스·접근 조건을 확인한 뒤 고정된 source metadata로 설치하세요.",),
+                        )
             previous = observed_checksums.get(model_id)
             if previous is not None and previous != model.sha256:
                 raise ModelPreflightError(

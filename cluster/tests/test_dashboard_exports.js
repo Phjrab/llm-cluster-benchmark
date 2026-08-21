@@ -42,7 +42,13 @@ assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("complet
 assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("cancelled").icon`, context), "−");
 assert.equal(vm.runInContext(`ClusterDashboard.terminals.limit`, context), 200);
 assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.recordProgress`, context), "function");
+assert.equal(vm.runInContext(`typeof ClusterDashboard.setSelectedModels`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.power.normalizeIntegrity`, context), "function");
+const modelsSource = fs.readFileSync(path.join(dashboardRoot, "static/js/models.js"), "utf8");
+assert.match(modelsSource, /modelStarterPacks/);
+assert.match(modelsSource, /RECOMMENDED/);
+assert.match(modelsSource, /GGUF source 확인 필요/);
+assert.match(template, /id="modelStarterPacks"/);
 assert.match(appSource, /return state\.nodes\.filter\(node => node\.role === "worker"\)/);
 assert.match(appSource, /telemetryDegraded/);
 assert.match(appSource, /channel === "experiment"/);

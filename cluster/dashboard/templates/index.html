@@ -144,6 +144,7 @@
         </div>
         <p class="section-intro">카탈로그 정보와 각 워커의 실제 GGUF 설치 상태를 함께 표시합니다. 설치·동기화는 실험 시간에 포함되지 않으며, 선택한 워커에만 실행됩니다.</p>
         <div class="model-library-summary" id="modelLibrarySummary" aria-live="polite"><span>모델 인벤토리 불러오는 중</span></div>
+        <div class="model-starter-packs" id="modelStarterPacks" aria-label="권장 모델 묶음"></div>
         <div class="model-library-grid" id="modelLibrary" aria-live="polite"><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
       </section>
 
@@ -257,7 +258,7 @@
               <div class="field"><label for="requestsInput">총 요청</label><input id="requestsInput" name="requests" type="number" min="1" max="10000" value="20"></div>
               <div class="field"><label for="concurrencyInput">동시성</label><input id="concurrencyInput" name="concurrency" type="number" min="1" max="256" value="4"></div>
               <div class="field"><label for="maxTokensInput">생성 토큰</label><input id="maxTokensInput" name="max_tokens" type="number" min="1" max="1024" value="128"></div>
-              <div class="field"><label for="contextInput">컨텍스트</label><input id="contextInput" name="n_ctx" type="number" min="128" max="4096" step="128" value="1024"></div>
+              <div class="field"><label for="contextInput">컨텍스트</label><input id="contextInput" name="n_ctx" type="number" min="128" max="16384" step="128" value="4096"><small>기본 4096 · 8192/16384은 Worker 메모리 preflight 통과 시에만 사용</small></div>
               <div class="field"><label for="layersInput">GPU 레이어</label><input id="layersInput" name="n_gpu_layers" type="number" min="0" max="120" value="30"></div>
               <div class="field"><label for="warmupInput">워밍업/노드</label><input id="warmupInput" name="warmup_requests" type="number" min="0" max="10" value="1"></div>
               <div class="field range-field"><label for="temperatureInput">Temperature <output id="temperatureValue">0.0</output></label><input id="temperatureInput" name="temperature" type="range" min="0" max="2" step="0.1" value="0"></div>

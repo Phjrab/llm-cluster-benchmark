@@ -84,7 +84,17 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertEqual(health.status_code, 200)
             self.assertFalse(health.json()["inference_enabled"])
             self.assertEqual(models.status_code, 200)
-            self.assertEqual(set(models.json()), {"models", "inventories", "catalog", "recommendations"})
+            self.assertEqual(
+                set(models.json()),
+                {
+                    "models",
+                    "inventories",
+                    "catalog",
+                    "recommendations",
+                    "starter_packs",
+                    "catalog_policy",
+                },
+            )
             self.assertEqual(index.headers["cache-control"], "no-store")
 
     def test_structured_failure_and_raw_run_response_are_exposed(self) -> None:

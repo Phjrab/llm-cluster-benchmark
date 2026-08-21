@@ -34,7 +34,7 @@ class ExperimentConfig:
     name: str = "cluster-load-test"
     node_names: List[str] = field(default_factory=list)
     model_id: str = "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
-    n_ctx: int = 1024
+    n_ctx: int = 4096
     n_gpu_layers: int = 30
     requests: int = 20
     concurrency: int = 4
@@ -84,8 +84,8 @@ class ExperimentConfig:
             or not 1 <= self.model_index <= self.model_count
         ):
             raise DomainValidationError("model_index must be between 1 and model_count")
-        if not _is_integer(self.n_ctx) or not 128 <= self.n_ctx <= 4096:
-            raise DomainValidationError("n_ctx must be between 128 and 4096")
+        if not _is_integer(self.n_ctx) or not 128 <= self.n_ctx <= 16384:
+            raise DomainValidationError("n_ctx must be between 128 and 16384")
         if not _is_integer(self.n_gpu_layers) or not 0 <= self.n_gpu_layers <= 120:
             raise DomainValidationError("n_gpu_layers must be between 0 and 120")
         if not _is_integer(self.requests) or not 1 <= self.requests <= 10_000:

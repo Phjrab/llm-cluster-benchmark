@@ -352,7 +352,7 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertTrue(is_dataclass(config))
         self.assertEqual(config.name, "cluster-load-test")
         self.assertEqual(config.model_id, DEFAULT_MODEL_ID)
-        self.assertEqual(config.n_ctx, 1024)
+        self.assertEqual(config.n_ctx, 4096)
         self.assertEqual(config.n_gpu_layers, 30)
         self.assertEqual(config.requests, 20)
         self.assertEqual(config.concurrency, 4)
@@ -399,7 +399,7 @@ class ExperimentConfigTests(unittest.TestCase):
             request_timeout_s=0.001,
         )
         maximum = self.make_config(
-            n_ctx=4096,
+            n_ctx=16_384,
             n_gpu_layers=120,
             requests=10_000,
             concurrency=256,
@@ -415,7 +415,7 @@ class ExperimentConfigTests(unittest.TestCase):
     def test_numeric_limits_reject_out_of_range_or_non_finite_values(self) -> None:
         invalid_cases = (
             {"n_ctx": 127},
-            {"n_ctx": 4097},
+            {"n_ctx": 16_385},
             {"n_gpu_layers": -1},
             {"n_gpu_layers": 121},
             {"requests": 0},

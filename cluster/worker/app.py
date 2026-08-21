@@ -8,6 +8,7 @@ without a native llama.cpp installation.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
 import secrets
@@ -77,12 +78,14 @@ def runtime_backend() -> Dict[str, Any]:
                         break
             except (OSError, subprocess.SubprocessError):
                 pass
+        normalized_info = " ".join(info.split())[:1000]
         return {
             "verified": True,
             "kind": kind,
             "gpu_offload": supports_gpu,
             "llama_cpp_python": getattr(llama_package, "__version__", "unknown"),
-            "system_info": " ".join(info.split())[:1000],
+            "system_info": normalized_info,
+            "runtime_fingerprint": hashlib.sha256(normalized_info.encode("utf-8")).hexdigest()[:16],
         }
     except Exception as exc:  # Native runtime is optional for import/test only.
         return {"verified": False, "kind": "unknown", "gpu_offload": False, "error": str(exc)}
@@ -100,6 +103,15 @@ def _os_release() -> Dict[str, str]:
 def system_profile(project_root: Path, platform_kind: str, backend: Dict[str, Any]) -> Dict[str, Any]:
     release = _os_release()
     memory = psutil.virtual_memory()
+    try:
+        swap = psutil.swap_memory()
+        swap_total_mb = round(swap.total / (1024 * 1024), 2)
+        swap_free_mb = round(swap.free / (1024 * 1024), 2)
+    except OSError:
+        # Some restricted macOS test/container environments cannot query VM
+        # swap. This is observational metadata, never an inference gate.
+        swap_total_mb = None
+        swap_free_mb = None
     cpu_model = ""
     for line in read_text("/proc/cpuinfo").splitlines():
         if line.lower().startswith(("model name", "hardware")) and ":" in line:
@@ -128,6 +140,9 @@ def system_profile(project_root: Path, platform_kind: str, backend: Dict[str, An
         "cpu_cores_physical": psutil.cpu_count(logical=False),
         "inference_threads": int(os.getenv("LLM_N_THREADS", str(min(6, psutil.cpu_count(logical=True) or 1)))),
         "memory_total_mb": round(memory.total / (1024 * 1024), 2),
+        "memory_available_mb": round(memory.available / (1024 * 1024), 2),
+        "swap_total_mb": swap_total_mb,
+        "swap_free_mb": swap_free_mb,
         "accelerator": backend["kind"],
         "runtime_backend": backend,
         "l4t": l4t[0] if l4t else "",
