@@ -11,6 +11,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -131,6 +132,46 @@ class DashboardBackendTests(unittest.TestCase):
                 with TestClient(dashboard.app):
                     pass
             startup.assert_called_once()
+
+    def test_network_scan_uses_cross_platform_interface_inventory(self) -> None:
+        """macOS Controllers do not provide Linux's ``ip`` command."""
+        from cluster.dashboard import services
+
+        interfaces = {
+            "en0": [
+                SimpleNamespace(
+                    family=services.socket.AF_INET,
+                    address="192.168.0.3",
+                    netmask="255.255.255.0",
+                )
+            ],
+            "lo0": [
+                SimpleNamespace(
+                    family=services.socket.AF_INET,
+                    address="127.0.0.1",
+                    netmask="255.0.0.0",
+                )
+            ],
+            "docker0": [
+                SimpleNamespace(
+                    family=services.socket.AF_INET,
+                    address="192.168.99.1",
+                    netmask="255.255.255.0",
+                )
+            ],
+        }
+        stats = {
+            "en0": SimpleNamespace(isup=True),
+            "lo0": SimpleNamespace(isup=True),
+            "docker0": SimpleNamespace(isup=True),
+        }
+        with mock.patch.object(services.psutil, "net_if_addrs", return_value=interfaces), mock.patch.object(
+            services.psutil, "net_if_stats", return_value=stats
+        ):
+            self.assertEqual(
+                services._private_scan_networks(),
+                [{"interface": "en0", "local_ip": "192.168.0.3", "network": "192.168.0.0/24"}],
+            )
 
 
 if __name__ == "__main__":

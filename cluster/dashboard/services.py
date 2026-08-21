@@ -28,6 +28,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Sequence
 
+import psutil
+
 from cluster.dashboard.schemas import ActionPayload, ExperimentPayload, NodePayload
 
 from cluster.application.jobs import JobService, NONTERMINAL_JOB_STATES
@@ -694,17 +696,6 @@ def probe_node(node: Node) -> Dict[str, Any]:
 
 
 def _private_scan_networks() -> List[Dict[str, str]]:
-    try:
-        process = subprocess.run(
-            ["ip", "-j", "-4", "addr", "show", "up", "scope", "global"],
-            text=True,
-            capture_output=True,
-            timeout=5,
-            check=True,
-        )
-        interfaces = json.loads(process.stdout)
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return []
     allowed = (
         ipaddress.ip_network("10.0.0.0/8"),
         ipaddress.ip_network("172.16.0.0/12"),
@@ -712,19 +703,31 @@ def _private_scan_networks() -> List[Dict[str, str]]:
     )
     found: List[Dict[str, str]] = []
     seen = set()
-    for interface in interfaces:
-        interface_name = str(interface.get("ifname", ""))
+    try:
+        interfaces = psutil.net_if_addrs()
+        interface_stats = psutil.net_if_stats()
+    except (OSError, ValueError):
+        return found
+    for interface_name, addresses in interfaces.items():
+        if not interface_stats.get(interface_name, None) or not interface_stats[interface_name].isup:
+            continue
         if interface_name.startswith(("docker", "br-", "veth", "virbr", "tailscale")):
             continue
-        for info in interface.get("addr_info", []):
-            raw = info.get("local", "")
+        for info in addresses:
+            if info.family != socket.AF_INET:
+                continue
+            raw = info.address
             try:
                 address = ipaddress.ip_address(raw)
             except ValueError:
                 continue
             if address.version != 4 or not any(address in network for network in allowed):
                 continue
-            prefix = max(int(info.get("prefixlen", 24)), 24)
+            try:
+                prefix = ipaddress.ip_network(f"{address}/{info.netmask}", strict=False).prefixlen
+            except ValueError:
+                continue
+            prefix = max(prefix, 24)
             network = ipaddress.ip_network(f"{address}/{prefix}", strict=False)
             key = str(network)
             if key not in seen:
