@@ -8,9 +8,9 @@ experiment-admission failure.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, Tuple
+from typing import Dict, Mapping, Tuple
 
 
 CURRENT_UNDERVOLTAGE = 1 << 0
@@ -41,7 +41,7 @@ class PowerIntegrityStatus(str, Enum):
 
 
 class MeasurementQuality(str, Enum):
-    """Run-level type reserved for Follow-up 02 aggregation."""
+    """Power-related measurement context, independent from run status."""
 
     CLEAN = "clean"
     WARNING = "warning"
@@ -53,6 +53,7 @@ class MeasurementQuality(str, Enum):
 
 
 class PowerWarningCode(str, Enum):
+    PI_POWER_HISTORY = "PI_POWER_HISTORY"
     PI_UNDERVOLTAGE_HISTORY = "PI_UNDERVOLTAGE_HISTORY"
     PI_FREQUENCY_CAPPED_HISTORY = "PI_FREQUENCY_CAPPED_HISTORY"
     PI_THROTTLING_HISTORY = "PI_THROTTLING_HISTORY"
@@ -63,6 +64,19 @@ class PowerWarningCode(str, Enum):
     PI_SOFT_TEMP_LIMIT_ACTIVE = "PI_SOFT_TEMP_LIMIT_ACTIVE"
     PI_POWER_UNKNOWN_BITS = "PI_POWER_UNKNOWN_BITS"
     PI_POWER_STATUS_UNAVAILABLE = "PI_POWER_STATUS_UNAVAILABLE"
+    PI_POWER_OBSERVATION_INCOMPLETE = "PI_POWER_OBSERVATION_INCOMPLETE"
+    PI_UNDERVOLTAGE_HISTORY_APPEARED_DURING_RUN = (
+        "PI_UNDERVOLTAGE_HISTORY_APPEARED_DURING_RUN"
+    )
+    PI_FREQUENCY_CAPPED_HISTORY_APPEARED_DURING_RUN = (
+        "PI_FREQUENCY_CAPPED_HISTORY_APPEARED_DURING_RUN"
+    )
+    PI_THROTTLING_HISTORY_APPEARED_DURING_RUN = (
+        "PI_THROTTLING_HISTORY_APPEARED_DURING_RUN"
+    )
+    PI_SOFT_TEMP_LIMIT_HISTORY_APPEARED_DURING_RUN = (
+        "PI_SOFT_TEMP_LIMIT_HISTORY_APPEARED_DURING_RUN"
+    )
 
     def __str__(self) -> str:
         return self.value
@@ -117,6 +131,32 @@ class RaspberryPiPowerIntegrity:
             "observed_at": self.observed_at,
             "message": self.message,
             "unknown_bits": self.unknown_bits,
+        }
+
+
+@dataclass(frozen=True)
+class WarningRecord:
+    """Non-blocking experiment warning, deliberately separate from failures."""
+
+    code: PowerWarningCode
+    stage: str
+    node: str | None
+    message: str
+    blocking: bool = False
+    evidence: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.blocking:
+            object.__setattr__(self, "blocking", False)
+
+    def to_dict(self) -> Dict[str, object]:
+        return {
+            "code": self.code.value,
+            "stage": self.stage,
+            "node": self.node,
+            "message": self.message,
+            "blocking": False,
+            "evidence": dict(self.evidence),
         }
 
 
@@ -225,11 +265,104 @@ def unavailable_power_integrity(
     )
 
 
+def normalize_power_integrity_snapshot(
+    raw: object, *, observed_at: str
+) -> RaspberryPiPowerIntegrity:
+    """Canonicalize an additive Worker payload without trusting its classification."""
+    if not isinstance(raw, Mapping):
+        return unavailable_power_integrity(observed_at=observed_at)
+    raw_observed_at = raw.get("observed_at")
+    timestamp = (
+        raw_observed_at.strip()
+        if isinstance(raw_observed_at, str) and raw_observed_at.strip()
+        else observed_at
+    )
+    if raw.get("available") is False or raw.get("status") == PowerIntegrityStatus.UNAVAILABLE.value:
+        return unavailable_power_integrity(observed_at=timestamp)
+    value = raw.get("raw_value")
+    if isinstance(value, bool) or not isinstance(value, int):
+        raw_hex = raw.get("raw_hex")
+        if not isinstance(raw_hex, str):
+            return unavailable_power_integrity(observed_at=timestamp)
+        try:
+            value = parse_get_throttled_output(raw_hex)
+        except ValueError:
+            return unavailable_power_integrity(observed_at=timestamp)
+    try:
+        return decode_throttled_mask(value, observed_at=timestamp)
+    except ValueError:
+        return unavailable_power_integrity(observed_at=timestamp)
+
+
+def power_semantic_signature(snapshot: RaspberryPiPowerIntegrity) -> Tuple[object, ...]:
+    """Stable transition key; unknown-bit changes are intentionally significant."""
+    return (
+        snapshot.available,
+        snapshot.status.value,
+        tuple(snapshot.current.to_dict().values()),
+        tuple(snapshot.history.to_dict().values()),
+        tuple(code.value for code in snapshot.reason_codes),
+        snapshot.unknown_bits,
+    )
+
+
+def power_warning_records(
+    node: str, snapshot: RaspberryPiPowerIntegrity, *, stage: str
+) -> Tuple[WarningRecord, ...]:
+    """Map one observation to deterministic, deduplicated non-blocking warnings."""
+    evidence: Dict[str, object] = {
+        "status": snapshot.status.value,
+        "raw_hex": snapshot.raw_hex,
+        "current": snapshot.current.to_dict(),
+        "history": snapshot.history.to_dict(),
+        "observed_at": snapshot.observed_at,
+    }
+    if snapshot.status is PowerIntegrityStatus.OK:
+        return ()
+    if snapshot.status is PowerIntegrityStatus.UNAVAILABLE:
+        return (
+            WarningRecord(
+                PowerWarningCode.PI_POWER_STATUS_UNAVAILABLE,
+                stage,
+                node,
+                "Raspberry Pi power status is unavailable; the experiment may continue.",
+                evidence=evidence,
+            ),
+        )
+    if snapshot.status is PowerIntegrityStatus.HISTORY_WARNING:
+        code = (
+            PowerWarningCode.PI_POWER_UNKNOWN_BITS
+            if snapshot.unknown_bits and not any(snapshot.history.to_dict().values())
+            else PowerWarningCode.PI_POWER_HISTORY
+        )
+        return (
+            WarningRecord(
+                code,
+                stage,
+                node,
+                "Historical Raspberry Pi power or thermal conditions were detected.",
+                evidence=evidence,
+            ),
+        )
+    messages = {
+        PowerWarningCode.PI_UNDERVOLTAGE_ACTIVE: "Active Raspberry Pi undervoltage detected.",
+        PowerWarningCode.PI_FREQUENCY_CAPPED_ACTIVE: "Active Raspberry Pi frequency capping detected.",
+        PowerWarningCode.PI_THROTTLING_ACTIVE: "Active Raspberry Pi throttling detected.",
+        PowerWarningCode.PI_SOFT_TEMP_LIMIT_ACTIVE: "Active Raspberry Pi soft temperature limit detected.",
+    }
+    return tuple(
+        WarningRecord(code, stage, node, messages[code], evidence=evidence)
+        for code in snapshot.reason_codes
+        if code in messages
+    )
+
+
 __all__ = [
     "CURRENT_FREQUENCY_CAPPED", "CURRENT_SOFT_TEMP_LIMIT", "CURRENT_THROTTLED",
     "CURRENT_UNDERVOLTAGE", "HISTORY_FREQUENCY_CAPPED", "HISTORY_SOFT_TEMP_LIMIT",
     "HISTORY_THROTTLED", "HISTORY_UNDERVOLTAGE", "KNOWN_MASK", "MeasurementQuality",
-    "PowerConditionBits", "PowerIntegrityStatus", "PowerWarningCode",
+    "PowerConditionBits", "PowerIntegrityStatus", "PowerWarningCode", "WarningRecord",
     "RaspberryPiPowerIntegrity", "decode_get_throttled", "decode_throttled_mask",
-    "parse_get_throttled_output", "unavailable_power_integrity",
+    "normalize_power_integrity_snapshot", "parse_get_throttled_output",
+    "power_semantic_signature", "power_warning_records", "unavailable_power_integrity",
 ]

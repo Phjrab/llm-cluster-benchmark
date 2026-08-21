@@ -48,6 +48,7 @@ class RunPersistence:
             "channel": EventChannel.EXPERIMENT.value,
             "run_id": self.run_id,
             "suite_id": self.config.suite_id,
+            "experiment_id": self.config.experiment_id,
             "model_id": self.config.model_id,
             "model_index": self.config.model_index,
             "model_count": self.config.model_count,

@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from cluster.domain.experiment import ExperimentConfig
 from cluster.domain.events import EventChannel
+from cluster.benchmark.power import suite_measurement_quality
 from cluster.infrastructure.storage import FilesystemSuiteRepository, SuiteRepository
 
 
@@ -125,6 +126,7 @@ def suite_document(
     document["models"] = suite_model_records(
         model_ids, summaries, errors, attempted_models, status, cleanup_statuses
     )
+    document.update(suite_measurement_quality(summaries))
     return document
 
 

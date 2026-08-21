@@ -18,6 +18,11 @@ from cluster.clusterctl import (
     worker_auth_enabled,
 )
 from cluster.domain.experiment import ExperimentConfig, normalize_model_ids, validate_model_id
+from cluster.domain.power import (
+    RaspberryPiPowerIntegrity,
+    normalize_power_integrity_snapshot,
+    unavailable_power_integrity,
+)
 from cluster.domain.strategy import EXECUTION_STRATEGIES
 from cluster.integrations.runtime_layout import default_project_layout, resolve_runtime_paths
 
@@ -76,6 +81,28 @@ def _load_model(node: Node, config: ExperimentConfig) -> Dict[str, Any]:
         "runtime_backend": (profile.get("runtime_backend") or {}).get("kind"),
         "inference_threads": profile.get("inference_threads"),
     }
+
+
+def _sample_power_integrity(node: Node) -> Optional[RaspberryPiPowerIntegrity]:
+    """Read optional Pi power evidence; never turn a probe failure into run failure."""
+    if node.platform not in {"auto", "raspberry-pi"}:
+        return None
+    try:
+        health = request_json(f"{node.api_url}/cluster/health", timeout=4.0)
+    except Exception:
+        return (
+            unavailable_power_integrity(observed_at=utc_now())
+            if node.platform == "raspberry-pi"
+            else None
+        )
+    platform = str(
+        (health.get("profile") or {}).get("platform_kind") or node.platform
+    )
+    if platform != "raspberry-pi":
+        return None
+    return normalize_power_integrity_snapshot(
+        health.get("power_integrity"), observed_at=utc_now()
+    )
 
 
 def _validate_uniform(loaded: Sequence[Dict[str, Any]], config: ExperimentConfig) -> List[str]:
@@ -193,7 +220,12 @@ def run_experiment(
     nodes = [selected_by_name[name] for name in config.node_names]
     executor = ScenarioExecutor(_worker_stream_adapter, _stream_rpc_request)
     runner = BenchmarkRunner(
-        _load_model, _validate_uniform, validate_platform_layers, executor, _rpc_backend()
+        _load_model,
+        _validate_uniform,
+        validate_platform_layers,
+        executor,
+        _rpc_backend(),
+        _sample_power_integrity,
     )
     return runner.run(config, nodes, results_root, progress, cancel_event)
 

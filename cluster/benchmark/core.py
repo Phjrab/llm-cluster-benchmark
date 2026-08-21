@@ -15,11 +15,13 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 from cluster.domain.experiment import ExperimentConfig
 from cluster.domain.failures import failure_from_exception
 from cluster.domain.errors import ErrorCode
+from cluster.domain.power import RaspberryPiPowerIntegrity, unavailable_power_integrity
 
 from .executor import ScenarioExecutor
 from .metrics import add_cumulative_scaling, aggregate_records
 from .persistence import ProgressCallback, RunPersistence
 from .planner import build_strategy_scenarios, validate_strategy
+from .power import RunPowerIntegrityTracker
 from .rpc import RpcBackend, RpcSession
 from .strategies import get_strategy
 from .transport import utc_now
@@ -27,6 +29,7 @@ from .transport import utc_now
 LoadModel = Callable[[Any, ExperimentConfig], Dict[str, Any]]
 ValidatePlatform = Callable[[Sequence[Any], ExperimentConfig], None]
 ValidateUniform = Callable[[Sequence[Dict[str, Any]], ExperimentConfig], List[str]]
+PowerSnapshot = Callable[[Any], Optional[RaspberryPiPowerIntegrity]]
 
 
 def benchmark_parameters(config: ExperimentConfig) -> Dict[str, Any]:
@@ -58,12 +61,48 @@ class BenchmarkRunner:
         validate_platform: ValidatePlatform,
         executor: ScenarioExecutor,
         rpc_backend: RpcBackend,
+        sample_power: Optional[PowerSnapshot] = None,
     ) -> None:
         self.load_model = load_model
         self.validate_uniform = validate_uniform
         self.validate_platform = validate_platform
         self.executor = executor
         self.rpc_backend = rpc_backend
+        self.sample_power = sample_power
+
+    def _observe_power(
+        self,
+        tracker: RunPowerIntegrityTracker,
+        nodes: Sequence[Any],
+        stage: str,
+    ) -> None:
+        if self.sample_power is None or not nodes:
+            return
+        snapshots: Dict[str, Optional[RaspberryPiPowerIntegrity]] = {}
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=min(8, len(nodes))
+        ) as pool:
+            futures = {pool.submit(self.sample_power, node): node for node in nodes}
+            for future in concurrent.futures.as_completed(futures):
+                node = futures[future]
+                try:
+                    snapshots[node.name] = future.result()
+                except Exception:
+                    snapshots[node.name] = (
+                        unavailable_power_integrity(observed_at=utc_now())
+                        if getattr(node, "platform", "") == "raspberry-pi"
+                        else None
+                    )
+        recorder = {
+            "preflight": tracker.record_preflight,
+            "pre_measurement": tracker.record_pre_measurement,
+            "measurement": tracker.record_measurement_sample,
+            "postflight": tracker.record_postflight,
+        }[stage]
+        for node in nodes:
+            snapshot = snapshots.get(node.name)
+            if snapshot is not None:
+                recorder(node.name, snapshot)
 
     def run(
         self,
@@ -97,7 +136,11 @@ class BenchmarkRunner:
         warnings: List[str] = []
         rpc_session: Optional[RpcSession] = None
         topology: Dict[str, Any] = {}
+        power = RunPowerIntegrityTracker(persistence.emit)
+        postflight_recorded = False
         try:
+            self._observe_power(power, nodes, "preflight")
+            warnings.extend(power.human_warning_messages())
             if strategy.execution_backend == "rpc":
                 persistence.emit(
                     "phase", phase="rpc_preflight",
@@ -151,10 +194,12 @@ class BenchmarkRunner:
                             raise RuntimeError(
                                 f"Failed to load model on {node.name}: {exc}"
                             ) from exc
-                warnings.extend(self.validate_uniform(loaded, config))
-                if warnings and config.require_uniform_config:
+                uniform_warnings = self.validate_uniform(loaded, config)
+                warnings.extend(uniform_warnings)
+                if uniform_warnings and config.require_uniform_config:
                     raise RuntimeError(
-                        "Uniform configuration check failed: " + "; ".join(warnings)
+                        "Uniform configuration check failed: "
+                        + "; ".join(uniform_warnings)
                     )
 
             for warning in warnings:
@@ -174,10 +219,16 @@ class BenchmarkRunner:
             if cancel_event.is_set():
                 raise RuntimeError("Experiment cancelled before measurement")
 
+            self._observe_power(power, nodes, "pre_measurement")
+
             persistence.emit(
                 "phase", phase="measurement",
                 message="선택한 실험 전략으로 부하를 측정하는 중",
             )
+            # One out-of-timing-band measurement-boundary sample provides a
+            # measurement observation without changing request scheduling or
+            # including health polling latency in benchmark wall time.
+            self._observe_power(power, nodes, "measurement")
             records: List[Dict[str, Any]] = []
             scenario_summaries: List[Dict[str, Any]] = []
             wall_started = time.perf_counter()
@@ -229,6 +280,12 @@ class BenchmarkRunner:
                 rpc_session.close()
                 rpc_session = None
 
+            self._observe_power(power, nodes, "postflight")
+            postflight_recorded = True
+            for warning in power.human_warning_messages():
+                if warning not in warnings:
+                    warnings.append(warning)
+
             summary.update({
                 "schema_version": 2,
                 "run_id": run_id,
@@ -251,10 +308,28 @@ class BenchmarkRunner:
                 "topology": topology,
                 "result_dir": str(persistence.run_dir),
             })
+            if power.has_observations:
+                power_summary = power.summarize()
+                summary.update({
+                    "measurement_quality": power_summary["overall"]["quality"],
+                    "measurement_quality_reasons": power_summary["overall"]["reason_codes"],
+                    "power_integrity": power_summary,
+                })
+                persistence.emit(
+                    "measurement_quality_finalized",
+                    measurement_quality=summary["measurement_quality"],
+                    power_integrity=power_summary,
+                )
             persistence.complete(records, summary)
             persistence.emit("run_finished", summary=summary)
             return summary
         except Exception as exc:
+            if not postflight_recorded:
+                self._observe_power(power, nodes, "postflight")
+                postflight_recorded = True
+            for warning in power.human_warning_messages():
+                if warning not in warnings:
+                    warnings.append(warning)
             cancelled = cancel_event.is_set()
             structured_failure = failure_from_exception(
                 exc,
@@ -278,12 +353,37 @@ class BenchmarkRunner:
                 "actual_model_config": loaded,
                 "benchmark_parameters": benchmark_parameters(config),
                 "topology": topology,
+                "warnings": warnings,
                 "error": str(exc),
                 "error_code": structured_failure.code.value,
                 "failure": structured_failure.to_dict(),
                 "failures": [structured_failure.to_dict()],
                 "result_dir": str(persistence.run_dir),
             }
+            if power.has_observations:
+                power_summary = power.summarize()
+                failure.update({
+                    "measurement_quality": power_summary["overall"]["quality"],
+                    "measurement_quality_reasons": power_summary["overall"]["reason_codes"],
+                    "power_integrity": power_summary,
+                })
+                last_power = {
+                    node: values.get("postflight") or values.get("pre_measurement")
+                    or values.get("preflight")
+                    for node, values in power_summary["nodes"].items()
+                }
+                failure_record = dict(failure["failure"])
+                failure_record["evidence"] = {
+                    **dict(failure_record.get("evidence") or {}),
+                    "last_power_integrity": last_power,
+                }
+                failure["failure"] = failure_record
+                failure["failures"] = [failure_record]
+                persistence.emit(
+                    "measurement_quality_finalized",
+                    measurement_quality=failure["measurement_quality"],
+                    power_integrity=power_summary,
+                )
             persistence.write_summary(failure)
             if cancelled:
                 persistence.emit("run_finished", summary=failure)

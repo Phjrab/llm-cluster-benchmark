@@ -64,6 +64,12 @@ from cluster.integrations.runtime_layout import resolve_runtime_paths
 from cluster.domain.errors import ClusterError, ErrorCode
 from cluster.domain.failures import http_status_for_failure
 from cluster.domain.model import ModelCatalogEntry, recommend_models
+from cluster.domain.power import (
+    normalize_power_integrity_snapshot,
+    power_semantic_signature,
+    power_warning_records,
+    unavailable_power_integrity,
+)
 from cluster.infrastructure.storage import (
     FilesystemEnvironmentReportRepository,
     FilesystemExperimentRepository,
@@ -676,6 +682,28 @@ def validate_experiment_environment(
         raise ValueError("실험 환경 준비가 필요합니다: " + " / ".join(problems))
 
 
+def experiment_power_warnings(
+    nodes: Sequence[Node], live_status: Dict[str, Dict[str, Any]]
+) -> List[Dict[str, object]]:
+    """Return non-blocking, deterministic warning records for accepted jobs."""
+    warnings: List[Dict[str, object]] = []
+    seen = set()
+    for node in nodes:
+        live = live_status.get(node.name) or {}
+        profile = live.get("profile") or {}
+        platform_kind = str(profile.get("platform_kind") or node.platform)
+        raw = live.get("power_integrity")
+        if platform_kind != "raspberry-pi" and not isinstance(raw, dict):
+            continue
+        snapshot = normalize_power_integrity_snapshot(raw, observed_at=utc_now())
+        for warning in power_warning_records(node.name, snapshot, stage="preflight"):
+            key = (node.name, warning.code.value)
+            if key not in seen:
+                seen.add(key)
+                warnings.append(warning.to_dict())
+    return warnings
+
+
 def read_model_catalog() -> List[ModelCatalogEntry]:
     """Read local/cache catalog metadata; no network is required for control plane use."""
     raw_by_id: Dict[str, Dict[str, Any]] = {}
@@ -765,6 +793,11 @@ def probe_node(node: Node) -> Dict[str, Any]:
         result["profile"] = health.get("profile") or {}
         result["capabilities"] = health.get("capabilities") or {}
         result["telemetry_version"] = health.get("telemetry_version")
+        platform_kind = str(result["profile"].get("platform_kind") or node.platform)
+        if platform_kind == "raspberry-pi" or health.get("power_integrity") is not None:
+            result["power_integrity"] = normalize_power_integrity_snapshot(
+                health.get("power_integrity"), observed_at=utc_now()
+            ).to_dict()
         if not result["api"]:
             raise ValueError("worker API identity or telemetry schema mismatch")
         result["ssh"] = True
@@ -774,6 +807,10 @@ def probe_node(node: Node) -> Dict[str, Any]:
         result["ssh"] = discovery["ssh"]
         result["project"] = discovery["project"]
         result["discovery"] = discovery
+        if node.platform == "raspberry-pi" or discovery.get("platform_kind") == "raspberry-pi":
+            result["power_integrity"] = unavailable_power_integrity(
+                observed_at=utc_now()
+            ).to_dict()
         if not discovery["ssh"]:
             result["error"] = "SSH key authentication failed or the host is unreachable"
         elif not discovery["project"]:
@@ -975,6 +1012,8 @@ class StatusMonitor:
         self._snapshot: List[Dict[str, Any]] = []
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._power_signatures: Dict[str, tuple[object, ...]] = {}
+        self._power_statuses: Dict[str, str] = {}
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -994,7 +1033,42 @@ class StatusMonitor:
             with self._lock:
                 changed = snapshot != self._snapshot
                 self._snapshot = snapshot
+                power_changes = []
+                observed_names = set()
+                for item in snapshot:
+                    raw = item.get("power_integrity")
+                    if not isinstance(raw, dict):
+                        continue
+                    node_name = str(item.get("name") or "")
+                    if not node_name:
+                        continue
+                    observed_names.add(node_name)
+                    normalized = normalize_power_integrity_snapshot(
+                        raw, observed_at=utc_now()
+                    )
+                    signature = power_semantic_signature(normalized)
+                    previous_signature = self._power_signatures.get(node_name)
+                    previous_status = self._power_statuses.get(node_name)
+                    if previous_signature != signature:
+                        power_changes.append(
+                            (node_name, previous_status, normalized.to_dict())
+                        )
+                    self._power_signatures[node_name] = signature
+                    self._power_statuses[node_name] = normalized.status.value
+                for stale_name in set(self._power_signatures) - observed_names:
+                    self._power_signatures.pop(stale_name, None)
+                    self._power_statuses.pop(stale_name, None)
             events.publish("cluster_status", channel=EventChannel.SYSTEM, nodes=snapshot, changed=changed)
+            for node_name, previous_status, power_integrity in power_changes:
+                events.publish(
+                    "power_integrity_status",
+                    channel=EventChannel.SYSTEM,
+                    node=node_name,
+                    previous_status=previous_status,
+                    status=power_integrity["status"],
+                    blocking=False,
+                    power_integrity=power_integrity,
+                )
         except Exception as exc:
             events.publish("monitor_error", channel=EventChannel.SYSTEM, message=str(exc))
 
@@ -1979,6 +2053,7 @@ class DashboardFacade:
             status_by_name = {item.get("name"): item for item in status_monitor.snapshot()}
             inventory_by_name = {item.name: item for item in read_all_nodes()}
             selected_nodes = [inventory_by_name[name] for name in payload.node_names if name in inventory_by_name]
+            power_warnings = experiment_power_warnings(selected_nodes, status_by_name)
             readiness_platforms = {item.get("node"): item.get("platform") for item in read_environment_reports()}
             if payload.execution_strategy == "model_parallel_rpc":
                 platform_by_name = {}
@@ -2023,7 +2098,12 @@ class DashboardFacade:
             raise DashboardServiceError(http_status_for_failure(failure), failure.to_dict()) from exc
         except ValueError as exc:
             raise DashboardServiceError(400, str(exc)) from exc
-        return {"ok": True, "experiment": active, "definition": definition}
+        return {
+            "ok": True,
+            "experiment": active,
+            "definition": definition,
+            "warnings": power_warnings,
+        }
 
     def experiments(self) -> Dict[str, Any]:
         return {
