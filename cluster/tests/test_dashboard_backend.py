@@ -173,6 +173,26 @@ class DashboardBackendTests(unittest.TestCase):
                 [{"interface": "en0", "local_ip": "192.168.0.3", "network": "192.168.0.0/24"}],
             )
 
+    def test_reverse_hostname_is_best_effort_and_never_requires_ssh(self) -> None:
+        from cluster.dashboard import services
+
+        with mock.patch.object(
+            services.socket, "gethostbyaddr", return_value=("jetson-orin.local.", [], ["192.168.0.26"])
+        ):
+            self.assertEqual(services._reverse_hostname("192.168.0.26"), "jetson-orin.local")
+        with mock.patch.object(services.socket, "gethostbyaddr", side_effect=services.socket.herror):
+            self.assertEqual(services._reverse_hostname("192.168.0.99"), "")
+
+    def test_registered_worker_hostname_uses_existing_key_authentication(self) -> None:
+        from cluster.clusterctl import Node
+        from cluster.dashboard import services
+
+        node = Node("jetson-worker", "worker", "192.168.0.26", "jetson", 22, 8000, "/opt/cluster", True)
+        result = SimpleNamespace(ok=True, stdout="jetson-orin\n")
+        with mock.patch.object(services, "run_on_node", return_value=result) as hostname:
+            self.assertEqual(services._registered_worker_hostname(node), "jetson-orin")
+        hostname.assert_called_once_with(node, ["hostname"], timeout=5)
+
 
 if __name__ == "__main__":
     unittest.main()

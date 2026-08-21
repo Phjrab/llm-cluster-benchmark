@@ -1954,7 +1954,7 @@ function renderDevices(scan) {
   }
   list.innerHTML = state.devices.map(device => `
     <button type="button" class="device-card ${device.is_head ? "head-device" : ""}" data-device-host="${escapeHtml(device.host)}" ${device.is_head ? "disabled" : ""}>
-      <i></i><span><strong>${escapeHtml(device.known_node || device.host)}</strong><small>${escapeHtml(device.host)} · SSH ${device.ssh_port}${device.is_head ? " · CONTROLLER" : device.known_node ? " · 등록됨" : " · 새 기기"}</small><code>${escapeHtml(device.fingerprint || "fingerprint 확인 불가")}</code></span><b>선택</b>
+      <i></i><span><strong>${escapeHtml(device.known_node || device.hostname || device.host)}</strong><small>${escapeHtml(device.host)} · 호스트명 ${escapeHtml(device.hostname || "미확인")}${device.hostname_source === "ssh" ? " · SSH 확인" : ""} · SSH ${device.ssh_port}${device.is_head ? " · CONTROLLER" : device.known_node ? " · 등록됨" : " · 새 기기"}</small><code>${escapeHtml(device.fingerprint || "fingerprint 확인 불가")}</code></span><b>선택</b>
     </button>`).join("");
   $$('[data-device-host]').forEach(button => button.addEventListener("click", () => {
     const device = state.devices.find(item => item.host === button.dataset.deviceHost);

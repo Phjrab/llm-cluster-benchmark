@@ -744,6 +744,28 @@ def _port_open(host: str, port: int = 22) -> bool:
         return False
 
 
+def _reverse_hostname(host: str) -> str:
+    """Return a best-effort LAN hostname without making SSH state changes."""
+    try:
+        hostname, _aliases, _addresses = socket.gethostbyaddr(host)
+    except (OSError, socket.herror):
+        return ""
+    hostname = hostname.rstrip(".").strip()
+    return "" if hostname == host else hostname[:253]
+
+
+def _registered_worker_hostname(node: Node) -> str:
+    """Ask an already registered worker for its OS hostname using its SSH key."""
+    try:
+        result = run_on_node(node, ["hostname"], timeout=5)
+    except Exception:
+        return ""
+    if not result.ok:
+        return ""
+    hostname = result.stdout.splitlines()[0].strip() if result.stdout else ""
+    return hostname[:253] if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,252}", hostname) else ""
+
+
 def _ssh_fingerprint(host: str, port: int = 22) -> str:
     try:
         scan = subprocess.run(
@@ -788,14 +810,31 @@ def scan_lan_devices(force: bool = False) -> Dict[str, Any]:
         for future in concurrent.futures.as_completed(futures):
             if future.result():
                 open_hosts.append(futures[future])
-    existing = {node.host: node for node in read_all_nodes()}
-    head_node = next((node for node in read_all_nodes() if node.role == "head"), None)
+    all_nodes = read_all_nodes()
+    existing = {node.host: node for node in all_nodes}
+    hostname_by_host: Dict[str, str] = {}
+    hostname_source_by_host: Dict[str, str] = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(16, max(1, len(open_hosts)))) as executor:
+        futures = {}
+        for host in open_hosts:
+            node = existing.get(host)
+            resolver = _registered_worker_hostname if node else _reverse_hostname
+            futures[executor.submit(resolver, node or host)] = host
+        for future in concurrent.futures.as_completed(futures):
+            host = futures[future]
+            hostname = future.result()
+            hostname_by_host[host] = hostname
+            if hostname:
+                hostname_source_by_host[host] = "ssh" if existing.get(host) else "reverse_dns"
+    head_node = next((node for node in all_nodes if node.role == "head"), None)
     devices = []
     for host in sorted(open_hosts, key=lambda value: tuple(int(part) for part in value.split("."))):
         known = existing.get(host) or (head_node if host in local_ips else None)
         devices.append(
             {
                 "host": host,
+                "hostname": hostname_by_host.get(host, ""),
+                "hostname_source": hostname_source_by_host.get(host, ""),
                 "ssh_port": 22,
                 "fingerprint": _ssh_fingerprint(host),
                 "known_node": known.name if known else "",
