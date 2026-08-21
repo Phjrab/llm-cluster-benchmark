@@ -167,6 +167,40 @@ class EnvironmentReadinessTests(unittest.TestCase):
         self.assertEqual(report["venv_path"], "/opt/llm/.venv")
         self.assertEqual(report["status"], "ready")
 
+    def test_ready_python_runtime_without_rpc_is_reported_as_needing_setup(self) -> None:
+        raw = {
+            "schema_version": 1,
+            "status": "ready",
+            "platform": "jetson",
+            "checks": [],
+            "backend": {"kind": "cuda", "verified": True},
+            "model_count": 1,
+        }
+        marker = clusterctl.WORKER_READINESS_MARKER + json.dumps(raw)
+        process = subprocess.CompletedProcess([], 0, stdout=marker + "\n", stderr="")
+        discovery = {
+            "ssh": True,
+            "project": True,
+            "platform_kind": "jetson",
+            "architecture": "aarch64",
+            "missing_packages": [],
+            "sudo_nopasswd": False,
+        }
+        missing = {"ok": False, "stdout": "", "stderr": "rpc-server missing"}
+        with mock.patch.object(
+            clusterctl, "discover_node", return_value=discovery
+        ), mock.patch.object(
+            clusterctl, "run_on_node", return_value=process
+        ), mock.patch.object(
+            clusterctl, "_check_rpc_runtime_one", return_value=missing
+        ):
+            report = clusterctl.check_environment_one(self.worker)
+        self.assertEqual(report["status"], "needs_setup")
+        self.assertFalse(report["rpc_runtime"]["ready"])
+        rpc_check = next(item for item in report["checks"] if item["id"] == "rpc_runtime")
+        self.assertEqual(rpc_check["status"], "fail")
+        self.assertTrue(rpc_check["auto_fixable"])
+
     def test_install_bootstraps_syncs_sets_up_then_rechecks_worker(self) -> None:
         ready = {
             "node": self.worker.name,
@@ -200,6 +234,10 @@ class EnvironmentReadinessTests(unittest.TestCase):
             side_effect=lambda _node: calls.append("setup") or {"ok": True},
         ), mock.patch.object(
             clusterctl,
+            "_ensure_rpc_runtime_one",
+            side_effect=lambda _node: calls.append("rpc") or {"ok": True},
+        ), mock.patch.object(
+            clusterctl,
             "_lifecycle_one",
             side_effect=lambda _node, action: calls.append(action) or {"ok": True},
         ), mock.patch.object(
@@ -208,7 +246,7 @@ class EnvironmentReadinessTests(unittest.TestCase):
             side_effect=lambda _node: calls.append("recheck") or ready,
         ):
             report = clusterctl.install_environment_one(self.worker)
-        self.assertEqual(calls, ["bootstrap", "sync", "setup", "restart", "recheck"])
+        self.assertEqual(calls, ["bootstrap", "sync", "setup", "rpc", "restart", "recheck"])
         self.assertEqual(report["status"], "ready")
 
     def test_install_bootstraps_head_before_setup_without_code_sync(self) -> None:
@@ -255,6 +293,34 @@ class EnvironmentReadinessTests(unittest.TestCase):
             report = clusterctl.install_environment_one(head)
         self.assertEqual(calls, ["bootstrap", "setup", "restart", "recheck"])
         self.assertEqual(report["status"], "ready")
+
+    def test_rpc_runtime_is_reused_when_the_pinned_build_is_ready(self) -> None:
+        ready = {"name": self.worker.name, "ok": True, "stdout": "pinned", "stderr": ""}
+        with mock.patch.object(
+            clusterctl, "_check_rpc_runtime_one", return_value=ready
+        ) as check, mock.patch.object(clusterctl, "_prepare_rpc_one") as prepare:
+            result = clusterctl._ensure_rpc_runtime_one(self.worker)
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["already_ready"])
+        check.assert_called_once_with(self.worker)
+        prepare.assert_not_called()
+
+    def test_rpc_runtime_is_built_once_then_verified_when_missing(self) -> None:
+        missing = {"name": self.worker.name, "ok": False, "stdout": "", "stderr": "missing"}
+        ready = {"name": self.worker.name, "ok": True, "stdout": "verified", "stderr": ""}
+        built = {"name": self.worker.name, "ok": True, "stdout": "built", "stderr": ""}
+        with mock.patch.object(
+            clusterctl, "_check_rpc_runtime_one", side_effect=[missing, ready]
+        ) as check, mock.patch.object(
+            clusterctl, "_prepare_rpc_one", return_value=built
+        ) as prepare:
+            result = clusterctl._ensure_rpc_runtime_one(self.worker)
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["already_ready"])
+        self.assertEqual(check.call_count, 2)
+        prepare.assert_called_once_with(self.worker)
+        self.assertIn("built", result["stdout"])
+        self.assertIn("verified", result["stdout"])
 
     def test_legacy_success_without_structured_marker_is_not_ready(self) -> None:
         discovery = {

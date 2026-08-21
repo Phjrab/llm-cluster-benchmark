@@ -147,6 +147,11 @@ python -m cluster.benchmark.runner \
 예제의 `node_names`는 실제 등록 이름으로 바꾼다. Worker-only 인벤토리가 정상 형식이며,
 legacy head 행을 새로 만들 필요가 없다.
 
+`environment-install`과 `prepare`는 Python 추론 환경뿐 아니라 고정 llama.cpp RPC
+런타임도 함께 확인한다. 정확한 고정 커밋의 빌드가 이미 있으면 재사용하고, 없거나
+검증에 실패한 경우에만 Worker 프로젝트의 `.run/cluster` 아래에서 다시 빌드한다.
+전역 Python 환경이나 시스템 경로에는 RPC 바이너리를 설치하지 않는다.
+
 ## 보안과 재현성
 
 - SSH는 `BatchMode`와 사용자 소유 `0600` identity 파일만 사용한다.

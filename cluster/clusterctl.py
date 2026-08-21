@@ -737,7 +737,7 @@ def check_environment_one(node: Node) -> Dict[str, Any]:
         "\n".join(part for part in (proc.stdout, proc.stderr) if part),
         WORKER_READINESS_MARKER,
     ) or {}
-    return _normalize_worker_report(
+    report = _normalize_worker_report(
         node,
         raw,
         discovery,
@@ -745,6 +745,28 @@ def check_environment_one(node: Node) -> Dict[str, Any]:
         proc.stdout,
         proc.stderr,
     )
+    if node.role == "worker" and report.get("status") == "ready":
+        rpc = _check_rpc_runtime_one(node)
+        report.setdefault("checks", []).append(
+            _readiness_check(
+                "rpc_runtime",
+                "Pinned llama.cpp RPC runtime",
+                "pass" if rpc.get("ok") else "fail",
+                str(
+                    rpc.get("stdout")
+                    or rpc.get("stderr")
+                    or "RPC runtime is not ready"
+                )[-2000:],
+                auto_fixable=not bool(rpc.get("ok")),
+            )
+        )
+        report["rpc_runtime"] = {
+            "ready": bool(rpc.get("ok")),
+            "already_ready": bool(rpc.get("ok")),
+        }
+        if not rpc.get("ok"):
+            report["status"] = "needs_setup"
+    return report
 
 
 def _append_install_failure(report: Dict[str, Any], detail: str) -> Dict[str, Any]:
@@ -785,8 +807,11 @@ def install_environment_one(node: Node) -> Dict[str, Any]:
             )
 
     setup = _setup_one(node)
+    rpc: Optional[Dict[str, Any]] = None
+    if setup.get("ok") and node.role == "worker":
+        rpc = _ensure_rpc_runtime_one(node)
     lifecycle: Optional[Dict[str, Any]] = None
-    if setup.get("ok"):
+    if setup.get("ok") and (rpc is None or rpc.get("ok")):
         # A running API has imported the old Python/native libraries. Restart it
         # so live execution matches the freshly verified environment report.
         lifecycle = _lifecycle_one(node, "restart")
@@ -795,6 +820,11 @@ def install_environment_one(node: Node) -> Dict[str, Any]:
         return _append_install_failure(
             report,
             str(setup.get("stderr") or setup.get("stdout") or "Runtime setup failed"),
+        )
+    if rpc is not None and not rpc.get("ok"):
+        return _append_install_failure(
+            report,
+            str(rpc.get("stderr") or rpc.get("stdout") or "RPC runtime setup failed"),
         )
     if lifecycle is not None and not lifecycle.get("ok"):
         return _append_install_failure(
@@ -1371,6 +1401,16 @@ def command_prepare(nodes: Sequence[Node], args: argparse.Namespace) -> int:
             print(setup_result["stderr"], file=sys.stderr)
             return 1
 
+        print(f"[{node.name}] verifying pinned llama.cpp RPC runtime", flush=True)
+        rpc_result = _ensure_rpc_runtime_one(node)
+        if rpc_result.get("already_ready"):
+            print(f"[{node.name}] reusing existing verified RPC build", flush=True)
+        if rpc_result["stdout"]:
+            print(rpc_result["stdout"])
+        if not rpc_result["ok"]:
+            print(rpc_result["stderr"], file=sys.stderr)
+            return 1
+
         if worker_auth_enabled():
             print(f"[{node.name}] provisioning worker API credential", flush=True)
             token_result = sync_worker_token_one(node)
@@ -1398,10 +1438,10 @@ def command_prepare(nodes: Sequence[Node], args: argparse.Namespace) -> int:
     return 0
 
 
-def _prepare_rpc_one(node: Node) -> Dict[str, Any]:
+def _rpc_runtime_command(node: Node, action: str, timeout: int) -> Dict[str, Any]:
     script = f"{node.project_dir}/cluster/rpc/runtime.sh"
     try:
-        process = run_on_node(node, [script, "prepare"], timeout=7200)
+        process = run_on_node(node, [script, action], timeout=timeout)
         return {
             "name": node.name,
             "ok": process.returncode == 0,
@@ -1410,6 +1450,31 @@ def _prepare_rpc_one(node: Node) -> Dict[str, Any]:
         }
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc)}
+
+
+def _check_rpc_runtime_one(node: Node) -> Dict[str, Any]:
+    return _rpc_runtime_command(node, "check", 60)
+
+
+def _prepare_rpc_one(node: Node) -> Dict[str, Any]:
+    return _rpc_runtime_command(node, "prepare", 7200)
+
+
+def _ensure_rpc_runtime_one(node: Node) -> Dict[str, Any]:
+    """Reuse a verified pinned runtime and build only when it is absent or stale."""
+    checked = _check_rpc_runtime_one(node)
+    if checked.get("ok"):
+        return {**checked, "already_ready": True}
+    prepared = _prepare_rpc_one(node)
+    if not prepared.get("ok"):
+        return {**prepared, "already_ready": False}
+    verified = _check_rpc_runtime_one(node)
+    if not verified.get("ok"):
+        return {**verified, "already_ready": False}
+    output = "\n".join(
+        part for part in (prepared.get("stdout", ""), verified.get("stdout", "")) if part
+    )
+    return {**verified, "stdout": output, "already_ready": False}
 
 
 def command_prepare_rpc(nodes: Sequence[Node], _args: argparse.Namespace) -> int:
@@ -1421,8 +1486,10 @@ def command_prepare_rpc(nodes: Sequence[Node], _args: argparse.Namespace) -> int
             if not sync["ok"]:
                 print(sync["stderr"], file=sys.stderr)
                 return 1
-        print(f"[{node.name}] building pinned llama.cpp RPC runtime", flush=True)
-        result = _prepare_rpc_one(node)
+        print(f"[{node.name}] verifying/building pinned llama.cpp RPC runtime", flush=True)
+        result = _ensure_rpc_runtime_one(node)
+        if result.get("already_ready"):
+            print(f"[{node.name}] reusing existing verified RPC build", flush=True)
         if result["stdout"]:
             print(result["stdout"])
         if not result["ok"]:
