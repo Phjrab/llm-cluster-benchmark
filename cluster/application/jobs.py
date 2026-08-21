@@ -208,10 +208,11 @@ class JobService:
 
         On macOS the Python launcher can briefly re-exec between ``Popen`` and
         the child process writing its authoritative identity.  Recovery must
-        not turn that bounded hand-off into an orphan, while stale queued jobs
-        and every running identity mismatch remain fail-closed.
+        not turn that bounded hand-off into an orphan.  The child may already
+        have persisted ``running`` when the transient inspection gap occurs;
+        all identity mismatches after the short grace remain fail-closed.
         """
-        if job.get("status") != "queued":
+        if job.get("status") not in {"queued", "running"}:
             return False
         spawned_pid = job.get("spawned_pid")
         if not isinstance(spawned_pid, int) or spawned_pid <= 1:

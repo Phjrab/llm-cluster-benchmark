@@ -314,6 +314,15 @@ class JobRegistryRecoveryTests(unittest.TestCase):
         self.assertEqual(saved["status"], "queued")
         self.assertNotIn("orphaned_from_status", saved)
 
+    def test_fresh_running_child_gets_same_transient_inspection_grace(self) -> None:
+        job, _identity = self.job(status="running")
+        job["spawned_pid"] = 4321
+        job["created_at"] = datetime.now(timezone.utc).isoformat()
+        FilesystemJobRepository(self.jobs).write(job["job_id"], job)
+        saved = self.service().active()
+        self.assertEqual(saved["status"], "running")
+        self.assertNotIn("orphaned_from_status", saved)
+
     def test_expired_queued_spawn_without_identity_becomes_orphaned(self) -> None:
         job, _identity = self.job(status="queued")
         job.pop("process")
