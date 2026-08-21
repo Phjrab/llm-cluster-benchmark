@@ -40,6 +40,8 @@ def failure_from_exception(exc: Exception, *, stage: str, node: Optional[str] = 
         return failure_record(exc.code, str(exc), stage=exc.stage or stage, node=exc.node or node, model_id=exc.model_id or model_id, evidence=exc.evidence)
     if isinstance(exc, FileNotFoundError):
         code = ErrorCode.MODEL_MISSING
+    elif stage == "model_loading" and getattr(exc, "code", None) == 404:
+        code = ErrorCode.MODEL_MISSING
     elif isinstance(exc, TimeoutError):
         code = ErrorCode.REQUEST_TIMEOUT
     elif isinstance(exc, (ConnectionError, OSError)):

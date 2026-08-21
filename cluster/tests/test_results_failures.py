@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from urllib.error import HTTPError
 from pathlib import Path
 from unittest import mock
 
@@ -122,6 +123,14 @@ class StructuredFailureTests(unittest.TestCase):
         self.assertEqual(
             failure_from_message("Experiment cancelled", stage="run").code,
             ErrorCode.CANCELLED,
+        )
+        self.assertEqual(
+            failure_from_exception(
+                HTTPError("http://worker/api/select-model", 404, "Not Found", {}, None),
+                stage="model_loading",
+                model_id="missing.gguf",
+            ).code,
+            ErrorCode.MODEL_MISSING,
         )
 
     def test_failed_run_summary_adds_structured_failure_without_removing_error(self) -> None:
