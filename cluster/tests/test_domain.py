@@ -140,7 +140,7 @@ class ControllerWorkerRoleTests(unittest.TestCase):
         with self.assertRaises(DomainValidationError):
             WorkerInventory(workers=(self.worker, replace(self.worker, host="192.168.0.28")))
 
-    def test_worker_inventory_rejects_duplicate_endpoints_and_more_than_four_enabled_workers(self) -> None:
+    def test_worker_inventory_rejects_duplicate_endpoints_without_a_fixed_node_limit(self) -> None:
         duplicate_endpoint = make_worker(name="jetson-02")
         with self.assertRaises(DomainValidationError):
             WorkerInventory(workers=(self.worker, duplicate_endpoint))
@@ -152,10 +152,10 @@ class ControllerWorkerRoleTests(unittest.TestCase):
                 user="edge",
                 project_dir="/home/edge/llm-cluster-benchmark",
             )
-            for index in range(1, 6)
+            for index in range(1, 9)
         )
-        with self.assertRaises(DomainValidationError):
-            WorkerInventory(workers=workers)
+        inventory = WorkerInventory(workers=workers)
+        self.assertEqual(len(inventory.enabled_workers()), 8)
 
     def test_worker_properties_keep_existing_wire_meaning(self) -> None:
         self.assertEqual(self.worker.api_url, "http://192.168.0.26:8000")
@@ -473,7 +473,8 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assert_invalid(prompt=" ")
         self.assert_invalid(node_names=[])
         self.assert_invalid(node_names=["jetson-01", "jetson-01"])
-        self.assert_invalid(node_names=[f"worker-{index}" for index in range(1, 6)])
+        many_nodes = [f"worker-{index}" for index in range(1, 9)]
+        self.make_config(node_names=many_nodes).validate()
         self.assert_invalid(experiment_id="../../experiment")
         self.assert_invalid(suite_id="../../suite")
         self.assert_invalid(model_count=0)

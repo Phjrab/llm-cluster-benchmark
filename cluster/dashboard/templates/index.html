@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>MediFlow Cluster Lab</title>
   <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
-  <link rel="stylesheet" href="/static/styles.css?v=20260821.3">
+  <link rel="stylesheet" href="/static/styles.css?v=20260821.4">
 </head>
 <body>
   <div class="app-shell">
@@ -87,6 +87,14 @@
             <button class="button ghost compact" id="checkEnvironmentButton" type="button">선택 노드 환경 점검</button>
             <button class="button secondary compact" id="installEnvironmentButton" type="button">선택 노드 자동 구성</button>
           </div>
+        </div>
+        <div class="node-platform-toolbar">
+          <div class="node-platform-tabs" role="tablist" aria-label="워커 플랫폼별 보기">
+            <button class="active" type="button" role="tab" aria-selected="true" data-node-platform-tab="all"><span>전체 워커</span><b>0</b></button>
+            <button type="button" role="tab" aria-selected="false" data-node-platform-tab="jetson"><span>NVIDIA Jetson</span><b>0</b></button>
+            <button type="button" role="tab" aria-selected="false" data-node-platform-tab="raspberry-pi"><span>Raspberry Pi</span><b>0</b></button>
+          </div>
+          <small id="unclassifiedNodeCount" hidden>플랫폼 확인 중 0대 · 전체 탭에서 표시</small>
         </div>
         <div class="node-grid" id="nodeGrid">
           <div class="skeleton-card"></div><div class="skeleton-card"></div>
@@ -436,10 +444,10 @@
   </dialog>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-  <script src="/static/app.js?v=20260821.3" defer></script>
-  <script src="/static/js/utils.js?v=20260821.3" defer></script>
-  <script src="/static/js/console.js?v=20260821.3" defer></script>
-  <script src="/static/js/models.js?v=20260821.3" defer></script>
-  <script src="/static/js/results.js?v=20260821.3" defer></script>
+  <script src="/static/app.js?v=20260821.4" defer></script>
+  <script src="/static/js/utils.js?v=20260821.4" defer></script>
+  <script src="/static/js/console.js?v=20260821.4" defer></script>
+  <script src="/static/js/models.js?v=20260821.4" defer></script>
+  <script src="/static/js/results.js?v=20260821.4" defer></script>
 </body>
 </html>

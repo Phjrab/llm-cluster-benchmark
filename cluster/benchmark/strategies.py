@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Protocol, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple
 
 from cluster.domain.experiment import ExperimentConfig
 from cluster.domain.strategy import ExecutionStrategy
@@ -32,7 +32,7 @@ class StrategyDescription:
     model_placement: str
     request_mapping: str
     min_nodes: int
-    max_nodes: int
+    max_nodes: Optional[int]
     experimental: bool
     summary: str
 
@@ -57,7 +57,9 @@ class BenchmarkStrategy:
 
     def validate(self, nodes: Sequence[Participant], config: ExperimentConfig) -> None:
         count = len(nodes)
-        if not self.description.min_nodes <= count <= self.description.max_nodes:
+        too_few = count < self.description.min_nodes
+        too_many = self.description.max_nodes is not None and count > self.description.max_nodes
+        if too_few or too_many:
             if self.description.min_nodes == self.description.max_nodes == 1:
                 raise ValueError("단일 노드 기준선은 정확히 1대의 worker가 필요합니다")
             raise ValueError("선택한 실험 방식은 2대 이상의 worker가 필요합니다")
@@ -97,7 +99,7 @@ class SingleNodeStrategy(BenchmarkStrategy):
 
 class ReplicatedRoundRobinStrategy(BenchmarkStrategy):
     description = StrategyDescription(
-        "replicated_round_robin", "복제 모델 · 요청 분산", "full_model_per_node", "round_robin", 1, 4, False,
+        "replicated_round_robin", "복제 모델 · 요청 분산", "full_model_per_node", "round_robin", 1, None, False,
         "각 worker가 전체 모델을 따로 로드하고 여러 사용자 요청을 순서대로 나눕니다.",
     )
 
@@ -107,7 +109,7 @@ class ReplicatedRoundRobinStrategy(BenchmarkStrategy):
 
 class BroadcastCompareStrategy(BenchmarkStrategy):
     description = StrategyDescription(
-        "broadcast_compare", "동일 요청 전체 전송", "full_model_per_node", "broadcast", 2, 4, False,
+        "broadcast_compare", "동일 요청 전체 전송", "full_model_per_node", "broadcast", 2, None, False,
         "같은 요청을 모든 worker 복제본에 보내 지연과 출력 일치도를 비교합니다.",
     )
 
@@ -121,7 +123,7 @@ class BroadcastCompareStrategy(BenchmarkStrategy):
 class NodeSweepStrategy(BenchmarkStrategy):
     cumulative_scaling = True
     description = StrategyDescription(
-        "node_sweep", "노드 수 확장 스윕", "full_model_per_node", "scenario_round_robin", 2, 4, False,
+        "node_sweep", "노드 수 확장 스윕", "full_model_per_node", "scenario_round_robin", 2, None, False,
         "1대, 2대, … 조건을 반복해 worker 추가에 따른 속도 향상과 효율을 비교합니다.",
     )
 
@@ -144,7 +146,7 @@ class ModelParallelRpcStrategy(BenchmarkStrategy):
     """Plan a sharded model around a selected worker coordinator."""
 
     description = StrategyDescription(
-        "model_parallel_rpc", "모델 분할 추론 · RPC", "sharded_model", "one_coordinator", 2, 4, True,
+        "model_parallel_rpc", "모델 분할 추론 · RPC", "sharded_model", "one_coordinator", 2, None, True,
         "한 모델의 가중치와 계산을 여러 노드 장치에 분할하고 각 토큰을 함께 계산합니다.",
     )
     execution_backend = "rpc"
@@ -152,7 +154,7 @@ class ModelParallelRpcStrategy(BenchmarkStrategy):
 
     def validate(self, nodes, config):
         count = len(nodes)
-        if not self.description.min_nodes <= count <= self.description.max_nodes:
+        if count < self.description.min_nodes:
             raise ValueError("모델 분할 RPC는 2대 이상의 worker가 필요합니다")
         self._validate_workers_only(nodes)
         select_rpc_coordinator(nodes, config.rpc_coordinator_node)

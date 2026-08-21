@@ -1,6 +1,6 @@
 # Edge LLM Controller/Worker Cluster
 
-이 디렉터리는 macOS Controller 한 대가 최대 4대의 Jetson Orin 또는
+이 디렉터리는 macOS Controller 한 대가 여러 대의 Jetson Orin 또는
 Raspberry Pi 5 Worker를 관리하고, 동일 GGUF 워크로드를 재현 가능하게 비교하는
 클러스터 벤치마크 런타임이다.
 
@@ -17,7 +17,8 @@ Controller는 대시보드·스케줄링·결과 저장만 담당한다. 모델�
 | Jetson Orin Worker | CUDA `llama-cpp-python` | JetPack/CUDA가 설치된 64-bit L4T | 함 |
 | Raspberry Pi 5 Worker | OpenBLAS `llama-cpp-python` | 64-bit Raspberry Pi OS/Ubuntu, `aarch64` | 함 |
 
-Worker는 총 4대까지 등록할 수 있다. Pi의 복제형 실험은 `n_gpu_layers=0`을 사용한다.
+Worker 등록 수에는 고정 상한이 없다. 대시보드의 전체·Jetson·Raspberry Pi 탭에서
+플랫폼별로 관리하며, Pi의 복제형 실험은 `n_gpu_layers=0`을 사용한다.
 Jetson과 Pi 혼합 실험은 탐색 목적으로 허용하지만, 동일 가속기 성능 비교는 플랫폼별
 실험으로 분리하는 편이 해석하기 쉽다.
 

@@ -405,8 +405,6 @@ def write_all_nodes(nodes: Sequence[Node]) -> None:
     endpoints = [(node.host, node.ssh_port) for node in nodes]
     if len(set(endpoints)) != len(endpoints):
         raise ValueError("Each physical host and SSH port can be registered only once")
-    if sum(1 for node in nodes if node.enabled) > 4:
-        raise ValueError("At most four nodes can be enabled in one cluster")
     _inventory_repository().write_rows([asdict(node) for node in nodes])
 
 
@@ -991,7 +989,7 @@ class StatusMonitor:
     def refresh_now(self) -> None:
         try:
             nodes = read_all_nodes()
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(nodes))) as executor:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, max(1, len(nodes)))) as executor:
                 snapshot = list(executor.map(probe_node, nodes))
             with self._lock:
                 changed = snapshot != self._snapshot

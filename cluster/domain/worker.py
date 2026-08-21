@@ -129,8 +129,6 @@ class WorkerInventory:
         endpoints = [(worker.host, worker.ssh_port) for worker in workers]
         if len(endpoints) != len(set(endpoints)):
             raise DomainValidationError("Each physical host and SSH port can be registered only once")
-        if sum(1 for worker in workers if worker.enabled) > 4:
-            raise DomainValidationError("At most four workers can be enabled in one cluster")
         object.__setattr__(self, "workers", workers)
 
     def __iter__(self) -> Iterator[WorkerNode]:

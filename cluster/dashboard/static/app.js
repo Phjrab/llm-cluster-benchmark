@@ -20,6 +20,7 @@ const state = {
   metricHistory: new Map(),
   detailNode: "",
   renameNode: "",
+  nodePlatformTab: "all",
   selectedModels: [],
   suites: [],
   chartModels: new Map(),
@@ -79,7 +80,6 @@ const fmt = (value, digits = 1, fallback = "—") => finite(value) ? Number(valu
 const pct = value => finite(value) ? `${fmt(value, 0)}%` : "—";
 const DASHBOARD_COLORS = ["#718f17", "#e57c38", "#163126", "#0072b2", "#cc79a7", "#f0e442"];
 const PUBLICATION_COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#000000"];
-const MAX_CLUSTER_NODES = 4;
 const platformName = value => ({ jetson: "NVIDIA Jetson", "raspberry-pi": "Raspberry Pi 5", auto: "자동 감지", "generic-linux": "Linux" }[value] || value || "미확인");
 const STRATEGIES = {
   single_node: { label: "단일 노드 기준선", short: "SINGLE" },
@@ -254,7 +254,11 @@ function setEnvironmentReports(payload) {
 }
 
 function actualPlatform(node) {
-  return statusFor(node.name).profile?.platform_kind || statusFor(node.name).node_info?.platform_kind || node.platform || "auto";
+  return statusFor(node.name).profile?.platform_kind
+    || statusFor(node.name).node_info?.platform_kind
+    || environmentFor(node.name).platform
+    || node.platform
+    || "auto";
 }
 
 function runExperimentId(run) {
@@ -290,7 +294,7 @@ function topologyNodes() {
 }
 
 function reconcileSelection(nodes = topologyNodes()) {
-  const selectable = nodes.filter(node => node.enabled).slice(0, MAX_CLUSTER_NODES);
+  const selectable = nodes.filter(node => node.enabled);
   const selectableNames = new Set(selectable.map(node => node.name));
   state.selectedNodes.forEach(name => {
     if (!selectableNames.has(name)) state.selectedNodes.delete(name);
@@ -298,26 +302,53 @@ function reconcileSelection(nodes = topologyNodes()) {
   if (!state.selectedNodes.size) selectable.forEach(node => state.selectedNodes.add(node.name));
 }
 
-function clusterCapacity() {
-  // Keep the existing inventory limit intact while Phase 13 hides the legacy
-  // controller row from worker cards.  The backend remains authoritative.
-  const count = state.nodes.length;
-  return { count, full: count >= MAX_CLUSTER_NODES, remaining: Math.max(0, MAX_CLUSTER_NODES - count) };
+function nodePlatformGroup(node) {
+  const platform = actualPlatform(node);
+  if (platform === "jetson" || platform === "raspberry-pi") return platform;
+  return "unknown";
 }
 
-function openNodeOnboarding() {
-  const capacity = clusterCapacity();
-  if (capacity.full) {
-    toast("클러스터 구성 한도", `최대 ${MAX_CLUSTER_NODES}대까지 연결할 수 있습니다.`, "error");
-    return;
+function platformNodeCounts(nodes = topologyNodes()) {
+  return nodes.reduce((counts, node) => {
+    counts.all += 1;
+    counts[nodePlatformGroup(node)] += 1;
+    return counts;
+  }, { all: 0, jetson: 0, "raspberry-pi": 0, unknown: 0 });
+}
+
+function visibleTopologyNodes(nodes = topologyNodes()) {
+  if (state.nodePlatformTab === "all") return nodes;
+  return nodes.filter(node => nodePlatformGroup(node) === state.nodePlatformTab);
+}
+
+function renderNodePlatformTabs(nodes) {
+  const counts = platformNodeCounts(nodes);
+  $$('[data-node-platform-tab]').forEach(button => {
+    const tab = button.dataset.nodePlatformTab;
+    const active = tab === state.nodePlatformTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    const count = $("b", button);
+    if (count) count.textContent = counts[tab] || 0;
+  });
+  const unknown = $("#unclassifiedNodeCount");
+  if (unknown) {
+    unknown.hidden = counts.unknown === 0;
+    unknown.textContent = `플랫폼 확인 중 ${counts.unknown}대 · 전체 탭에서 표시`;
   }
+}
+
+function openNodeOnboarding(preferredPlatform = "auto") {
+  resetNodeForm(preferredPlatform);
   $("#nodeDialog").showModal();
   scanNetwork();
 }
 
 function renderNodes() {
-  const nodes = topologyNodes();
-  reconcileSelection(nodes);
+  const allNodes = topologyNodes();
+  reconcileSelection(allNodes);
+  renderNodePlatformTabs(allNodes);
+  const nodes = visibleTopologyNodes(allNodes);
   const grid = $("#nodeGrid");
   const nodeCards = nodes.map(node => {
     const live = statusFor(node.name);
@@ -359,24 +390,19 @@ function renderNodes() {
         ${error ? `<span class="node-card-menu" title="${escapeHtml(error)}">!</span>` : ""}
       </article>`;
   }).join("");
-  const capacity = clusterCapacity();
+  const platformLabel = state.nodePlatformTab === "all" ? "워커" : platformName(state.nodePlatformTab);
   const addCard = `
-    <button class="add-worker-card" type="button" data-add-worker-card ${capacity.full ? "disabled" : ""}
-      aria-label="${capacity.full ? `클러스터 연결 한도 ${MAX_CLUSTER_NODES}대에 도달했습니다` : "새 워커 노드 추가"}">
+    <button class="add-worker-card" type="button" data-add-worker-card aria-label="새 ${escapeHtml(platformLabel)} 노드 추가">
       <span class="add-worker-icon" aria-hidden="true">+</span>
-      <strong>${capacity.full ? "구성 한도 도달" : "워커 추가"}</strong>
-      <span>${capacity.full ? `최대 ${MAX_CLUSTER_NODES}대가 연결되었습니다.` : "로컬 네트워크에서 SSH 기기를 찾아 연결합니다."}</span>
-      <small>${capacity.count} / ${MAX_CLUSTER_NODES} REGISTERED${capacity.full ? " · FULL" : ` · ${capacity.remaining} AVAILABLE`}</small>
+      <strong>${escapeHtml(platformLabel)} 추가</strong>
+      <span>로컬 네트워크에서 SSH 기기를 찾아 이 플랫폼 그룹에 연결합니다.</span>
+      <small>${allNodes.length} TOTAL REGISTERED · NO FIXED LIMIT</small>
     </button>`;
   grid.innerHTML = `${nodeCards}${addCard}`;
 
   $$('[data-node-select]').forEach(input => input.addEventListener("change", event => {
     const name = event.currentTarget.dataset.nodeSelect;
     if (event.currentTarget.checked) {
-      if (state.selectedNodes.size >= MAX_CLUSTER_NODES) {
-        event.currentTarget.checked = false;
-        return toast(`최대 ${MAX_CLUSTER_NODES}대`, "한 실험에는 최대 네 대까지 참여할 수 있습니다.", "error");
-      }
       state.selectedNodes.add(name);
     } else {
       state.selectedNodes.delete(name);
@@ -389,7 +415,9 @@ function renderNodes() {
     renderNodes();
   }));
   $$('[data-node-detail]').forEach(button => button.addEventListener("click", () => openNodeDetail(button.dataset.nodeDetail)));
-  $("[data-add-worker-card]")?.addEventListener("click", openNodeOnboarding);
+  $("[data-add-worker-card]")?.addEventListener("click", () => openNodeOnboarding(
+    ["jetson", "raspberry-pi"].includes(state.nodePlatformTab) ? state.nodePlatformTab : "auto"
+  ));
   updateSummary();
 }
 
@@ -447,9 +475,8 @@ function updateSummary() {
     if (label) label.textContent = worker?.name || "";
     element.classList.toggle("online", Boolean(worker && statusFor(worker.name).api));
   });
-  const capacity = clusterCapacity();
-  $("#addNodeButton").disabled = capacity.full;
-  $("#addNodeButton").title = capacity.full ? `${MAX_CLUSTER_NODES}대 연결 구성이 완료되었습니다.` : `워커 ${capacity.remaining}대를 더 연결할 수 있습니다.`;
+  $("#addNodeButton").disabled = false;
+  $("#addNodeButton").title = "새 워커를 연결합니다. 등록 노드 수에는 고정 제한이 없습니다.";
   const latest = state.runs.find(run => run.status === "completed");
   $("#recentThroughput").textContent = latest ? fmt(latest.cluster_tokens_per_s) : "—";
   updateStrategyGuidance();
@@ -682,7 +709,7 @@ function applyConfig(defaults, includeName = true) {
   syncLegacyModelSelect(); renderModelPicker();
   if (Array.isArray(defaults.node_names)) {
     const available = defaults.node_names.filter(name => state.nodes.some(node => node.name === name && node.enabled));
-    if (available.length) state.selectedNodes = new Set(available.slice(0, 4));
+    if (available.length) state.selectedNodes = new Set(available);
   }
   updateFormMirrors();
   renderNodes();
@@ -2112,11 +2139,16 @@ async function probeCandidate() {
   return result;
 }
 
-function resetNodeForm() {
+function resetNodeForm(preferredPlatform = "auto") {
   $("#nodeForm").reset();
-  $("#nodeUser").value = "jetson_orin_nano";
-  $("#nodeProjectDir").value = "/home/jetson_orin_nano/project/llm/local_llm_bench";
-  $("#nodePlatform").value = "auto";
+  if (preferredPlatform === "raspberry-pi") {
+    $("#nodeUser").value = "pi";
+    $("#nodeProjectDir").value = "/home/pi/llm-cluster-benchmark";
+  } else {
+    $("#nodeUser").value = "jetson_orin_nano";
+    $("#nodeProjectDir").value = "/home/jetson_orin_nano/project/llm/local_llm_bench";
+  }
+  $("#nodePlatform").value = ["jetson", "raspberry-pi"].includes(preferredPlatform) ? preferredPlatform : "auto";
   $("#probeResult").hidden = true;
   state.onboardingProbe = null;
   renderOnboardingKey();
@@ -2148,7 +2180,11 @@ function bindEvents() {
     if (interaction.hidden.has(label)) interaction.hidden.delete(label); else interaction.hidden.add(label);
     setChartModel(chartId, model);
   }));
-  $("#addNodeButton").addEventListener("click", openNodeOnboarding);
+  $("#addNodeButton").addEventListener("click", () => openNodeOnboarding("auto"));
+  $$('[data-node-platform-tab]').forEach(button => button.addEventListener("click", () => {
+    state.nodePlatformTab = button.dataset.nodePlatformTab;
+    renderNodes();
+  }));
   $("#settingsButton").addEventListener("click", () => {
     renderSettings();
     $("#settingsDialog").showModal();

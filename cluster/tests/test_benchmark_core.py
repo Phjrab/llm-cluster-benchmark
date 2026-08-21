@@ -69,6 +69,17 @@ class StrategyGoldenTests(unittest.TestCase):
             ["w1", "w2", "w1", "w2", "w1"],
         )
 
+    def test_round_robin_supports_more_than_four_workers(self) -> None:
+        nodes = [worker(f"w{index}", 10 + index) for index in range(1, 7)]
+        config = ExperimentConfig(
+            node_names=[node.name for node in nodes],
+            requests=6,
+            execution_strategy="replicated_round_robin",
+        )
+        scenario = build_strategy_scenarios(config, nodes)[0]
+        self.assertEqual([task.target_node for task in scenario.tasks], [node.name for node in nodes])
+        self.assertIsNone(STRATEGY_REGISTRY["replicated_round_robin"].description.max_nodes)
+
     def test_three_broadcast_logical_requests_make_six_physical_calls(self) -> None:
         nodes = [worker("w1", 11), worker("w2", 12)]
         config = ExperimentConfig(

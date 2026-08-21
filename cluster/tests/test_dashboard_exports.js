@@ -51,9 +51,10 @@ assert.doesNotMatch(appSource, /\/api\/events\?token=/);
 assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260821\.3/);
-assert.match(template, /app\.js\?v=20260821\.3/);
+assert.match(template, /styles\.css\?v=20260821\.4/);
+assert.match(template, /app\.js\?v=20260821\.4/);
 assert.match(template, /nodeRenameDialog[\s\S]*nodeRenameForm[\s\S]*renameNodeInput/);
+assert.match(template, /data-node-platform-tab="all"[\s\S]*data-node-platform-tab="jetson"[\s\S]*data-node-platform-tab="raspberry-pi"/);
 const workerRegistrationCommand = vm.runInContext(`buildWorkerKeyRegistrationCommand("ssh-ed25519 AAAA-test controller@mac")`, context);
 assert.match(workerRegistrationCommand, /^umask 077; mkdir -p ~\/\.ssh/);
 assert.match(workerRegistrationCommand, /grep -qxF "\$KEY"/);
@@ -156,23 +157,35 @@ assert.equal(newestSuite.suite.suite_id, "suite_new");
 
 const topology = vm.runInContext(`(() => {
   state.nodes = [
-    { name: "edge-head", role: "head", enabled: true },
-    { name: "pi-worker", role: "worker", enabled: true },
-    { name: "legacy-placeholder", role: "worker", enabled: false }
+    { name: "edge-head", role: "head", enabled: true, platform: "jetson" },
+    { name: "jetson-1", role: "worker", enabled: true, platform: "jetson" },
+    { name: "jetson-2", role: "worker", enabled: true, platform: "jetson" },
+    { name: "jetson-3", role: "worker", enabled: true, platform: "jetson" },
+    { name: "pi-1", role: "worker", enabled: true, platform: "raspberry-pi" },
+    { name: "pi-2", role: "worker", enabled: true, platform: "raspberry-pi" },
+    { name: "unknown-1", role: "worker", enabled: true, platform: "auto" }
   ];
-  state.selectedNodes = new Set(["legacy-placeholder"]);
+  state.status = [];
+  state.selectedNodes = new Set();
   reconcileSelection();
+  const counts = platformNodeCounts();
+  state.nodePlatformTab = "jetson";
+  const jetsons = visibleTopologyNodes().map(node => node.name);
+  state.nodePlatformTab = "raspberry-pi";
+  const pis = visibleTopologyNodes().map(node => node.name);
   return {
     names: topologyNodes().map(node => node.name),
     selected: [...state.selectedNodes],
-    capacity: clusterCapacity()
+    counts,
+    jetsons,
+    pis
   };
 })()`, context);
-assert.deepEqual([...topology.names], ["pi-worker", "legacy-placeholder"]);
-assert.deepEqual([...topology.selected], ["pi-worker"]);
-assert.equal(topology.capacity.count, 3);
-assert.equal(topology.capacity.remaining, 1);
-assert.equal(topology.capacity.full, false);
+assert.equal(topology.names.length, 6);
+assert.equal(topology.selected.length, 6);
+assert.deepEqual(JSON.parse(JSON.stringify(topology.counts)), { all: 6, jetson: 3, "raspberry-pi": 2, unknown: 1 });
+assert.deepEqual([...topology.jetsons], ["jetson-1", "jetson-2", "jetson-3"]);
+assert.deepEqual([...topology.pis], ["pi-1", "pi-2"]);
 
 const renamedNodeState = vm.runInContext(`(() => {
   state.nodes = [{ name: "worker-wrong-name", role: "worker", enabled: true }];

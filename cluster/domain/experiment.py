@@ -70,8 +70,6 @@ class ExperimentConfig:
             validate_experiment_id(self.experiment_id)
         if not isinstance(self.node_names, list) or not self.node_names:
             raise DomainValidationError("Select at least one node")
-        if len(self.node_names) > 4:
-            raise DomainValidationError("Select at most four nodes")
         for node_name in self.node_names:
             validate_node_id(node_name)
         if len(set(self.node_names)) != len(self.node_names):

@@ -299,6 +299,37 @@ class DashboardBackendTests(unittest.TestCase):
                 ["worker-one", "worker-two"],
             )
 
+    def test_inventory_accepts_more_than_four_workers(self) -> None:
+        from cluster.clusterctl import Node
+        from cluster.dashboard.schemas import ExperimentPayload
+
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self.load_dashboard(Path(directory))
+            workers = [
+                Node(
+                    f"worker-{index}",
+                    "worker",
+                    f"192.168.0.{30 + index}",
+                    "edge",
+                    22,
+                    8000,
+                    f"/home/edge/worker-{index}/llm-cluster",
+                    True,
+                    platform="jetson" if index % 2 else "raspberry-pi",
+                )
+                for index in range(1, 9)
+            ]
+            dashboard.services.write_all_nodes(workers)
+            self.assertEqual(len(dashboard.services.read_enabled_nodes()), 8)
+            payload = ExperimentPayload(
+                node_names=[node.name for node in workers],
+                model_id="models/example.gguf",
+                rpc_tensor_split=[1.0] * len(workers),
+                prompt="unbounded worker selection",
+            )
+            self.assertEqual(len(payload.node_names), 8)
+            self.assertEqual(len(payload.rpc_tensor_split), 8)
+
 
 if __name__ == "__main__":
     unittest.main()

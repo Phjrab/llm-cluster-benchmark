@@ -100,7 +100,7 @@ class ActionPayload(BaseModel):
 class ExperimentPayload(BaseModel):
     experiment_id: str = Field("", max_length=80, pattern=r"^[a-z0-9][a-z0-9_-]*$|^$")
     name: str = "cluster-load-test"
-    node_names: List[str] = Field(min_length=1, max_length=4)
+    node_names: List[str] = Field(min_length=1)
     model_id: str = ""
     model_ids: List[str] = Field(default_factory=list, max_length=32)
     continue_on_model_error: bool = True
@@ -121,7 +121,7 @@ class ExperimentPayload(BaseModel):
     sweep_mode: str = "cumulative"
     rpc_split_mode: str = "layer"
     rpc_split_policy: str = "auto"
-    rpc_tensor_split: List[float] = Field(default_factory=list, max_length=4)
+    rpc_tensor_split: List[float] = Field(default_factory=list)
     rpc_coordinator_node: Optional[str] = Field(None, max_length=80)
     acknowledge_experimental_rpc: bool = False
 
