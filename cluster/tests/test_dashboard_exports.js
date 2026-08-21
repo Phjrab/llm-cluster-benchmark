@@ -24,7 +24,7 @@ const context = vm.createContext({
 });
 context.window = context;
 vm.runInContext(fs.readFileSync(appPath, "utf8"), context, { filename: appPath });
-for (const moduleName of ["utils.js", "console.js", "models.js", "results.js"]) {
+for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "results.js"]) {
   const modulePath = path.join(dashboardRoot, "static/js", moduleName);
   vm.runInContext(fs.readFileSync(modulePath, "utf8"), context, { filename: modulePath });
 }
@@ -34,7 +34,7 @@ const appSource = fs.readFileSync(appPath, "utf8");
 assert.match(template, /01<\/span>개요[\s\S]*02<\/span>노드[\s\S]*03<\/span>모델[\s\S]*04<\/span>실험[\s\S]*05<\/span>결과/);
 assert.match(template, /CONTROLLER[\s\S]*DASHBOARD[\s\S]*SCHEDULER[\s\S]*STORAGE/);
 assert.doesNotMatch(template, /HEAD · CONTROL \+ INFERENCE/);
-for (const moduleName of ["utils.js", "console.js", "models.js", "results.js"]) {
+for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "results.js"]) {
   assert.match(template, new RegExp(`/static/js/${moduleName.replace(".", "\\.")}`));
 }
 
@@ -42,6 +42,7 @@ assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("complet
 assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("cancelled").icon`, context), "−");
 assert.equal(vm.runInContext(`ClusterDashboard.terminals.limit`, context), 200);
 assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.recordProgress`, context), "function");
+assert.equal(vm.runInContext(`typeof ClusterDashboard.power.normalizeIntegrity`, context), "function");
 assert.match(appSource, /return state\.nodes\.filter\(node => node\.role === "worker"\)/);
 assert.match(appSource, /telemetryDegraded/);
 assert.match(appSource, /channel === "experiment"/);
@@ -51,10 +52,11 @@ assert.doesNotMatch(appSource, /\/api\/events\?token=/);
 assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260821\.4/);
-assert.match(template, /app\.js\?v=20260821\.4/);
+assert.match(template, /styles\.css\?v=20260821\.5/);
+assert.match(template, /app\.js\?v=20260821\.5/);
 assert.match(template, /nodeRenameDialog[\s\S]*nodeRenameForm[\s\S]*renameNodeInput/);
 assert.match(template, /data-node-platform-tab="all"[\s\S]*data-node-platform-tab="jetson"[\s\S]*data-node-platform-tab="raspberry-pi"/);
+assert.match(template, /experimentPowerBanner/);
 const workerRegistrationCommand = vm.runInContext(`buildWorkerKeyRegistrationCommand("ssh-ed25519 AAAA-test controller@mac")`, context);
 assert.match(workerRegistrationCommand, /^umask 077; mkdir -p ~\/\.ssh/);
 assert.match(workerRegistrationCommand, /grep -qxF "\$KEY"/);
@@ -186,6 +188,50 @@ assert.equal(topology.selected.length, 6);
 assert.deepEqual(JSON.parse(JSON.stringify(topology.counts)), { all: 6, jetson: 3, "raspberry-pi": 2, unknown: 1 });
 assert.deepEqual([...topology.jetsons], ["jetson-1", "jetson-2", "jetson-3"]);
 assert.deepEqual([...topology.pis], ["pi-1", "pi-2"]);
+
+const powerHistory = vm.runInContext(`ClusterDashboard.power.normalizeIntegrity({
+  available: true, status: "history_warning", raw_hex: "0x50000",
+  current: { undervoltage: false }, history: { undervoltage: true, throttled: true }
+}, "raspberry-pi")`, context);
+assert.equal(powerHistory.quality.quality, "warning");
+assert.equal(powerHistory.current.length, 0);
+assert.deepEqual(JSON.parse(JSON.stringify(powerHistory.history)), ["저전압", "스로틀"]);
+assert.match(vm.runInContext(`ClusterDashboard.power.detailHtml(${JSON.stringify(powerHistory)})`, context), /현재 상태가 감지된 것은 아니며 실험은 계속할 수 있습니다/);
+
+const powerActive = vm.runInContext(`ClusterDashboard.power.normalizeIntegrity({
+  available: true, status: "active_degraded", current: { throttled: true }, history: {}
+}, "raspberry-pi")`, context);
+assert.equal(powerActive.quality.quality, "degraded");
+assert.match(vm.runInContext(`ClusterDashboard.power.pillHtml(${JSON.stringify(powerActive)})`, context), /POWER DEGRADED/);
+assert.match(vm.runInContext(`ClusterDashboard.power.pillHtml(${JSON.stringify(powerActive)})`, context), /aria-label=/);
+
+const powerUnavailable = vm.runInContext(`ClusterDashboard.power.normalizeIntegrity(null, "raspberry-pi")`, context);
+assert.equal(powerUnavailable.quality.quality, "unknown");
+const rawOnly = vm.runInContext(`ClusterDashboard.power.normalizeIntegrity({ raw_hex: "0xdeadbeef" }, "raspberry-pi")`, context);
+assert.equal(rawOnly.quality.quality, "unknown");
+assert.equal(vm.runInContext(`ClusterDashboard.power.normalizeIntegrity(null, "jetson").applicable`, context), false);
+const deduplicatedWarnings = vm.runInContext(`(() => {
+  const seen = new Set();
+  const input = [{ code: "PI_POWER_HISTORY", node: "pi-1", message: "history" }, { code: "PI_POWER_HISTORY", node: "pi-1", message: "history" }, { code: "OTHER", message: "ignore" }];
+  return [ClusterDashboard.power.newPowerWarnings(input, seen).length, ClusterDashboard.power.newPowerWarnings(input, seen).length];
+})()`, context);
+assert.deepEqual(JSON.parse(JSON.stringify(deduplicatedWarnings)), [1, 0]);
+const powerBanner = vm.runInContext(`ClusterDashboard.power.selectedBanner([
+  { name: 99, platform: "raspberry-pi", selected: true },
+  { name: "jetson", platform: "jetson", selected: true }
+], [], [])`, context);
+assert.equal(powerBanner.hidden, false);
+assert.match(powerBanner.html, /상태 미확인/);
+
+const recordedEnvironment = vm.runInContext(`ClusterDashboard.power.resultEnvironmentHtml({
+  status: "failed", measurement_quality: "degraded", power_integrity: {
+    nodes: { "pi-1": { quality: "degraded", preflight: { status: "ok", current: {}, history: {} }, pre_measurement: { status: "ok", current: {}, history: {} }, postflight: { status: "active_degraded", current: { throttled: true }, history: {} }, measurement: { sample_count: 2, valid_sample_count: 2, active_warning_samples: 1 } } }
+  }
+})`, context);
+assert.match(recordedEnvironment, /실패 원인으로 단정하지 않습니다/);
+assert.match(recordedEnvironment, /DEGRADED/);
+const legacyEnvironment = vm.runInContext(`ClusterDashboard.power.resultEnvironmentHtml({ status: "completed" })`, context);
+assert.match(legacyEnvironment, /NOT RECORDED/);
 
 const renamedNodeState = vm.runInContext(`(() => {
   state.nodes = [{ name: "worker-wrong-name", role: "worker", enabled: true }];

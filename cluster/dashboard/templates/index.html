@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>MediFlow Cluster Lab</title>
   <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
-  <link rel="stylesheet" href="/static/styles.css?v=20260821.4">
+  <link rel="stylesheet" href="/static/styles.css?v=20260821.5">
 </head>
 <body>
   <div class="app-shell">
@@ -154,6 +154,7 @@
         </div>
         <form id="experimentForm" class="experiment-layout">
           <div class="form-main">
+            <section id="experimentPowerBanner" class="experiment-power-banner unknown" aria-live="polite" hidden></section>
             <div class="field full-field">
               <label for="experimentGroupSelect">실험 묶음</label>
               <input id="experimentPickerSearch" type="search" autocomplete="off" placeholder="실험 이름·전략·완료 상태 검색" aria-controls="experimentGroupSelect">
@@ -444,10 +445,11 @@
   </dialog>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-  <script src="/static/app.js?v=20260821.4" defer></script>
-  <script src="/static/js/utils.js?v=20260821.4" defer></script>
-  <script src="/static/js/console.js?v=20260821.4" defer></script>
-  <script src="/static/js/models.js?v=20260821.4" defer></script>
-  <script src="/static/js/results.js?v=20260821.4" defer></script>
+  <script src="/static/app.js?v=20260821.5" defer></script>
+  <script src="/static/js/utils.js?v=20260821.5" defer></script>
+  <script src="/static/js/power.js?v=20260821.5" defer></script>
+  <script src="/static/js/console.js?v=20260821.5" defer></script>
+  <script src="/static/js/models.js?v=20260821.5" defer></script>
+  <script src="/static/js/results.js?v=20260821.5" defer></script>
 </body>
 </html>

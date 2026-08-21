@@ -27,6 +27,8 @@ const state = {
   chartInteraction: new Map(),
   publicationChartId: "",
   rpcCoordinatorNode: "",
+  powerStartWarnings: [],
+  powerWarningKeys: new Set(),
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -364,6 +366,7 @@ function renderNodes() {
     const telemetryDegraded = Boolean(capabilities.telemetry_degraded);
     const environment = environmentFor(node.name);
     const readiness = readinessMeta(environment.status);
+    const powerIntegrity = window.ClusterDashboard?.power?.nodeIntegrity(node, live);
     return `
       <article class="node-card ${selected ? "selected" : ""} ${node.enabled ? "" : "disabled"}" data-node-card="${escapeHtml(node.name)}">
         <div class="node-card-head">
@@ -376,6 +379,7 @@ function renderNodes() {
             <span class="status-pill ${online ? "online" : ""}"><i></i>${online ? "ONLINE" : node.enabled ? "OFFLINE" : "DISABLED"}</span>
             <span class="inference-pill ${inferenceReady ? "ready" : "not-ready"}"><i></i>${inferenceReady ? "INFERENCE READY" : "INFERENCE CHECK"}</span>
             <span class="readiness-pill ${readiness.status}" title="${escapeHtml(readiness.detail)}"><i></i>${readiness.label}</span>
+            ${window.ClusterDashboard?.power?.pillHtml(powerIntegrity) || ""}
             ${telemetryDegraded ? `<span class="telemetry-pill" title="${escapeHtml(capabilities.telemetry_error || "고급 텔레메트리를 사용할 수 없어 기본 지표만 표시합니다.")}">! TELEMETRY DEGRADED</span>` : ""}
           </div>
         </div>
@@ -456,6 +460,7 @@ function updateSummary() {
   $("#modelCount").textContent = state.models.length || "—";
   $("#averagePower").textContent = powers.length ? fmt(powers.reduce((a, b) => a + b, 0)) : "—";
   const controller = state.controller || {};
+  renderExperimentPowerBanner();
   const dashboardReady = controller.dashboard?.healthy !== false;
   const schedulerReady = controller.scheduler?.ready !== false;
   const storageReady = controller.storage?.ready !== false;
@@ -484,6 +489,29 @@ function updateSummary() {
   updateModelAvailability();
   window.ClusterDashboard?.renderModelLibrary?.();
   renderEnvironmentSummary();
+}
+
+function renderExperimentPowerBanner() {
+  const banner = $("#experimentPowerBanner");
+  const power = window.ClusterDashboard?.power;
+  if (!banner || !power) return;
+  const nodes = topologyNodes().map(node => ({ ...node, selected: state.selectedNodes.has(node.name) }));
+  const view = power.selectedBanner(nodes, state.status, state.powerStartWarnings);
+  banner.hidden = view.hidden;
+  banner.className = `experiment-power-banner ${view.tone || "unknown"}`;
+  if (!view.hidden) banner.innerHTML = view.html;
+}
+
+function recordPowerWarnings(warnings, label = "POWER") {
+  const items = window.ClusterDashboard?.power?.newPowerWarnings?.(warnings, state.powerWarningKeys) || [];
+  let changed = false;
+  items.forEach(warning => {
+    const message = String(warning?.message || "");
+    state.powerStartWarnings.push(warning);
+    logLine(label, `${warning?.node ? `${warning.node} · ` : ""}${message || warning?.code || "Pi power warning"}`);
+    changed = true;
+  });
+  if (changed) renderExperimentPowerBanner();
 }
 
 function updatePlatformGuidance() {
@@ -1484,6 +1512,7 @@ function renderNodeDetail() {
   const engines = metrics.accelerator?.engines || {};
   const fans = metrics.fans || {};
   const environment = environmentFor(node.name);
+  const powerIntegrity = window.ClusterDashboard?.power?.nodeIntegrity(node, live);
   $("#nodeDetailContent").innerHTML = `
     <div class="detail-identity">
       <div><span>PLATFORM</span><strong>${escapeHtml(platformName(kind))}</strong><small>${escapeHtml(profile.board_model || "미확인")}</small></div>
@@ -1511,6 +1540,7 @@ function renderNodeDetail() {
       </section>
     </div>
     <section class="telemetry-history"><div><span>LIVE HISTORY</span><strong>최근 ${state.metricHistory.get(node.name)?.length || 0}개 표본 · CPU / GPU / RAM</strong></div><canvas id="telemetryChart" height="230" aria-label="노드 CPU GPU RAM 실시간 사용률 그래프"></canvas></section>
+    ${window.ClusterDashboard?.power?.detailHtml(powerIntegrity) || ""}
     ${renderEnvironmentDetail(environment)}
     ${metrics.sampler_error ? `<div class="telemetry-warning">${escapeHtml(metrics.sampler_error)}</div>` : ""}`;
   $$('[data-environment-node-action]', $("#nodeDetailContent")).forEach(button => button.addEventListener("click", () => {
@@ -1608,6 +1638,7 @@ function setRunState(active) {
     cancelling: "취소 요청", finished: "Suite 종료",
   })[active.phase] || active.status || "실행 중";
   if (active.error) logLine("ERROR", active.error);
+  renderExperimentPowerBanner();
 }
 
 function logLine(label, message) {
@@ -1907,6 +1938,16 @@ function connectEvents() {
       if (inner.type === "node_model_loaded") logLine("MODEL", `${inner.node} · ${inner.actual?.model_id || "loaded"}`);
       if (inner.type === "request_completed") logLine("RUN", `${inner.completed}/${inner.total} · ${inner.result?.node} · ${inner.result?.ok ? "OK" : "FAIL"}`);
       if (inner.type === "warning") logLine("WARN", inner.message);
+      if (inner.type === "power_integrity_changed") {
+        const snapshot = inner.power_integrity || {};
+        const current = Object.entries(snapshot.current || {}).filter(([, active]) => active).map(([name]) => name).join(", ");
+        const history = Object.entries(snapshot.history || {}).filter(([, active]) => active).map(([name]) => name).join(", ");
+        logLine("POWER", `${inner.node || "Pi worker"} · ${snapshot.status || "unknown"}${current ? ` · current ${current}` : history ? ` · history ${history}` : ""}`);
+      }
+      if (inner.type === "measurement_quality_finalized") {
+        const quality = inner.measurement_quality || "unknown";
+        logLine("POWER", `측정 품질 ${String(quality).toUpperCase()} · 결과에 전력 환경을 기록했습니다.`);
+      }
       if (inner.type === "run_finished") {
         refreshExperimentData().catch(error => toast("결과 갱신 실패", error.message, "error"));
         if (!(message.active?.model_count > 1 || inner.summary?.suite_id)) toast("벤치마크 완료", `${fmt(inner.summary.cluster_tokens_per_s)} tok/s · ${inner.summary.nodes.length} nodes`);
@@ -2372,7 +2413,10 @@ function bindEvents() {
     try {
       const data = await api("/api/experiments", { method: "POST", body: experimentPayload() });
       $("#consoleLog").innerHTML = "";
+      state.powerStartWarnings = [];
+      state.powerWarningKeys.clear();
       logLine("START", `${data.experiment.name} · ${data.experiment.nodes.join(", ")}`);
+      recordPowerWarnings(data.warnings, "POWER");
       setRunState(data.experiment);
       await refreshExperimentData();
       $("#experimentGroupSelect").value = data.definition.experiment_id;

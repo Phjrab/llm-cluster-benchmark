@@ -57,7 +57,8 @@
         return `<article class="response-card ${status.tone}"><header><div><span>${status.icon} ${status.label}</span><strong>${dashboard.escapeHtml(response.node || "worker")}</strong><small>${dashboard.escapeHtml(response.model_id || dashboard.runModelId?.(run) || "unknown model")}</small></div><code title="${dashboard.escapeHtml(response.output_sha256 || "")}">${dashboard.escapeHtml(response.output_sha256 ? response.output_sha256.slice(0, 16) : "hash N/A")}</code></header><pre>${dashboard.escapeHtml(output)}</pre><footer>${dashboard.escapeHtml(metrics || "No request-level metrics")}</footer></article>`;
       }).join("")}</div></article>`;
     }).join("") : `<div class="empty-result"><strong>저장된 응답이 없습니다.</strong><span>이전 형식의 결과이거나 prompt/response persistence가 꺼진 실행일 수 있습니다.</span></div>`;
-    inspector.innerHTML = `${content}${renderFailureCards(run, responses)}`;
+    const environment = dashboard.power?.resultEnvironmentHtml?.(run) || "";
+    inspector.innerHTML = `${environment}${content}${renderFailureCards(run, responses)}`;
   }
 
   async function show(runId) {
