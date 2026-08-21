@@ -1251,8 +1251,7 @@ def sync_models_one(node: Node, model_paths: Sequence[str], dry_run: bool = Fals
             "rsync",
             "-ah",
             "--partial",
-            "--append-verify",
-            "--info=progress2",
+            "--progress",
             "-e",
             _rsync_ssh(node),
         ]

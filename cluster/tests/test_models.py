@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +18,7 @@ from cluster.application.model_service import (
 )
 from cluster.domain.errors import ErrorCode
 from cluster.domain.model import ModelCatalogEntry, ModelInventoryEntry, recommend_models
+from cluster.infrastructure.remote import CommandResult
 
 
 MODEL_ID = "qwen/tiny-Q4_K_M.gguf"
@@ -156,6 +158,41 @@ class ModelControllerBoundaryTests(unittest.TestCase):
         self.assertNotIn("sync-models", start_source)
         frontend_source = (Path(__file__).resolve().parents[1] / "dashboard" / "static" / "app.js").read_text(encoding="utf-8")
         self.assertIn('message.type === "model_progress" && channel === "node_ops"', frontend_source)
+
+
+class ModelSyncCompatibilityTests(unittest.TestCase):
+    def test_sync_uses_macos_rsync_options_and_still_verifies_remote_checksum(self) -> None:
+        from cluster import clusterctl
+
+        node = clusterctl.Node(
+            "pi-01", "worker", "192.168.0.16", "pi", 22, 8000,
+            "/home/pi/llm-cluster-benchmark", True, platform="raspberry-pi",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "models" / MODEL_ID
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"gguf")
+            remote_results = iter((
+                CommandResult(0, "", ""),
+                CommandResult(0, "", ""),
+                CommandResult(0, f"{MODEL_HASH}  remote.gguf\n", ""),
+            ))
+            completed = subprocess.CompletedProcess(["rsync"], 0, "progress", "")
+            with mock.patch.object(clusterctl, "PROJECT_ROOT", root), mock.patch.object(
+                clusterctl, "run_on_node", side_effect=lambda *_args, **_kwargs: next(remote_results)
+            ), mock.patch.object(clusterctl, "_identity_path", return_value=None), mock.patch.object(
+                clusterctl.subprocess, "run", return_value=completed
+            ) as run:
+                result = clusterctl.sync_models_one(node, [MODEL_ID])
+
+        command = run.call_args.args[0]
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["models"][0]["verified"])
+        self.assertIn("--partial", command)
+        self.assertIn("--progress", command)
+        self.assertNotIn("--append-verify", command)
+        self.assertNotIn("--info=progress2", command)
 
 
 if __name__ == "__main__":
