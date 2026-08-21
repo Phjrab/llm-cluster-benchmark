@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -302,6 +303,24 @@ class JobRegistryRecoveryTests(unittest.TestCase):
         saved = service.active()
         self.assertEqual(saved["status"], "orphaned")
         self.assertEqual(saved["errors"][-1]["stage"], "job_recovery")
+
+    def test_fresh_queued_spawn_gets_bounded_identity_claim_grace(self) -> None:
+        job, _identity = self.job(status="queued")
+        job.pop("process")
+        job["spawned_pid"] = 4321
+        job["created_at"] = datetime.now(timezone.utc).isoformat()
+        FilesystemJobRepository(self.jobs).write(job["job_id"], job)
+        saved = self.service().active()
+        self.assertEqual(saved["status"], "queued")
+        self.assertNotIn("orphaned_from_status", saved)
+
+    def test_expired_queued_spawn_without_identity_becomes_orphaned(self) -> None:
+        job, _identity = self.job(status="queued")
+        job.pop("process")
+        job["spawned_pid"] = 4321
+        FilesystemJobRepository(self.jobs).write(job["job_id"], job)
+        saved = self.service().active()
+        self.assertEqual(saved["status"], "orphaned")
 
     def test_cancel_sets_durable_request_before_any_signal_fallback(self) -> None:
         job, identity = self.job()

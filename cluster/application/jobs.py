@@ -82,6 +82,7 @@ class JobService:
         cancel_grace_s: float = 120.0,
         terminate_grace_s: float = 10.0,
         poll_interval_s: float = 0.25,
+        startup_grace_s: float = 5.0,
         start_watcher: bool = True,
     ) -> None:
         self.jobs_dir = Path(jobs_dir)
@@ -95,6 +96,7 @@ class JobService:
         self.cancel_grace_s = cancel_grace_s
         self.terminate_grace_s = terminate_grace_s
         self.poll_interval_s = poll_interval_s
+        self.startup_grace_s = startup_grace_s
         self._lock = threading.RLock()
         self._watch_stop = threading.Event()
         self._last_change: tuple[str, str, str] = ("", "", "")
@@ -201,6 +203,31 @@ class JobService:
             "updated_at": utc_now(),
         }
 
+    def _within_startup_grace(self, job: Mapping[str, Any]) -> bool:
+        """Allow a freshly spawned queued child time to claim its identity.
+
+        On macOS the Python launcher can briefly re-exec between ``Popen`` and
+        the child process writing its authoritative identity.  Recovery must
+        not turn that bounded hand-off into an orphan, while stale queued jobs
+        and every running identity mismatch remain fail-closed.
+        """
+        if job.get("status") != "queued":
+            return False
+        spawned_pid = job.get("spawned_pid")
+        if not isinstance(spawned_pid, int) or spawned_pid <= 1:
+            return False
+        created_at = job.get("created_at")
+        if not isinstance(created_at, str):
+            return False
+        try:
+            created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        age_s = (datetime.now(timezone.utc) - created.astimezone(timezone.utc)).total_seconds()
+        return 0.0 <= age_s <= self.startup_grace_s
+
     def recover(self) -> list[Dict[str, Any]]:
         """Reconcile registry state with result artifacts and exact processes."""
         self._reap_children()
@@ -232,6 +259,9 @@ class JobService:
                     recovered.append(updated)
                     continue
                 if self._live_identity(job) is not None:
+                    recovered.append(job)
+                    continue
+                if self._within_startup_grace(job):
                     recovered.append(job)
                     continue
                 error = {
