@@ -98,6 +98,16 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .button.danger { background: var(--red); color: white; }
 .button:disabled { opacity: .42; cursor: not-allowed; transform: none !important; }
 .danger-text { color: var(--red) !important; }
+.delete-node-path { display: grid; gap: 7px; margin: 18px 0; padding: 14px 16px; border: 1px solid var(--line); background: rgba(17,23,19,.035); }
+.delete-node-path span { color: var(--muted); font: 700 9px/1.2 var(--mono); letter-spacing: .08em; }
+.delete-node-path code { overflow-wrap: anywhere; color: var(--ink); font-size: 11px; }
+.delete-worker-files-option { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 15px 16px; border: 1px solid rgba(229,75,75,.28); background: rgba(229,75,75,.045); cursor: pointer; }
+.delete-worker-files-option input { width: 17px; height: 17px; margin-top: 2px; accent-color: var(--red); }
+.delete-worker-files-option span { display: grid; gap: 6px; }
+.delete-worker-files-option strong { color: #8f2525; font-size: 12px; }
+.delete-worker-files-option small { color: var(--muted); line-height: 1.55; }
+.delete-node-warning { margin: 12px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.delete-node-warning.destructive { color: #9e2929; font-weight: 700; }
 
 .section { padding: 80px 5vw; scroll-margin-top: 94px; }
 .hero-section {

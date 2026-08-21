@@ -381,6 +381,90 @@ class DashboardBackendTests(unittest.TestCase):
                 ["worker-one", "worker-two"],
             )
 
+    def test_worker_disconnect_preserves_remote_files_by_default(self) -> None:
+        from fastapi.testclient import TestClient
+        from cluster.clusterctl import Node
+
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self.load_dashboard(Path(directory))
+            dashboard.services.write_all_nodes(
+                [Node("worker-one", "worker", "192.168.0.26", "jetson", 22, 8000, "/opt/worker-one", True)]
+            )
+            with mock.patch.object(dashboard.services, "remove_worker_project_one") as remove_files, TestClient(dashboard.app) as client:
+                response = client.delete("/api/nodes/worker-one")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.json()["cleanup"]["requested"])
+            self.assertFalse(response.json()["cleanup"]["removed"])
+            remove_files.assert_not_called()
+            self.assertEqual(dashboard.services.read_all_nodes(), [])
+
+    def test_worker_disconnect_can_explicitly_remove_registered_project(self) -> None:
+        from fastapi.testclient import TestClient
+        from cluster.clusterctl import Node
+
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self.load_dashboard(Path(directory))
+            worker = Node(
+                "worker-one", "worker", "192.168.0.26", "jetson", 22, 8000,
+                "/opt/worker-one", True,
+            )
+            dashboard.services.write_all_nodes([worker])
+            removed = {
+                "name": worker.name,
+                "ok": True,
+                "removed": True,
+                "project_dir": worker.project_dir,
+                "size_bytes": 1_073_741_824,
+                "stdout": "removed",
+                "stderr": "",
+            }
+            with mock.patch.object(
+                dashboard.services, "remove_worker_project_one", return_value=removed,
+            ) as remove_files, TestClient(dashboard.app) as client:
+                unconfirmed = client.request(
+                    "DELETE",
+                    "/api/nodes/worker-one",
+                    json={"remove_worker_files": True, "confirmed": False},
+                )
+                response = client.request(
+                    "DELETE",
+                    "/api/nodes/worker-one",
+                    json={"remove_worker_files": True, "confirmed": True},
+                )
+
+            self.assertEqual(unconfirmed.status_code, 400)
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.json()["cleanup"]["removed"])
+            self.assertEqual(response.json()["cleanup"]["size_bytes"], 1_073_741_824)
+            remove_files.assert_called_once_with(worker)
+            self.assertEqual(dashboard.services.read_all_nodes(), [])
+
+    def test_worker_disconnect_keeps_inventory_when_remote_cleanup_fails(self) -> None:
+        from fastapi.testclient import TestClient
+        from cluster.clusterctl import Node
+
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self.load_dashboard(Path(directory))
+            worker = Node(
+                "worker-one", "worker", "192.168.0.26", "jetson", 22, 8000,
+                "/opt/worker-one", True,
+            )
+            dashboard.services.write_all_nodes([worker])
+            with mock.patch.object(
+                dashboard.services,
+                "remove_worker_project_one",
+                return_value={"ok": False, "removed": False, "stderr": "ownership mismatch"},
+            ), TestClient(dashboard.app) as client:
+                response = client.request(
+                    "DELETE",
+                    "/api/nodes/worker-one",
+                    json={"remove_worker_files": True, "confirmed": True},
+                )
+
+            self.assertEqual(response.status_code, 502)
+            self.assertEqual([node.name for node in dashboard.services.read_all_nodes()], ["worker-one"])
+
     def test_inventory_accepts_more_than_four_workers(self) -> None:
         from cluster.clusterctl import Node
         from cluster.dashboard.schemas import ExperimentPayload

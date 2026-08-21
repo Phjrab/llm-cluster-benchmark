@@ -57,6 +57,7 @@ from cluster.clusterctl import (
     discover_node,
     load_nodes,
     power_status_one,
+    remove_worker_project_one,
     request_json,
     run_on_node,
     select_nodes,
@@ -2160,7 +2161,24 @@ class DashboardFacade:
             "warning": warning,
         }
 
-    def delete_node(self, node_name: str) -> Dict[str, Any]:
+    def delete_node(
+        self,
+        node_name: str,
+        *,
+        remove_worker_files: bool = False,
+        confirmed: bool = False,
+    ) -> Dict[str, Any]:
+        if remove_worker_files and not confirmed:
+            raise DashboardServiceError(
+                400,
+                "Permanent Worker file removal requires explicit confirmation",
+            )
+        cleanup: Dict[str, Any] = {
+            "requested": remove_worker_files,
+            "removed": False,
+            "project_dir": "",
+            "size_bytes": 0,
+        }
         with inventory_lock:
             active = experiments.active()
             if (
@@ -2177,6 +2195,18 @@ class DashboardFacade:
                 raise DashboardServiceError(404, "Node not found")
             if target.role == "head":
                 raise DashboardServiceError(400, "The head node cannot be removed")
+            cleanup["project_dir"] = target.project_dir
+            if remove_worker_files:
+                result = remove_worker_project_one(target)
+                if result.get("ok") is not True:
+                    detail = result.get("stderr") or result.get("stdout") or "Worker files could not be removed"
+                    raise DashboardServiceError(502, detail)
+                cleanup.update(
+                    {
+                        "removed": result.get("removed") is True,
+                        "size_bytes": int(result.get("size_bytes") or 0),
+                    }
+                )
             write_all_nodes([node for node in nodes if node.name != node_name])
             _invalidate_environment_report(node_name)
         events.publish(
@@ -2184,7 +2214,7 @@ class DashboardFacade:
             channel=EventChannel.NODE_OPS,
             nodes=[serialize_node(item) for item in read_all_nodes()],
         )
-        return {"ok": True}
+        return {"ok": True, "node": node_name, "cleanup": cleanup}
 
     def start_action(self, payload: ActionPayload) -> Dict[str, Any]:
         requires_confirmation = {

@@ -80,6 +80,62 @@ class InventoryTests(unittest.TestCase):
                 load_nodes(path)
 
 
+class WorkerProjectRemovalTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.worker = Node(
+            "worker-01",
+            "worker",
+            "192.168.0.27",
+            "jetson",
+            22,
+            8000,
+            "/home/jetson/project/llm/llm-cluster-benchmark-worker",
+            True,
+            platform="jetson",
+        )
+
+    def test_removal_uses_only_validated_inventory_path_and_verifies_absence(self) -> None:
+        project = self.worker.project_dir
+        responses = [
+            subprocess.CompletedProcess([], 1, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout=project + "\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="jetson\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout=f"2048\t{project}\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        ]
+        with mock.patch.object(clusterctl, "run_on_node", side_effect=responses) as remote, mock.patch.object(
+            clusterctl,
+            "_lifecycle_one",
+            return_value={"name": self.worker.name, "ok": True, "stdout": "stopped", "stderr": ""},
+        ) as stopped:
+            result = clusterctl.remove_worker_project_one(self.worker)
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["removed"])
+        self.assertEqual(result["size_bytes"], 2 * 1024 * 1024)
+        stopped.assert_called_once_with(self.worker, "stop")
+        argv = [call.args[1] for call in remote.call_args_list]
+        self.assertIn(["rm", "-rf", "--one-file-system", "--", project], argv)
+        self.assertEqual(argv[-1], ["test", "!", "-e", project])
+        self.assertTrue(all(project in command or command[:2] == ["stat", "-c"] for command in argv))
+
+    def test_removal_refuses_remote_symlink_before_stopping_worker(self) -> None:
+        with mock.patch.object(
+            clusterctl,
+            "run_on_node",
+            return_value=subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+        ) as remote, mock.patch.object(clusterctl, "_lifecycle_one") as stopped:
+            result = clusterctl.remove_worker_project_one(self.worker)
+
+        self.assertFalse(result["ok"])
+        self.assertIn("symlink", result["stderr"])
+        remote.assert_called_once_with(self.worker, ["test", "-L", self.worker.project_dir], timeout=30)
+        stopped.assert_not_called()
+
+
 class EnvironmentReadinessTests(unittest.TestCase):
     def setUp(self) -> None:
         self.worker = Node(

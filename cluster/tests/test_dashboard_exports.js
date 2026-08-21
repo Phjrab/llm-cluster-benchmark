@@ -49,7 +49,7 @@ assert.match(modelsSource, /modelStarterPacks/);
 assert.match(modelsSource, /RECOMMENDED/);
 assert.match(modelsSource, /GGUF source 확인 필요/);
 assert.match(template, /id="modelStarterPacks"/);
-assert.match(appSource, /return state\.nodes\.filter\(node => node\.role === "worker"\)/);
+assert.match(appSource, /\.filter\(node => node\.role === "worker"\)[\s\S]*\.sort\(\(left, right\) =>/);
 assert.match(appSource, /telemetryDegraded/);
 assert.match(appSource, /channel === "experiment"/);
 assert.match(appSource, /headers\["X-Cluster-Token"\] = state\.token/);
@@ -58,10 +58,13 @@ assert.doesNotMatch(appSource, /\/api\/events\?token=/);
 assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260821\.7/);
-assert.match(template, /app\.js\?v=20260821\.10/);
+assert.match(template, /styles\.css\?v=20260821\.8/);
+assert.match(template, /app\.js\?v=20260821\.11/);
 assert.match(template, /results\.js\?v=20260821\.9/);
 assert.match(template, /nodeRenameDialog[\s\S]*nodeRenameForm[\s\S]*renameNodeInput/);
+assert.match(template, /nodeDeleteDialog[\s\S]*removeWorkerFilesInput[\s\S]*confirmNodeDeleteButton/);
+assert.match(appSource, /method: "DELETE"[\s\S]*remove_worker_files: removeWorkerFiles, confirmed: true/);
+assert.match(appSource, /기본값은 인벤토리에서만 제거이며, 워커 파일은 남겨둡니다/);
 assert.match(template, /data-node-platform-tab="all"[\s\S]*data-node-platform-tab="jetson"[\s\S]*data-node-platform-tab="raspberry-pi"/);
 assert.match(template, /experimentPowerBanner/);
 assert.match(appSource, /\/api\/nodes\/\$\{encodeURIComponent\(nodeName\)\}\/power/);
@@ -259,6 +262,22 @@ assert.deepEqual([...topology.selected], ["pi-1", "pi-2"]);
 assert.deepEqual(JSON.parse(JSON.stringify(topology.counts)), { all: 6, jetson: 3, "raspberry-pi": 2, unknown: 1 });
 assert.deepEqual([...topology.jetsons], ["jetson-1", "jetson-2", "jetson-3"]);
 assert.deepEqual([...topology.pis], ["pi-1", "pi-2"]);
+
+const naturallyOrderedWorkers = vm.runInContext(`(() => {
+  state.nodes = [
+    { name: "pi-worker-10", role: "worker", enabled: true, platform: "raspberry-pi", host: "192.168.0.20" },
+    { name: "jetson-worker-10", role: "worker", enabled: true, platform: "jetson", host: "192.168.0.30" },
+    { name: "unknown-worker-1", role: "worker", enabled: true, platform: "auto", host: "192.168.0.40" },
+    { name: "pi-worker-2", role: "worker", enabled: true, platform: "raspberry-pi", host: "192.168.0.12" },
+    { name: "jetson-worker-2", role: "worker", enabled: true, platform: "jetson", host: "192.168.0.22" }
+  ];
+  state.status = [];
+  return topologyNodes().map(node => node.name);
+})()`, context);
+assert.deepEqual(
+  [...naturallyOrderedWorkers],
+  ["jetson-worker-2", "jetson-worker-10", "pi-worker-2", "pi-worker-10", "unknown-worker-1"],
+);
 
 const powerHistory = vm.runInContext(`ClusterDashboard.power.normalizeIntegrity({
   available: true, status: "history_warning", raw_hex: "0x50000",

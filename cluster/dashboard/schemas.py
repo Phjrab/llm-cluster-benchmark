@@ -91,6 +91,13 @@ class NodeRenamePayload(BaseModel):
     new_name: str = Field(min_length=1, max_length=40, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
 
 
+class NodeDeletePayload(BaseModel):
+    """Optional remote cleanup requested while disconnecting a Worker."""
+
+    remove_worker_files: bool = False
+    confirmed: bool = False
+
+
 class JetsonPowerModePayload(BaseModel):
     """A locally advertised nvpmodel ID; the Worker validates it again."""
 

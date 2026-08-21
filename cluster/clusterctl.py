@@ -1590,6 +1590,150 @@ def _lifecycle_one(node: Node, action: str) -> Dict[str, Any]:
         return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc)}
 
 
+def remove_worker_project_one(node: Node) -> Dict[str, Any]:
+    """Stop one Worker and remove only its validated inventory project root.
+
+    The caller cannot supply a second path: the exact target comes from the
+    already validated inventory record.  Remote symlinks, ownership changes,
+    broad paths, and incomplete removals all fail closed.
+    """
+    if node.role != "worker" or node.is_local:
+        return {
+            "name": node.name,
+            "ok": False,
+            "removed": False,
+            "project_dir": node.project_dir,
+            "size_bytes": 0,
+            "stderr": "Only a remote worker project can be removed",
+        }
+    try:
+        project_dir = validate_project_dir(node.project_dir, node.user)
+    except ValueError as exc:
+        return {
+            "name": node.name,
+            "ok": False,
+            "removed": False,
+            "project_dir": node.project_dir,
+            "size_bytes": 0,
+            "stderr": str(exc),
+        }
+
+    symlink = run_on_node(node, ["test", "-L", project_dir], timeout=30)
+    if symlink.returncode == 0:
+        return {
+            "name": node.name,
+            "ok": False,
+            "removed": False,
+            "project_dir": project_dir,
+            "size_bytes": 0,
+            "stderr": "Worker project path is a symlink; no files were removed",
+        }
+    if symlink.returncode not in {0, 1}:
+        return {
+            "name": node.name,
+            "ok": False,
+            "removed": False,
+            "project_dir": project_dir,
+            "size_bytes": 0,
+            "stderr": symlink.stderr.strip() or "Worker project path could not be inspected",
+        }
+
+    exists = run_on_node(node, ["test", "-e", project_dir], timeout=30)
+    if exists.returncode == 1:
+        return {
+            "name": node.name,
+            "ok": True,
+            "removed": False,
+            "project_dir": project_dir,
+            "size_bytes": 0,
+            "stdout": "Worker project was already absent",
+            "stderr": "",
+        }
+    if exists.returncode != 0:
+        return {
+            "name": node.name,
+            "ok": False,
+            "removed": False,
+            "project_dir": project_dir,
+            "size_bytes": 0,
+            "stderr": exists.stderr.strip() or "Worker project existence could not be verified",
+        }
+
+    resolved = run_on_node(node, ["realpath", "-e", project_dir], timeout=30)
+    if resolved.returncode != 0 or resolved.stdout.strip() != project_dir:
+        return {
+            "name": node.name,
+            "ok": False,
+            "removed": False,
+            "project_dir": project_dir,
+            "size_bytes": 0,
+            "stderr": "Worker project resolved outside its inventory path; no files were removed",
+        }
+    directory = run_on_node(node, ["test", "-d", project_dir], timeout=30)
+    owner = run_on_node(node, ["stat", "-c", "%U", project_dir], timeout=30)
+    if directory.returncode != 0 or owner.returncode != 0 or owner.stdout.strip() != node.user:
+        return {
+            "name": node.name,
+            "ok": False,
+            "removed": False,
+            "project_dir": project_dir,
+            "size_bytes": 0,
+            "stderr": "Worker project must be a directory owned by its SSH user",
+        }
+
+    stopped = _lifecycle_one(node, "stop")
+    if not stopped.get("ok"):
+        return {
+            "name": node.name,
+            "ok": False,
+            "removed": False,
+            "project_dir": project_dir,
+            "size_bytes": 0,
+            "stderr": stopped.get("stderr") or stopped.get("stdout") or "Worker API could not be stopped",
+        }
+
+    measured = run_on_node(node, ["du", "-sk", "--", project_dir], timeout=120)
+    size_bytes = 0
+    if measured.returncode == 0:
+        try:
+            size_bytes = int(measured.stdout.split()[0]) * 1024
+        except (IndexError, TypeError, ValueError):
+            size_bytes = 0
+    removed = run_on_node(
+        node,
+        ["rm", "-rf", "--one-file-system", "--", project_dir],
+        timeout=1800,
+    )
+    if removed.returncode != 0:
+        return {
+            "name": node.name,
+            "ok": False,
+            "removed": False,
+            "project_dir": project_dir,
+            "size_bytes": size_bytes,
+            "stderr": removed.stderr.strip() or "Worker project removal failed",
+        }
+    verified = run_on_node(node, ["test", "!", "-e", project_dir], timeout=30)
+    if verified.returncode != 0:
+        return {
+            "name": node.name,
+            "ok": False,
+            "removed": False,
+            "project_dir": project_dir,
+            "size_bytes": size_bytes,
+            "stderr": "Worker project still exists after removal",
+        }
+    return {
+        "name": node.name,
+        "ok": True,
+        "removed": True,
+        "project_dir": project_dir,
+        "size_bytes": size_bytes,
+        "stdout": "Worker API stopped and project files removed",
+        "stderr": "",
+    }
+
+
 def command_lifecycle(nodes: Sequence[Node], action: str) -> int:
     results = run_parallel(nodes, lambda node: _lifecycle_one(node, action))
     for item in results:

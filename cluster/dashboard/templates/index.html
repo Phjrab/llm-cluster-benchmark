@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>MediFlow Cluster Lab</title>
   <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
-  <link rel="stylesheet" href="/static/styles.css?v=20260821.7">
+  <link rel="stylesheet" href="/static/styles.css?v=20260821.8">
 </head>
 <body>
   <div class="app-shell">
@@ -376,7 +376,7 @@
 
   <dialog id="nodeDetailDialog" class="modal node-detail-modal">
     <div class="node-detail-shell">
-      <div class="modal-head"><div><span class="section-index">LIVE NODE TELEMETRY</span><h2 id="detailNodeName">노드 상태</h2></div><div class="node-detail-head-actions"><button type="button" class="button ghost compact" id="nodeRenameButton">이름 변경</button><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div></div>
+      <div class="modal-head"><div><span class="section-index">LIVE NODE TELEMETRY</span><h2 id="detailNodeName">노드 상태</h2></div><div class="node-detail-head-actions"><button type="button" class="button ghost compact" id="nodeRenameButton">이름 변경</button><button type="button" class="button ghost compact danger-text" id="nodeDeleteButton">연결 해제</button><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div></div>
       <div id="nodeDetailContent"></div>
     </div>
   </dialog>
@@ -388,6 +388,20 @@
       <div class="field"><label for="renameNodeInput">새 워커 이름</label><input id="renameNodeInput" required minlength="1" maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_-]*" autocomplete="off" placeholder="jetson-worker-02"><small>영문자·숫자로 시작하고 <code>_</code>, <code>-</code>만 사용할 수 있습니다.</small></div>
       <p class="rename-node-note">과거 벤치마크 결과의 노드명은 재현성을 위해 그대로 보존됩니다. 저장된 실험에서 이전 이름을 사용했다면 새 이름을 다시 선택하세요.</p>
       <div class="modal-actions"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="submit" class="button primary">이름 저장</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="nodeDeleteDialog" class="modal node-delete-modal">
+    <form id="nodeDeleteForm" method="dialog">
+      <div class="modal-head"><div><span class="section-index">WORKER DISCONNECT</span><h2>워커 연결 해제</h2></div><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div>
+      <p class="modal-intro"><code id="deleteNodeCurrent">—</code>을 클러스터 인벤토리에서 제거합니다. 과거 벤치마크 결과는 그대로 보존됩니다.</p>
+      <div class="delete-node-path"><span>등록된 워커 프로젝트 경로</span><code id="deleteNodeProject">—</code></div>
+      <label class="delete-worker-files-option">
+        <input id="removeWorkerFilesInput" type="checkbox">
+        <span><strong>워커에 설치된 프로젝트 파일도 영구 삭제</strong><small>Worker API를 먼저 종료한 뒤 위 경로의 코드, 가상환경, 모델, 로그와 워커 로컬 결과를 모두 삭제합니다.</small></span>
+      </label>
+      <p class="delete-node-warning" id="deleteNodeWarning">기본값은 인벤토리에서만 제거이며, 워커 파일은 남겨둡니다.</p>
+      <div class="modal-actions"><button type="button" class="button ghost" data-close-dialog>취소</button><button type="submit" class="button danger" id="confirmNodeDeleteButton">연결 해제</button></div>
     </form>
   </dialog>
 
@@ -446,7 +460,7 @@
   </dialog>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-  <script src="/static/app.js?v=20260821.10" defer></script>
+  <script src="/static/app.js?v=20260821.11" defer></script>
   <script src="/static/js/utils.js?v=20260821.6" defer></script>
   <script src="/static/js/power.js?v=20260821.6" defer></script>
   <script src="/static/js/console.js?v=20260821.6" defer></script>

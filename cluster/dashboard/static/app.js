@@ -23,6 +23,7 @@ const state = {
   metricHistory: new Map(),
   detailNode: "",
   renameNode: "",
+  deleteNode: "",
   nodePlatformTab: "all",
   selectedModels: [],
   suites: [],
@@ -379,7 +380,19 @@ function topologyNodes() {
   // The legacy inventory can still retain a `head` row for read compatibility,
   // but Controller status is rendered separately and never becomes a worker UI
   // card or benchmark participant.
-  return state.nodes.filter(node => node.role === "worker");
+  const priority = { jetson: 0, "raspberry-pi": 1, unknown: 2 };
+  return state.nodes
+    .filter(node => node.role === "worker")
+    .sort((left, right) => {
+      const platformOrder = priority[nodePlatformGroup(left)] - priority[nodePlatformGroup(right)];
+      if (platformOrder) return platformOrder;
+      const nameOrder = String(left.name || "").localeCompare(String(right.name || ""), undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+      if (nameOrder) return nameOrder;
+      return String(left.host || "").localeCompare(String(right.host || ""), undefined, { numeric: true });
+    });
 }
 
 function reconcileSelection(nodes = topologyNodes()) {
@@ -1711,6 +1724,45 @@ function openNodeRename(nodeName) {
   requestAnimationFrame(() => $("#renameNodeInput").select());
 }
 
+function openNodeDelete(nodeName) {
+  const node = state.nodes.find(item => item.name === nodeName && item.role === "worker");
+  if (!node) return toast("연결 해제 불가", "등록된 워커를 찾을 수 없습니다.", "error");
+  state.deleteNode = node.name;
+  $("#deleteNodeCurrent").textContent = node.name;
+  $("#deleteNodeProject").textContent = node.project_dir || "—";
+  $("#removeWorkerFilesInput").checked = false;
+  updateNodeDeleteWarning();
+  $("#nodeDeleteDialog").showModal();
+}
+
+function updateNodeDeleteWarning() {
+  const removeFiles = $("#removeWorkerFilesInput").checked;
+  const warning = $("#deleteNodeWarning");
+  warning.classList.toggle("destructive", removeFiles);
+  warning.textContent = removeFiles
+    ? "영구 삭제를 선택했습니다. 워커의 등록된 프로젝트 경로 전체는 복구할 수 없습니다."
+    : "기본값은 인벤토리에서만 제거이며, 워커 파일은 남겨둡니다.";
+  $("#confirmNodeDeleteButton").textContent = removeFiles ? "파일 삭제 후 연결 해제" : "연결 해제";
+}
+
+function purgeDeletedNodeState(nodeName) {
+  state.nodes = state.nodes.filter(node => node.name !== nodeName);
+  state.status = state.status.filter(item => item.name !== nodeName);
+  state.environment = state.environment.filter(item => (item.node || item.name) !== nodeName);
+  state.selectedNodes.delete(nodeName);
+  state.metricHistory.delete(nodeName);
+  state.jetsonPower.delete(nodeName);
+  state.jetsonPowerLoading.delete(nodeName);
+  state.jetsonPowerApplying.delete(nodeName);
+  state.devices.forEach(device => {
+    if (device.known_node === nodeName) device.known_node = "";
+  });
+  if (state.rpcCoordinatorNode === nodeName) state.rpcCoordinatorNode = "";
+  if (state.detailNode === nodeName) state.detailNode = "";
+  if (state.renameNode === nodeName) state.renameNode = "";
+  if (state.deleteNode === nodeName) state.deleteNode = "";
+}
+
 function migrateRenamedNodeState(oldName, newName) {
   if (!oldName || !newName || oldName === newName) return;
   const wasSelected = state.selectedNodes.has(oldName);
@@ -2395,6 +2447,8 @@ function bindEvents() {
     }
   });
   $("#nodeRenameButton").addEventListener("click", () => openNodeRename(state.detailNode));
+  $("#nodeDeleteButton").addEventListener("click", () => openNodeDelete(state.detailNode));
+  $("#removeWorkerFilesInput").addEventListener("change", updateNodeDeleteWarning);
   $("#nodeRenameForm").addEventListener("submit", async event => {
     event.preventDefault();
     const oldName = state.renameNode;
@@ -2421,6 +2475,37 @@ function bindEvents() {
       );
     } catch (error) {
       toast("워커 이름 변경 실패", error.message, "error");
+    }
+  });
+  $("#nodeDeleteForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const nodeName = state.deleteNode;
+    const removeWorkerFiles = $("#removeWorkerFilesInput").checked;
+    if (!nodeName) return toast("연결 해제 실패", "제거할 워커를 다시 선택하세요.", "error");
+    $("#confirmNodeDeleteButton").disabled = true;
+    try {
+      const result = await api(`/api/nodes/${encodeURIComponent(nodeName)}`, {
+        method: "DELETE",
+        body: { remove_worker_files: removeWorkerFiles, confirmed: true },
+      });
+      purgeDeletedNodeState(nodeName);
+      $("#nodeDeleteDialog").close();
+      $("#nodeDetailDialog").close();
+      renderNodes();
+      renderEnvironmentSummary();
+      updateFormMirrors();
+      const removedBytes = Number(result.cleanup?.size_bytes || 0);
+      const removedGiB = removedBytes > 0 ? ` · ${(removedBytes / (1024 ** 3)).toFixed(2)} GiB 삭제` : "";
+      toast(
+        removeWorkerFiles ? "워커 파일 삭제 및 연결 해제 완료" : "워커 연결 해제 완료",
+        removeWorkerFiles
+          ? `${nodeName} · ${result.cleanup?.project_dir || "등록 경로"}${removedGiB}`
+          : `${nodeName} · 워커 파일은 보존됨`,
+      );
+    } catch (error) {
+      toast("워커 연결 해제 실패", error.message, "error");
+    } finally {
+      $("#confirmNodeDeleteButton").disabled = false;
     }
   });
   $("#scanNetworkButton").addEventListener("click", () => scanNetwork(true));
