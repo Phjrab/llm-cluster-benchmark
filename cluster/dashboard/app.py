@@ -26,6 +26,9 @@ from cluster.dashboard.routes import register_routers
 # Tests and legacy launcher code reload this module after setting runtime path
 # overrides. Reload the service module in place so compatibility globals are
 # rebuilt from the same explicit runtime integration boundary.
+_existing_experiments = getattr(_services_module, "experiments", None)
+if _existing_experiments is not None:
+    _existing_experiments.shutdown()
 services = importlib.reload(_services_module)
 LOGGER = logging.getLogger(__name__)
 

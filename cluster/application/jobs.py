@@ -104,6 +104,7 @@ class JobService:
         self._last_change: tuple[str, str, str] = ("", "", "")
         self._children: dict[int, subprocess.Popen[bytes]] = {}
         self._cancel_fallbacks: set[str] = set()
+        self._watch_thread: Optional[threading.Thread] = None
         self.jobs_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.jobs_dir.chmod(0o700)
         recovered = self.recover()
@@ -114,11 +115,23 @@ class JobService:
             ):
                 self._schedule_cancel_fallback(str(job["job_id"]))
         if start_watcher:
-            threading.Thread(
+            self._watch_thread = threading.Thread(
                 target=self._watch,
                 name="cluster-job-registry-watch",
                 daemon=True,
-            ).start()
+            )
+            self._watch_thread.start()
+
+    def shutdown(self) -> None:
+        """Stop only this dashboard instance's registry watcher."""
+        self._watch_stop.set()
+        thread = self._watch_thread
+        if (
+            thread is not None
+            and thread is not threading.current_thread()
+            and thread.is_alive()
+        ):
+            thread.join(timeout=max(1.0, self.poll_interval_s * 4))
 
     def _spec(self, job_id: str) -> JobProcessSpec:
         return JobProcessSpec(

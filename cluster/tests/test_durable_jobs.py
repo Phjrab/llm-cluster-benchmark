@@ -359,6 +359,22 @@ class JobRegistryRecoveryTests(unittest.TestCase):
         self.assertEqual(updated["phase"], "cancelling")
         self.assertEqual(self.inspector.signals, [])
 
+    def test_registry_watcher_has_explicit_bounded_shutdown(self) -> None:
+        service = JobService(
+            self.jobs,
+            self.inventory,
+            self.results,
+            self.project,
+            python_bin=self.python,
+            inspector=self.inspector,
+            poll_interval_s=0.01,
+        )
+        thread = service._watch_thread
+        self.assertIsNotNone(thread)
+        self.assertTrue(thread.is_alive())
+        service.shutdown()
+        self.assertFalse(thread.is_alive())
+
 
 class JobProcessTests(unittest.TestCase):
     def test_dashboard_manager_is_only_a_durable_job_facade(self) -> None:

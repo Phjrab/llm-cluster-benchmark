@@ -1725,6 +1725,9 @@ class ExperimentManager:
     def jobs(self) -> List[Dict[str, Any]]:
         return [self._public_job(job) or {} for job in self._jobs.list()]
 
+    def shutdown(self) -> None:
+        self._jobs.shutdown()
+
 
 experiments = ExperimentManager()
 _active_job = experiments.active()
@@ -1762,6 +1765,7 @@ class DashboardFacade:
 
     def shutdown(self) -> None:
         status_monitor.stop()
+        experiments.shutdown()
 
     def dashboard_health(self) -> Dict[str, Any]:
         return {
