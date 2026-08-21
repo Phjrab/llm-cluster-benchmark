@@ -2261,6 +2261,85 @@ class DashboardFacade:
             raise DashboardServiceError(500, "Run summary is corrupted") from exc
         return {"run_id": run_id, "responses": _run_repository().read_responses(run_id)}
 
+    def delete_run(self, run_id: str) -> Dict[str, Any]:
+        """Soft-delete one terminal run and reconcile its optional suite artifact."""
+        if not run_id.replace("_", "").isalnum():
+            raise DashboardServiceError(400, "Invalid run id")
+        repository = _run_repository()
+        try:
+            summary = repository.read_summary(run_id)
+        except FileNotFoundError as exc:
+            raise DashboardServiceError(404, "Run not found") from exc
+        except StorageCorruptionError as exc:
+            raise DashboardServiceError(500, "Run summary is corrupted") from exc
+
+        active = experiments.active()
+        suite_id = str(summary.get("suite_id") or "")
+        if active and active.get("status") in NONTERMINAL_JOB_STATES:
+            if suite_id and suite_id == str(active.get("suite_id") or ""):
+                raise DashboardServiceError(409, "A run in the active model suite cannot be deleted")
+            latest = active.get("latest") or {}
+            if run_id == str(latest.get("run_id") or ""):
+                raise DashboardServiceError(409, "The active run cannot be deleted")
+
+        try:
+            repository.delete(run_id)
+        except FileNotFoundError as exc:
+            raise DashboardServiceError(404, "Run not found") from exc
+        except StorageCorruptionError as exc:
+            raise DashboardServiceError(409, "Run storage identity is unsafe") from exc
+        except OSError as exc:
+            raise DashboardServiceError(500, "Run could not be moved to private trash") from exc
+
+        suite_removed = False
+        if suite_id:
+            suite_repository = _suite_repository()
+            try:
+                suite = suite_repository.read(suite_id)
+            except (FileNotFoundError, StorageCorruptionError):
+                suite = None
+            if suite is not None:
+                remaining = [
+                    item for item in (suite.get("summaries") or [])
+                    if str(item.get("run_id") or "") != run_id
+                ]
+                if not remaining:
+                    suite_repository.delete(suite_id)
+                    suite_removed = True
+                else:
+                    deleted_model_index = int(summary.get("model_index") or 0)
+                    models = []
+                    for model in suite.get("models") or []:
+                        record = dict(model)
+                        if int(record.get("model_index") or 0) == deleted_model_index:
+                            record["status"] = "deleted"
+                            record["run_id"] = None
+                        models.append(record)
+                    deleted_ids = list(suite.get("deleted_run_ids") or [])
+                    if run_id not in deleted_ids:
+                        deleted_ids.append(run_id)
+                    suite.update({
+                        "status": "partial",
+                        "summaries": remaining,
+                        "models": models,
+                        "completed_models": sum(item.get("status") == "completed" for item in remaining),
+                        "deleted_run_ids": deleted_ids,
+                        "updated_at": utc_now(),
+                    })
+                    suite_repository.write(suite_id, suite)
+
+        events.publish(
+            "results_changed", channel=EventChannel.EXPERIMENT,
+            operation="deleted", run_id=run_id, suite_id=suite_id or None,
+        )
+        return {
+            "ok": True,
+            "run_id": run_id,
+            "suite_id": suite_id or None,
+            "suite_removed": suite_removed,
+            "recoverable": True,
+        }
+
 
 COMPATIBILITY_EXPORTS = (
     "ActionManager", "ActionPayload", "DASHBOARD_TOKEN", "DEFAULTS_PATH", "ENVIRONMENT_DIR",

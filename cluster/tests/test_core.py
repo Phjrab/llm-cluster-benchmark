@@ -18,6 +18,7 @@ from cluster.benchmark.runner import (
     RequestTask,
     StrategyScenario,
     _aggregate,
+    _describe_node_environment,
     _measure_scenario,
     _rpc_platform_from_check,
     _stop_rpc_topology,
@@ -442,8 +443,16 @@ class ExperimentTests(unittest.TestCase):
                 "n_gpu_layers": config.n_gpu_layers,
                 "n_batch": 512,
             }
+            participant = {
+                "hostname": "jetson-a",
+                "detected_platform": "jetson",
+                "board_model": "NVIDIA Jetson Orin Nano",
+                "runtime_backend": {"kind": "cuda", "verified": True},
+            }
             with mock.patch("cluster.benchmark.runner._load_model", return_value=loaded), mock.patch(
                 "cluster.benchmark.runner._stream_request", side_effect=fake_request
+            ), mock.patch(
+                "cluster.benchmark.runner._describe_node_environment", return_value=participant
             ):
                 summary = run_experiment(
                     config,
@@ -465,12 +474,16 @@ class ExperimentTests(unittest.TestCase):
                     "benchmark_parameters", "cluster_tokens_per_s", "e2e_p50_s", "e2e_p95_s",
                     "execution_strategy", "experiment_id", "failed", "finished_at", "logical_requests",
                     "model_count", "model_id", "model_index", "model_placement", "name", "nodes",
-                    "per_node", "physical_requests", "requests", "requests_per_s", "result_dir", "run_id",
+                    "participant_nodes", "per_node", "physical_requests", "requests", "requests_per_s", "result_dir", "run_id",
                     "scenario_summaries", "schema_version", "started_at", "status", "success_rate",
                     "successful", "suite_id", "topology", "total_generated_tokens", "ttft_p50_s",
                     "ttft_p95_s", "wall_s", "warnings",
                 },
             )
+            self.assertEqual(summary["participant_nodes"][0]["name"], "jetson-worker-01")
+            self.assertEqual(summary["participant_nodes"][0]["hostname"], "jetson-a")
+            self.assertEqual(summary["participant_nodes"][0]["runtime_backend"]["kind"], "cuda")
+            self.assertEqual(summary["participant_nodes"][0]["capture_status"], "captured")
             requests_header = (Path(summary["result_dir"]) / "requests.csv").read_text(
                 encoding="utf-8"
             ).splitlines()[0]
@@ -494,6 +507,33 @@ class ExperimentTests(unittest.TestCase):
     def test_percentile_interpolates(self) -> None:
         self.assertEqual(percentile([1.0, 2.0, 3.0, 4.0], 0.50), 2.5)
         self.assertAlmostEqual(percentile([1.0, 2.0, 3.0, 4.0], 0.95), 3.85)
+
+    def test_node_environment_snapshot_keeps_reproducibility_fields_without_credentials(self) -> None:
+        node = Node(
+            "worker-01", "worker", "192.168.0.26", "secret-user", 22, 8000,
+            "/home/secret/project", True, "/home/secret/.ssh/key", "jetson",
+        )
+        health = {
+            "node": {"hostname": "jetson-01", "platform_kind": "jetson", "git_commit": "abc123"},
+            "profile": {
+                "platform_kind": "jetson", "board_model": "Orin Nano", "os": "Ubuntu 22.04",
+                "kernel": "5.15", "architecture": "aarch64", "cpu_model": "Cortex-A78AE",
+                "cpu_cores_logical": 6, "memory_total_mb": 7936, "accelerator": "cuda",
+                "inference_threads": 6,
+                "runtime_backend": {"kind": "cuda", "verified": True, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "runtime-1"},
+            },
+            "capabilities": {"telemetry": "jtop+psutil", "telemetry_ready": True, "telemetry_degraded": False},
+            "metrics": {"power": {"mode": "MAXN_SUPER", "jetson_clocks": False}},
+        }
+        with mock.patch("cluster.benchmark.runner.request_json", return_value=health):
+            snapshot = _describe_node_environment(node)
+        self.assertEqual(snapshot["hostname"], "jetson-01")
+        self.assertEqual(snapshot["board_model"], "Orin Nano")
+        self.assertEqual(snapshot["runtime_backend"]["llama_cpp_python"], "0.3.20")
+        self.assertEqual(snapshot["power_mode"], "MAXN_SUPER")
+        self.assertNotIn("user", snapshot)
+        self.assertNotIn("project_dir", snapshot)
+        self.assertNotIn("identity_file", snapshot)
 
     def test_aggregate_keeps_graph_ready_per_node_metrics(self) -> None:
         records = [

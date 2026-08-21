@@ -243,6 +243,15 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
         except ValueError as exc:
             return _error_response(exc)
 
+    @results_router.delete("/api/runs/{run_id}")
+    async def delete_run(
+        run_id: str, dashboard: DashboardFacade = Depends(get_dashboard_services)
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.delete_run(run_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
     app.include_router(web_router)
     app.include_router(controller_router)
     app.include_router(nodes_router)

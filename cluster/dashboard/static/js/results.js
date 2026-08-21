@@ -34,6 +34,45 @@
     }).join("")}</section>`;
   }
 
+  function participantNodes(run) {
+    if (Array.isArray(run?.participant_nodes) && run.participant_nodes.length) return run.participant_nodes;
+    const configs = Array.isArray(run?.actual_model_config) ? run.actual_model_config : [];
+    return (Array.isArray(run?.nodes) ? run.nodes : []).map(name => ({
+      name,
+      capture_status: "legacy",
+      ...(configs.find(item => item?.node === name) || {}),
+    }));
+  }
+
+  function renderParticipantNodes(run) {
+    const participants = participantNodes(run);
+    if (!participants.length) return "";
+    const configs = Array.isArray(run?.actual_model_config) ? run.actual_model_config : [];
+    const coordinator = run?.topology?.coordinator;
+    const cards = participants.map(node => {
+      const actual = configs.find(item => item?.node === node.name) || {};
+      const backend = node.runtime_backend && typeof node.runtime_backend === "object"
+        ? node.runtime_backend : { kind: node.runtime_backend };
+      const platform = node.detected_platform || node.platform_kind || node.configured_platform || "unknown";
+      const memoryGb = Number.isFinite(Number(node.memory_total_mb)) ? `${(Number(node.memory_total_mb) / 1024).toFixed(1)} GB` : "—";
+      const endpoint = node.host ? `${node.host}${node.api_port ? `:${node.api_port}` : ""}` : "기록 없음";
+      const modelRuntime = actual.placement === "sharded_participant"
+        ? `RPC shard${actual.coordinator ? " · coordinator" : ""}`
+        : [actual.n_ctx != null ? `ctx ${actual.n_ctx}` : "", actual.n_gpu_layers != null ? `GPU layers ${actual.n_gpu_layers}` : "", actual.n_batch != null ? `batch ${actual.n_batch}` : ""].filter(Boolean).join(" · ") || "기록 없음";
+      const mode = node.power_mode || "—";
+      const capture = node.capture_status === "captured" ? "SNAPSHOT" : node.capture_status === "unavailable" ? "SNAPSHOT FAILED" : "LEGACY";
+      return `<article class="participant-card"><header><div><span>${dashboard.escapeHtml(String(platform).toUpperCase())}</span><strong>${dashboard.escapeHtml(node.name || "worker")}</strong><small>${dashboard.escapeHtml(node.hostname || endpoint)}</small></div><div><b>${dashboard.escapeHtml(capture)}</b>${coordinator === node.name ? `<em>COORDINATOR</em>` : ""}</div></header><dl>
+        <div><dt>ENDPOINT</dt><dd>${dashboard.escapeHtml(endpoint)}</dd></div>
+        <div><dt>BOARD / OS</dt><dd>${dashboard.escapeHtml([node.board_model, node.os].filter(Boolean).join(" · ") || "기록 없음")}</dd></div>
+        <div><dt>CPU / MEMORY</dt><dd>${dashboard.escapeHtml([node.cpu_model, node.cpu_cores_logical ? `${node.cpu_cores_logical} threads` : "", memoryGb].filter(value => value && value !== "—").join(" · ") || "기록 없음")}</dd></div>
+        <div><dt>INFERENCE BACKEND</dt><dd>${dashboard.escapeHtml([backend.kind, backend.llama_cpp_python ? `llama-cpp-python ${backend.llama_cpp_python}` : "", node.inference_threads ? `${node.inference_threads} inference threads` : ""].filter(Boolean).join(" · ") || "기록 없음")}</dd></div>
+        <div><dt>MODEL RUNTIME</dt><dd>${dashboard.escapeHtml(modelRuntime)}</dd></div>
+        <div><dt>POWER / REVISION</dt><dd>${dashboard.escapeHtml([mode, node.git_commit ? `git ${node.git_commit}` : ""].filter(Boolean).join(" · ") || "기록 없음")}</dd></div>
+      </dl>${node.capture_error ? `<p>${dashboard.escapeHtml(node.capture_error)}</p>` : ""}</article>`;
+    }).join("");
+    return `<section class="participant-environment" aria-label="실험 참여 노드 정보"><div class="participant-environment-head"><div><span>PARTICIPANT NODE SNAPSHOT</span><h4>실험 참여 노드 · ${participants.length}대</h4></div><small>실험 시작 시점 기준</small></div><p>결과 재현을 위해 저장된 하드웨어와 런타임 정보입니다. SSH 키와 인증 정보는 포함하지 않습니다.</p><div class="participant-grid">${cards}</div></section>`;
+  }
+
   function renderResponses(run, responses) {
     const inspector = dashboard.$?.("#resultInspector");
     const label = dashboard.$?.("#resultInspectorStatus");
@@ -66,7 +105,7 @@
       }).join("")}</div></article>`;
     }).join("") : `<div class="empty-result"><strong>저장된 응답이 없습니다.</strong><span>이전 형식의 결과이거나 prompt/response persistence가 꺼진 실행일 수 있습니다.</span></div>`;
     const environment = dashboard.power?.resultEnvironmentHtml?.(run) || "";
-    inspector.innerHTML = `${environment}${content}${renderFailureCards(run, responses)}`;
+    inspector.innerHTML = `${renderParticipantNodes(run)}${environment}${content}${renderFailureCards(run, responses)}`;
   }
 
   function clear() {
@@ -104,15 +143,31 @@
     }
   }
 
-  dashboard.results = { show, clear, renderResponses, responseGroups, errorRecords };
+  async function remove(runId) {
+    const run = dashboard.state.runs.find(item => item.run_id === runId);
+    if (!run) return;
+    const label = `${run.name || run.run_id}\n${dashboard.runModelId?.(run) || ""}`.trim();
+    if (!confirm(`다음 실험 결과를 삭제할까요?\n\n${label}\n\n대시보드에서는 즉시 제거되며, 안전을 위해 private trash로 이동됩니다.`)) return;
+    try {
+      await dashboard.api(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+      if (selected.runId === runId) clear();
+      await dashboard.refreshExperimentData?.();
+      dashboard.toast?.("실험 결과 삭제 완료", `${runId} · private trash로 이동했습니다.`);
+    } catch (error) {
+      dashboard.toast?.("실험 결과 삭제 실패", error.message, "error");
+    }
+  }
+
+  dashboard.results = { show, clear, remove, renderResponses, responseGroups, errorRecords, participantNodes, renderParticipantNodes };
 
   document.addEventListener("DOMContentLoaded", () => {
     document.addEventListener("click", event => {
       const button = event.target.closest("[data-view-run]");
-      if (!button) return;
-      event.preventDefault();
-      event.stopPropagation();
-      show(button.dataset.viewRun);
+      const deleteButton = event.target.closest("[data-delete-run]");
+      if (!button && !deleteButton) return;
+      event.preventDefault(); event.stopPropagation();
+      if (deleteButton) remove(deleteButton.dataset.deleteRun);
+      else show(button.dataset.viewRun);
     });
   });
 })();

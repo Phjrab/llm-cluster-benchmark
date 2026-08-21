@@ -135,6 +135,78 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertEqual(responses.status_code, 200)
             self.assertEqual(responses.json()["responses"][0]["response"], "pong")
 
+    def test_terminal_run_can_be_deleted_to_private_trash(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self.load_dashboard(root)
+            run_dir = root / "results" / "run_delete_contract"
+            run_dir.mkdir(parents=True)
+            (run_dir / "summary.json").write_text(
+                json.dumps({"run_id": "run_delete_contract", "status": "completed", "suite_id": ""}),
+                encoding="utf-8",
+            )
+            with TestClient(dashboard.app) as client:
+                deleted = client.delete("/api/runs/run_delete_contract")
+                missing = client.get("/api/runs/run_delete_contract")
+            self.assertEqual(deleted.status_code, 200)
+            self.assertTrue(deleted.json()["recoverable"])
+            self.assertEqual(missing.status_code, 404)
+            trashed = list((root / "results" / "_trash").glob("run_delete_contract-*"))
+            self.assertEqual(len(trashed), 1)
+            self.assertTrue((trashed[0] / "summary.json").is_file())
+
+    def test_deleting_one_suite_run_marks_remaining_suite_partial(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self.load_dashboard(root)
+            results = root / "results"
+            run_id = "run_suite_delete_one"
+            suite_id = "suite_delete_contract"
+            run_dir = results / run_id
+            run_dir.mkdir(parents=True)
+            summary = {"run_id": run_id, "status": "completed", "suite_id": suite_id, "model_index": 1}
+            (run_dir / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+            suite_dir = results / "_suites"
+            suite_dir.mkdir(parents=True, exist_ok=True)
+            suite = {
+                "suite_id": suite_id, "status": "completed", "completed_models": 2,
+                "summaries": [summary, {"run_id": "run_suite_keep", "status": "completed", "model_index": 2}],
+                "models": [{"model_index": 1, "status": "completed"}, {"model_index": 2, "status": "completed"}],
+            }
+            (suite_dir / f"{suite_id}.json").write_text(json.dumps(suite), encoding="utf-8")
+            with TestClient(dashboard.app) as client:
+                deleted = client.delete(f"/api/runs/{run_id}")
+            self.assertEqual(deleted.status_code, 200)
+            reconciled = json.loads((suite_dir / f"{suite_id}.json").read_text(encoding="utf-8"))
+            self.assertEqual(reconciled["status"], "partial")
+            self.assertEqual(reconciled["completed_models"], 1)
+            self.assertEqual(reconciled["models"][0]["status"], "deleted")
+            self.assertEqual(reconciled["deleted_run_ids"], [run_id])
+
+    def test_active_suite_run_deletion_is_rejected(self) -> None:
+        from fastapi.testclient import TestClient
+        from cluster.dashboard import services
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self.load_dashboard(root)
+            run_dir = root / "results" / "run_active_contract"
+            run_dir.mkdir(parents=True)
+            (run_dir / "summary.json").write_text(
+                json.dumps({"run_id": "run_active_contract", "status": "completed", "suite_id": "suite_active"}),
+                encoding="utf-8",
+            )
+            with TestClient(dashboard.app) as client, mock.patch.object(
+                services.experiments, "active", return_value={"status": "running", "suite_id": "suite_active"}
+            ):
+                response = client.delete("/api/runs/run_active_contract")
+            self.assertEqual(response.status_code, 409)
+            self.assertTrue(run_dir.is_dir())
+
     def test_startup_recovery_is_service_owned(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             dashboard = self.load_dashboard(Path(directory))

@@ -92,6 +92,19 @@ class ResultDurabilityTests(unittest.TestCase):
             self.assertNotIn("response", header)
             self.assertNotIn("failure", header)
 
+    def test_delete_moves_exact_run_to_private_recoverable_trash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = FilesystemRunRepository(Path(directory))
+            run_dir = repository.create("20260820_123456_ab12", {"model_id": "models/example.gguf"})
+            repository.write_summary("20260820_123456_ab12", {"run_id": "20260820_123456_ab12"})
+            destination = repository.delete("20260820_123456_ab12")
+            self.assertFalse(run_dir.exists())
+            self.assertTrue((destination / "summary.json").is_file())
+            self.assertEqual(destination.parent.name, "_trash")
+            self.assertEqual(destination.parent.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(repository.list_summaries(), [])
+
 
 class StructuredFailureTests(unittest.TestCase):
     def test_failure_record_keeps_legacy_string_and_serializes_evidence(self) -> None:

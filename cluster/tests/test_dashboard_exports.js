@@ -59,8 +59,8 @@ assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
 assert.match(template, /styles\.css\?v=20260821\.6/);
-assert.match(template, /app\.js\?v=20260821\.7/);
-assert.match(template, /results\.js\?v=20260821\.8/);
+assert.match(template, /app\.js\?v=20260821\.8/);
+assert.match(template, /results\.js\?v=20260821\.9/);
 assert.match(template, /nodeRenameDialog[\s\S]*nodeRenameForm[\s\S]*renameNodeInput/);
 assert.match(template, /data-node-platform-tab="all"[\s\S]*data-node-platform-tab="jetson"[\s\S]*data-node-platform-tab="raspberry-pi"/);
 assert.match(template, /experimentPowerBanner/);
@@ -70,6 +70,32 @@ assert.match(workerRegistrationCommand, /grep -qxF "\$KEY"/);
 assert.match(workerRegistrationCommand, /chmod 600 ~\/\.ssh\/authorized_keys$/);
 assert.doesNotMatch(workerRegistrationCommand, /\| ssh /);
 assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/results.js"), "utf8"), /output_sha256/);
+const participantHtml = vm.runInContext(`ClusterDashboard.results.renderParticipantNodes({
+  participant_nodes: [{
+    name: "jetson-worker-01", host: "192.168.0.26", api_port: 8000,
+    hostname: "jetson-a", detected_platform: "jetson", board_model: "Orin Nano",
+    os: "Ubuntu 22.04", cpu_model: "Cortex-A78AE", cpu_cores_logical: 6,
+    memory_total_mb: 7936, inference_threads: 6, power_mode: "MAXN_SUPER",
+    git_commit: "abc123", capture_status: "captured",
+    runtime_backend: { kind: "cuda", verified: true, llama_cpp_python: "0.3.20" }
+  }],
+  actual_model_config: [{ node: "jetson-worker-01", n_ctx: 2048, n_gpu_layers: 30, n_batch: 512 }]
+})`, context);
+assert.match(participantHtml, /PARTICIPANT NODE SNAPSHOT/);
+assert.match(participantHtml, /jetson-worker-01/);
+assert.match(participantHtml, /192\.168\.0\.26:8000/);
+assert.match(participantHtml, /Orin Nano/);
+assert.match(participantHtml, /llama-cpp-python 0\.3\.20/);
+assert.match(participantHtml, /ctx 2048 · GPU layers 30 · batch 512/);
+assert.doesNotMatch(participantHtml, /secret-user|identity_file/);
+const legacyParticipants = vm.runInContext(`ClusterDashboard.results.participantNodes({
+  nodes: ["old-worker"], actual_model_config: [{ node: "old-worker", runtime_backend: "openblas" }]
+})`, context);
+assert.equal(legacyParticipants.length, 1);
+assert.equal(legacyParticipants[0].capture_status, "legacy");
+assert.equal(legacyParticipants[0].runtime_backend, "openblas");
+assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/results.js"), "utf8"), /data-delete-run/);
+assert.match(appSource, /data-delete-run=/);
 const responseGrouping = vm.runInContext(`ClusterDashboard.results.responseGroups([
   { logical_request_id: 1, node: "jetson-a" },
   { logical_request_id: 1, node: "pi-b" },

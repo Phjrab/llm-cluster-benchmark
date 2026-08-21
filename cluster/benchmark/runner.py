@@ -83,6 +83,45 @@ def _load_model(node: Node, config: ExperimentConfig) -> Dict[str, Any]:
     }
 
 
+def _describe_node_environment(node: Node) -> Dict[str, Any]:
+    """Return a compact start-of-run Worker snapshot without credentials."""
+    health = request_json(f"{node.api_url}/cluster/health", timeout=10.0)
+    remote = health.get("node") or {}
+    profile = health.get("profile") or {}
+    capabilities = health.get("capabilities") or {}
+    runtime = profile.get("runtime_backend") or {}
+    metrics = health.get("metrics") or {}
+    power = metrics.get("power") or {}
+    return {
+        "captured_at": utc_now(),
+        "hostname": remote.get("hostname"),
+        "detected_platform": profile.get("platform_kind") or remote.get("platform_kind"),
+        "board_model": profile.get("board_model"),
+        "os": profile.get("os"),
+        "kernel": profile.get("kernel"),
+        "architecture": profile.get("architecture"),
+        "cpu_model": profile.get("cpu_model"),
+        "cpu_cores_logical": profile.get("cpu_cores_logical"),
+        "memory_total_mb": profile.get("memory_total_mb"),
+        "accelerator": profile.get("accelerator"),
+        "runtime_backend": {
+            "kind": runtime.get("kind"),
+            "verified": runtime.get("verified"),
+            "llama_cpp_python": runtime.get("llama_cpp_python"),
+            "runtime_fingerprint": runtime.get("runtime_fingerprint"),
+        },
+        "inference_threads": profile.get("inference_threads"),
+        "git_commit": profile.get("git_commit") or remote.get("git_commit"),
+        "telemetry": {
+            "provider": capabilities.get("telemetry"),
+            "ready": capabilities.get("telemetry_ready"),
+            "degraded": capabilities.get("telemetry_degraded"),
+        },
+        "power_mode": power.get("mode"),
+        "jetson_clocks": power.get("jetson_clocks"),
+    }
+
+
 def _sample_power_integrity(node: Node) -> Optional[RaspberryPiPowerIntegrity]:
     """Read optional Pi power evidence; never turn a probe failure into run failure."""
     if node.platform not in {"auto", "raspberry-pi"}:
@@ -226,6 +265,7 @@ def run_experiment(
         executor,
         _rpc_backend(),
         _sample_power_integrity,
+        _describe_node_environment,
     )
     return runner.run(config, nodes, results_root, progress, cancel_event)
 

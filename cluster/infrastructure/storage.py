@@ -79,6 +79,8 @@ class RunRepository(Protocol):
 
     def list_summaries(self, limit: int = 100) -> List[JsonObject]: ...
 
+    def delete(self, run_id: str) -> Path: ...
+
 
 class SuiteRepository(Protocol):
     def read(self, suite_id: str) -> JsonObject: ...
@@ -86,6 +88,8 @@ class SuiteRepository(Protocol):
     def write(self, suite_id: str, summary: Mapping[str, Any]) -> None: ...
 
     def list(self, limit: int = 100) -> List[JsonObject]: ...
+
+    def delete(self, suite_id: str) -> Path: ...
 
 
 class JobRepository(Protocol):
@@ -302,6 +306,19 @@ class FilesystemSuiteRepository(_JsonDirectoryRepository):
     def list(self, limit: int = 100) -> List[JsonObject]:
         return self._list(limit)
 
+    def delete(self, suite_id: str) -> Path:
+        source = self.directory / f"{validate_suite_id(suite_id)}.json"
+        if source.is_symlink():
+            raise StorageCorruptionError("Suite artifact must not be a symbolic link")
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        trash = self.directory / "_trash"
+        _ensure_directory(trash, mode=0o700)
+        destination = trash / f"{source.stem}-{uuid.uuid4().hex}.json"
+        os.replace(source, destination)
+        destination.chmod(0o600)
+        return destination
+
 
 class FilesystemJobRepository(_JsonDirectoryRepository):
     """Private, process-safe durable registry and event journal for jobs."""
@@ -465,6 +482,20 @@ class FilesystemRunRepository:
             except (OSError, StorageCorruptionError):
                 continue
         return values
+
+    def delete(self, run_id: str) -> Path:
+        """Remove a run from active results by atomically moving it to private trash."""
+        source = self._run_dir(run_id)
+        if source.is_symlink():
+            raise StorageCorruptionError("Run directory must not be a symbolic link")
+        if not source.is_dir():
+            raise FileNotFoundError(source)
+        trash = self.results_dir / "_trash"
+        _ensure_directory(trash, mode=0o700)
+        destination = trash / f"{validate_run_id(run_id)}-{uuid.uuid4().hex}"
+        os.replace(source, destination)
+        destination.chmod(0o700)
+        return destination
 
 
 __all__ = [

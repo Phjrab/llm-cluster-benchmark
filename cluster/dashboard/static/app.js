@@ -888,13 +888,13 @@ function renderRuns() {
       <td><strong>${escapeHtml(run.name || run.run_id)}</strong><br><small>${escapeHtml(run.run_id || "")}</small></td>
       <td class="model-cell"><strong title="${escapeHtml(runModelId(run))}">${escapeHtml(shortModelName(runModelId(run)))}</strong>${run.suite_id ? `<span class="suite-badge">SUITE ${escapeHtml(runSuiteLabel(run))}</span>` : ""}</td>
       <td><span class="strategy-badge ${strategyMeta(runStrategy(run)).experimental ? "experimental" : ""}">${escapeHtml(strategyMeta(runStrategy(run)).label)}</span></td>
-      <td>${Array.isArray(run.nodes) ? run.nodes.length : "—"}</td>
+      <td title="${escapeHtml(Array.isArray(run.nodes) ? run.nodes.join(", ") : "")}">${Array.isArray(run.nodes) ? run.nodes.length : "—"}${Array.isArray(run.nodes) && run.nodes.length ? `<br><small>${escapeHtml(ellipsis(run.nodes.join(", "), 34))}</small>` : ""}</td>
       <td title="${runStrategy(run) === "broadcast_compare" ? "모든 복제본이 성공한 논리 요청 비율" : "성공한 실제 호출 비율"}">${runStrategy(run) === "broadcast_compare" && run.all_replicas_success_rate !== undefined ? `${pct(Number(run.all_replicas_success_rate) * 100)}<br><small>all replicas</small>` : run.success_rate !== undefined ? pct(Number(run.success_rate) * 100) : "—"}</td>
       <td>${run.ttft_p50_s != null ? `${fmt(run.ttft_p50_s, 2)}s` : "—"}</td>
       <td>${run.e2e_p95_s != null ? `${fmt(run.e2e_p95_s, 2)}s` : "—"}</td>
       <td>${runThroughputCell(run)}</td>
       <td><span class="run-status ${window.ClusterDashboard?.utils?.statusPresentation(run.status).tone || "unknown"}">${escapeHtml(window.ClusterDashboard?.utils?.statusPresentation(run.status).icon || "?")} ${escapeHtml(window.ClusterDashboard?.utils?.statusPresentation(run.status).label || (run.status || "unknown").toUpperCase())}</span>${run.suite_status && run.suite_status !== "completed" ? `<br><small>SUITE ${escapeHtml(run.suite_status.toUpperCase())}</small>` : ""}</td>
-      <td><button type="button" class="table-action" data-view-run="${escapeHtml(run.run_id || "")}" ${run.run_id ? "" : "disabled"}>응답 보기</button></td>
+      <td><div class="table-actions"><button type="button" class="table-action" data-view-run="${escapeHtml(run.run_id || "")}" ${run.run_id ? "" : "disabled"}>상세 보기</button><button type="button" class="table-action danger" data-delete-run="${escapeHtml(run.run_id || "")}" ${run.run_id ? "" : "disabled"}>삭제</button></div></td>
     </tr>`).join("") : `<tr><td colspan="10" class="empty-cell">최근 suite는 모델 실행 전 종료되었습니다.</td></tr>`;
   const latestArtifact = latestResultArtifact(runs, suites);
   const newestSuite = latestArtifact.suite;
@@ -941,7 +941,8 @@ function renderRuns() {
   const hasCompletedMetrics = newestMetricScope.some(run => run?.status === "completed" && finite(run.cluster_tokens_per_s));
   $("#chartGrid").hidden = !hasCompletedMetrics || mixedAllStrategies;
   if (hasCompletedMetrics && !mixedAllStrategies) requestAnimationFrame(() => drawResultCharts(runs));
-  $$('[data-run-experiment]').forEach(row => row.addEventListener("click", () => {
+  $$('[data-run-experiment]').forEach(row => row.addEventListener("click", event => {
+    if (event.target.closest("button")) return;
     $("#resultExperimentFilter").value = row.dataset.runExperiment;
     window.ClusterDashboard.results?.clear?.();
     renderRuns();
@@ -1986,6 +1987,8 @@ function connectEvents() {
       setRunState(message.active);
       refreshExperimentData().catch(() => {});
       toast("벤치마크 실패", message.message, "error");
+    } else if (message.type === "results_changed" && channel === "experiment") {
+      refreshExperimentData().catch(error => toast("결과 갱신 실패", error.message, "error"));
     }
   };
 }

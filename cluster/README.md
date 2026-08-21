@@ -94,7 +94,12 @@ psutil 기본 지표로 안전하게 저하된다.
 각 run은 `config.json`, `events.jsonl`, `responses.jsonl`, `requests.csv`,
 `summary.json`을 갖는다. 새 파일은 사용자 전용 권한으로 생성한다. `requests.csv`의 기존
 19개 metric 컬럼은 유지하고, prompt/응답/구조화 실패는 `responses.jsonl`에 별도로
-보존한다.
+보존한다. 새 `summary.json`의 `participant_nodes`에는 실험 시작 시점의 Worker 주소,
+플랫폼, 보드·OS, CPU·메모리, 추론 backend, 전력 모드와 코드 revision을 저장한다.
+Dashboard의 결과 표에서 **응답 보기**를 누르면 이 스냅샷과 실제 모델 설정을 함께 볼 수
+있으며, SSH 사용자·키·토큰은 결과에 기록하지 않는다. 결과 표의 **삭제**는 실행 중인
+run을 거부하고, 선택한 run만 `results/_trash/`로 원자적으로 이동해 대시보드에서
+제거하면서도 수동 복구 가능성을 남긴다.
 
 ## 실험 방식
 

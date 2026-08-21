@@ -30,6 +30,7 @@ LoadModel = Callable[[Any, ExperimentConfig], Dict[str, Any]]
 ValidatePlatform = Callable[[Sequence[Any], ExperimentConfig], None]
 ValidateUniform = Callable[[Sequence[Dict[str, Any]], ExperimentConfig], List[str]]
 PowerSnapshot = Callable[[Any], Optional[RaspberryPiPowerIntegrity]]
+DescribeNode = Callable[[Any], Dict[str, Any]]
 
 
 def benchmark_parameters(config: ExperimentConfig) -> Dict[str, Any]:
@@ -62,6 +63,7 @@ class BenchmarkRunner:
         executor: ScenarioExecutor,
         rpc_backend: RpcBackend,
         sample_power: Optional[PowerSnapshot] = None,
+        describe_node: Optional[DescribeNode] = None,
     ) -> None:
         self.load_model = load_model
         self.validate_uniform = validate_uniform
@@ -69,6 +71,41 @@ class BenchmarkRunner:
         self.executor = executor
         self.rpc_backend = rpc_backend
         self.sample_power = sample_power
+        self.describe_node = describe_node
+
+    def _capture_participants(self, nodes: Sequence[Any]) -> List[Dict[str, Any]]:
+        """Capture immutable, non-secret node metadata for result provenance."""
+        captured: Dict[str, Dict[str, Any]] = {}
+
+        def base(node: Any) -> Dict[str, Any]:
+            api_port = getattr(node, "api_port", None)
+            host = str(getattr(node, "host", "") or "")
+            return {
+                "name": str(getattr(node, "name", "") or ""),
+                "host": host,
+                "api_port": api_port,
+                "api_url": f"http://{host}:{api_port}" if host and api_port else "",
+                "configured_platform": str(getattr(node, "platform", "auto") or "auto"),
+                "capture_status": "inventory_only",
+            }
+
+        if self.describe_node is not None and nodes:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(nodes))) as pool:
+                futures = {pool.submit(self.describe_node, node): node for node in nodes}
+                for future in concurrent.futures.as_completed(futures):
+                    node = futures[future]
+                    record = base(node)
+                    try:
+                        detail = future.result()
+                        if isinstance(detail, dict):
+                            record.update(detail)
+                        record["capture_status"] = "captured"
+                    except Exception as exc:
+                        record["capture_status"] = "unavailable"
+                        record["capture_error"] = f"{type(exc).__name__}: {exc}"
+                    captured[node.name] = record
+
+        return [captured.get(node.name, base(node)) for node in nodes]
 
     def _observe_power(
         self,
@@ -132,6 +169,7 @@ class BenchmarkRunner:
             strategy=config.execution_strategy,
             total_work_units=total_work_units,
         )
+        participant_nodes = self._capture_participants(nodes)
         loaded: List[Dict[str, Any]] = []
         warnings: List[str] = []
         rpc_session: Optional[RpcSession] = None
@@ -301,6 +339,7 @@ class BenchmarkRunner:
                 "started_at": started_event["at"],
                 "finished_at": utc_now(),
                 "nodes": [node.name for node in nodes],
+                "participant_nodes": participant_nodes,
                 "actual_model_config": loaded,
                 "benchmark_parameters": benchmark_parameters(config),
                 "warnings": warnings,
@@ -350,6 +389,7 @@ class BenchmarkRunner:
                 "status": "cancelled" if cancelled else "failed",
                 "finished_at": utc_now(),
                 "nodes": [node.name for node in nodes],
+                "participant_nodes": participant_nodes,
                 "actual_model_config": loaded,
                 "benchmark_parameters": benchmark_parameters(config),
                 "topology": topology,
