@@ -157,10 +157,40 @@ class JobService:
 
     def _identity_matches_spec(self, identity: ProcessIdentity, job_id: str) -> bool:
         spec = self._spec(job_id)
+        if not identity.argv:
+            return False
+        try:
+            configured_python = self.python_bin.resolve(strict=True)
+            observed_executable = Path(identity.executable).resolve(strict=True)
+            observed_argv0 = Path(identity.argv[0]).resolve(strict=True)
+        except OSError:
+            return False
+
+        allowed_executables = {configured_python}
+        # Framework Python on macOS re-execs through Python.app.  psutil then
+        # reports both the executable and argv[0] as the app shim rather than
+        # the venv/base interpreter used by Popen.  Accept only the exact shim
+        # belonging to the configured framework version; every remaining argv
+        # element, the cwd, PID, creation time, and user are still protected by
+        # the persisted ProcessIdentity and can_signal checks.
+        version_root = configured_python.parent.parent
+        if (
+            configured_python.parent.name == "bin"
+            and version_root.parent.name == "Versions"
+            and version_root.parent.parent.name == "Python.framework"
+        ):
+            framework_shim = (
+                version_root / "Resources" / "Python.app" / "Contents" / "MacOS" / "Python"
+            )
+            try:
+                allowed_executables.add(framework_shim.resolve(strict=True))
+            except OSError:
+                pass
         return (
-            identity.argv == spec.argv
+            identity.argv[1:] == spec.argv[1:]
+            and observed_argv0 == observed_executable
+            and observed_executable in allowed_executables
             and Path(identity.cwd) == self.project_root
-            and Path(identity.executable).resolve() == self.python_bin.resolve()
         )
 
     def _live_identity(self, job: Mapping[str, Any]) -> Optional[ProcessIdentity]:

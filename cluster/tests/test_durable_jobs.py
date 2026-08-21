@@ -288,6 +288,44 @@ class JobRegistryRecoveryTests(unittest.TestCase):
         self.assertEqual(saved["status"], "running")
         self.assertGreaterEqual(inspector.calls, 2)
 
+    def test_recovery_accepts_exact_macos_framework_python_reexec(self) -> None:
+        framework = self.root / "Python.framework" / "Versions" / "3.13"
+        configured_python = framework / "bin" / "python3.13"
+        framework_shim = (
+            framework / "Resources" / "Python.app" / "Contents" / "MacOS" / "Python"
+        )
+        configured_python.parent.mkdir(parents=True)
+        framework_shim.parent.mkdir(parents=True)
+        configured_python.write_text("python", encoding="utf-8")
+        framework_shim.write_text("python-app", encoding="utf-8")
+
+        service = JobService(
+            self.jobs,
+            self.inventory,
+            self.results,
+            self.project,
+            python_bin=configured_python,
+            inspector=self.inspector,
+            start_watcher=False,
+            identity_retry_s=0,
+        )
+        job = self.job()[0]
+        spec = service._spec(job["job_id"])
+        identity = ProcessIdentity(
+            pid=5432,
+            executable=str(framework_shim),
+            cwd=str(self.project),
+            argv=(str(framework_shim), *spec.argv[1:]),
+            started_at=123.0,
+            user="tester",
+        )
+        job["spawned_pid"] = identity.pid
+        job["process"] = identity.to_dict()
+        self.inspector.identities[identity.pid] = identity
+        FilesystemJobRepository(self.jobs).write(job["job_id"], job)
+
+        self.assertEqual(service.active()["status"], "running")
+
     def test_restart_adopts_exact_spawned_process_before_child_claim(self) -> None:
         job, identity = self.job()
         job.pop("process")
