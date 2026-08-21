@@ -224,7 +224,7 @@ function renderJetsonPowerControl(node, kind) {
   const modes = Array.isArray(report.modes) ? report.modes : [];
   const current = report.current || {};
   const recommended = report.recommended_mode || null;
-  const selectedId = current.id ?? recommended?.id ?? "";
+  const selectedId = recommended?.id ?? current.id ?? "";
   const disabled = loading || applying || !report.ok || !report.can_apply || !modes.length;
   const recommendation = recommended
     ? `최대 전력 후보 · ${jetsonPowerModeLabel(recommended)}`

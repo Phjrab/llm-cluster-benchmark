@@ -148,6 +148,11 @@ def status() -> dict[str, Any]:
         error = "nvpmodel current mode query failed"
     elif not modes:
         error = "nvpmodel returned no parseable power modes"
+    recommended = _recommended_mode(modes)
+    can_apply = _sudo_available()
+    manual_command = ""
+    if recommended is not None and not can_apply:
+        manual_command = f"sudo {executable} -m {int(recommended['id'])}"
     return {
         "ok": not error,
         "supported": True,
@@ -156,9 +161,9 @@ def status() -> dict[str, Any]:
         "error": error,
         "modes": modes,
         "current": current,
-        "recommended_mode": _recommended_mode(modes),
-        "can_apply": _sudo_available(),
-        "manual_command": "",
+        "recommended_mode": recommended,
+        "can_apply": can_apply,
+        "manual_command": manual_command,
         "reboot_required": False,
         "jetson_clocks": {"state": "unknown", "message": "nvpmodel will reject incompatible clock locks."},
     }

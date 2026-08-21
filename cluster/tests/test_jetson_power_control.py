@@ -44,6 +44,15 @@ class WorkerPowerControlTests(unittest.TestCase):
         self.assertEqual(result["error"], "invalid_mode_id")
         invoked.assert_not_called()
 
+    def test_status_supplies_a_safe_manual_maximum_command_without_sudo(self) -> None:
+        completed = mock.Mock(returncode=0, stdout=MODES, stderr="")
+        queried = mock.Mock(returncode=0, stdout="NV Power Mode: MAXN_SUPER\n2\n", stderr="")
+        with mock.patch.object(power_control, "is_jetson", return_value=True), mock.patch.object(power_control, "_nvpmodel_path", return_value="/usr/sbin/nvpmodel"), mock.patch.object(power_control, "_run", side_effect=[completed, queried]), mock.patch.object(power_control, "_sudo_available", return_value=False):
+            report = power_control.status()
+        self.assertFalse(report["can_apply"])
+        self.assertEqual(report["recommended_mode"]["id"], 3)
+        self.assertEqual(report["manual_command"], "sudo /usr/sbin/nvpmodel -m 3")
+
 
 class ControllerPowerCommandTests(unittest.TestCase):
     @staticmethod
