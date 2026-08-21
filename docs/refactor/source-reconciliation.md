@@ -1,5 +1,12 @@
 # Source-of-Truth Reconciliation
 
+> Retirement note: after the Controller/Worker migration and hardware acceptance
+> completed, the user explicitly retired the legacy top-level benchmark client,
+> Jetson notebook/scripts, standalone chat server, and committed historical
+> output from the current product tree. Their exact contents and commit lineage
+> remain reachable in Git history; no history rewrite or squash was performed.
+> Local model binaries and `.run` experiment state were not part of this cleanup.
+
 Date: 2026-08-20 (Asia/Seoul)
 
 This record closes the Phase 00 source-of-truth blocker before Phase 01. The

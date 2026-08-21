@@ -186,7 +186,7 @@ class MetadataAndAdoptionTests(unittest.TestCase):
     def test_pid_only_legacy_console_process_is_adopted_only_after_full_match(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            spec = make_spec(root, module="web.app")
+            spec = make_spec(root, module="cluster.worker.app")
             identity = service_identity(spec, argv_tail=spec.console_argv_tail)
             spec.pid_file.parent.mkdir(parents=True)
             spec.pid_file.write_text(f"{identity.pid}\n", encoding="utf-8")
@@ -285,8 +285,6 @@ class LauncherSourceSafetyTests(unittest.TestCase):
         scripts = (
             ROOT / "cluster" / "worker" / "start.sh",
             ROOT / "cluster" / "worker" / "stop.sh",
-            ROOT / "start_server.sh",
-            ROOT / "stop_server.sh",
         )
         forbidden = ("pgrep", "pkill", "killall")
         for script in scripts:
@@ -296,10 +294,9 @@ class LauncherSourceSafetyTests(unittest.TestCase):
                 self.assertIn("identity", source.lower())
                 self.assertNotIn("kill -0", source)
                 self.assertFalse(any(command in source for command in forbidden))
-                if script.name.endswith("start.sh") or script.name == "start_server.sh":
+                if script.name.endswith("start.sh"):
                     self.assertIn('chmod 600 "$LOG_FILE"', source)
                     self.assertIn("owns-port", source)
-        self.assertNotIn("kill ", (ROOT / "stop_server.sh").read_text(encoding="utf-8"))
 
     def test_worker_health_hides_token_from_curl_argv_and_repairs_permissions(self) -> None:
         source = (ROOT / "cluster" / "worker" / "start.sh").read_text(encoding="utf-8")
