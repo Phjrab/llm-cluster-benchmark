@@ -6,6 +6,7 @@ import ast
 import importlib
 import json
 import os
+import stat
 import sys
 import tempfile
 import threading
@@ -192,6 +193,23 @@ class DashboardBackendTests(unittest.TestCase):
         with mock.patch.object(services, "run_on_node", return_value=result) as hostname:
             self.assertEqual(services._registered_worker_hostname(node), "jetson-orin")
         hostname.assert_called_once_with(node, ["hostname"], timeout=5)
+
+    def test_dashboard_can_explicitly_create_dedicated_controller_ssh_key(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            identity = Path(directory) / ".ssh" / "id_ed25519_llm_cluster"
+            dashboard = self.load_dashboard(Path(directory))
+            with mock.patch.object(dashboard.services, "DEFAULT_IDENTITY", identity):
+                with TestClient(dashboard.app) as client:
+                    response = client.post("/api/onboarding/ssh-key")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertEqual(payload["key_status"], "ready")
+                self.assertTrue(payload["public_key"].startswith("ssh-ed25519 "))
+            self.assertTrue(identity.is_file())
+            self.assertTrue(identity.with_suffix(".pub").is_file())
+            self.assertEqual(stat.S_IMODE(identity.stat().st_mode), 0o600)
 
 
 if __name__ == "__main__":

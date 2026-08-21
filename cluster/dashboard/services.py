@@ -51,6 +51,7 @@ from cluster.benchmark.runner import (
 )
 from cluster.benchmark.rpc_selection import select_rpc_coordinator
 from cluster.clusterctl import (
+    DEFAULT_IDENTITY,
     Node,
     discover_node,
     load_nodes,
@@ -99,6 +100,94 @@ PRIVATE_RUN_ARTIFACTS = frozenset(
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _controller_public_key_info() -> Dict[str, Any]:
+    """Expose only a validated Controller public key, never the private key."""
+    public_key_path = DEFAULT_IDENTITY.with_suffix(".pub")
+    if not public_key_path.is_file() or public_key_path.is_symlink():
+        return {"public_key": "", "key_status": "missing"}
+    try:
+        public_key = public_key_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return {"public_key": "", "key_status": "unreadable"}
+    parts = public_key.split()
+    if len(parts) < 2 or parts[0] != "ssh-ed25519" or not re.fullmatch(r"[A-Za-z0-9+/=]+", parts[1]):
+        return {"public_key": "", "key_status": "invalid"}
+    return {"public_key": public_key, "key_status": "ready"}
+
+
+def _validate_controller_identity_file(path: Path) -> None:
+    if not path.exists() and not path.is_symlink():
+        return
+    try:
+        metadata = path.stat()
+    except OSError as exc:
+        raise DashboardServiceError(409, "Controller SSH key cannot be inspected") from exc
+    if path.is_symlink() or not path.is_file() or metadata.st_uid != os.getuid():
+        raise DashboardServiceError(409, "Controller SSH key path is not safe to use")
+
+
+def ensure_controller_ssh_identity() -> Dict[str, Any]:
+    """Create the dedicated Controller identity only after an explicit UI request."""
+    identity_path = DEFAULT_IDENTITY
+    public_key_path = identity_path.with_suffix(".pub")
+    ssh_dir = identity_path.parent
+    if ssh_dir.exists() and (ssh_dir.is_symlink() or not ssh_dir.is_dir()):
+        raise DashboardServiceError(409, "Controller SSH directory is not safe to use")
+    ssh_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    ssh_dir.chmod(0o700)
+    _validate_controller_identity_file(identity_path)
+    _validate_controller_identity_file(public_key_path)
+    if (public_key_path.exists() or public_key_path.is_symlink()) and not identity_path.exists():
+        raise DashboardServiceError(
+            409,
+            "Controller public key exists without its private key; create or select a new dedicated identity manually",
+        )
+    if not identity_path.exists():
+        try:
+            generated = subprocess.run(
+                [
+                    "ssh-keygen",
+                    "-q",
+                    "-t",
+                    "ed25519",
+                    "-N",
+                    "",
+                    "-C",
+                    f"llm-cluster-controller@{socket.gethostname()}",
+                    "-f",
+                    str(identity_path),
+                ],
+                text=True,
+                capture_output=True,
+                timeout=15,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise DashboardServiceError(500, "Controller SSH key generation failed") from exc
+        if generated.returncode != 0:
+            raise DashboardServiceError(500, "Controller SSH key generation failed")
+    elif not public_key_path.exists() and not public_key_path.is_symlink():
+        try:
+            derived = subprocess.run(
+                ["ssh-keygen", "-y", "-f", str(identity_path)],
+                text=True,
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise DashboardServiceError(500, "Controller SSH public key recovery failed") from exc
+        if derived.returncode != 0 or not derived.stdout.strip():
+            raise DashboardServiceError(500, "Controller SSH public key recovery failed")
+        public_key_path.write_text(derived.stdout.strip() + "\n", encoding="utf-8")
+    identity_path.chmod(0o600)
+    public_key_path.chmod(0o644)
+    info = _controller_public_key_info()
+    if info["key_status"] != "ready":
+        raise DashboardServiceError(500, "Controller SSH key validation failed")
+    return info
 
 
 def _ensure_private_directory(path: Path) -> None:
@@ -1621,10 +1710,6 @@ class DashboardFacade:
 
     async def bootstrap(self) -> Dict[str, Any]:
         defaults = json.loads(DEFAULTS_PATH.read_text(encoding="utf-8"))
-        public_key = ""
-        public_key_path = Path.home() / ".ssh" / "id_ed25519_llm_cluster.pub"
-        if public_key_path.exists():
-            public_key = public_key_path.read_text(encoding="utf-8").strip()
         inventories = await asyncio.to_thread(collect_worker_model_inventories)
         catalog = read_model_catalog()
         return {
@@ -1643,8 +1728,11 @@ class DashboardFacade:
             "environment": read_environment_reports(),
             "settings": read_settings(),
             "experiment_strategies": experiment_strategy_catalog(),
-            "onboarding": {"public_key": public_key},
+            "onboarding": _controller_public_key_info(),
         }
+
+    def create_controller_ssh_identity(self) -> Dict[str, Any]:
+        return ensure_controller_ssh_identity()
 
     def settings(self) -> Dict[str, Any]:
         return {"settings": read_settings()}

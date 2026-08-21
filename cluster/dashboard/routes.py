@@ -6,6 +6,7 @@ not own storage, SSH/subprocess execution, job lifecycle, or benchmark math.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Request
@@ -122,6 +123,15 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
         force: bool = False, dashboard: DashboardFacade = Depends(get_dashboard_services)
     ) -> Dict[str, Any]:
         return await dashboard.scan_network(force)
+
+    @nodes_router.post("/api/onboarding/ssh-key")
+    async def create_controller_ssh_identity(
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return await asyncio.to_thread(dashboard.create_controller_ssh_identity)
+        except ValueError as exc:
+            return _error_response(exc)
 
     @nodes_router.post("/api/nodes/probe")
     async def probe_unregistered_node(

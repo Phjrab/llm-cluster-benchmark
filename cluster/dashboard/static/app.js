@@ -1678,7 +1678,7 @@ async function bootstrap() {
     renderNodes();
     renderRuns();
     setRunState(data.active_experiment);
-    $("#publicKey").textContent = state.onboarding.public_key || "키가 아직 생성되지 않았습니다.";
+    renderOnboardingKey();
     renderSettings();
     window.ClusterDashboard?.renderModelLibrary?.();
     state.environmentActionIds.clear();
@@ -1943,6 +1943,48 @@ function candidatePayload() {
   };
 }
 
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\"'\"'")}'`;
+}
+
+function workerKeyRegistrationCommand() {
+  if (!state.onboarding.public_key) return "";
+  const user = $("#nodeUser").value.trim();
+  const host = $("#nodeHost").value.trim();
+  if (!user || !host) return "";
+  return "cat ~/.ssh/id_ed25519_llm_cluster.pub | ssh " + shellQuote(`${user}@${host}`) + " 'umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys'";
+}
+
+function renderOnboardingKey() {
+  const available = Boolean(state.onboarding.public_key);
+  $("#publicKey").textContent = available ? state.onboarding.public_key : "키가 아직 생성되지 않았습니다.";
+  $("#createKeyButton").textContent = available ? "키 준비됨" : "키 생성";
+  $("#createKeyButton").disabled = available;
+  const command = workerKeyRegistrationCommand();
+  $("#pairingCommand").textContent = command || (available ? "먼저 SSH 사용자와 기기를 선택하세요." : "먼저 Controller SSH 키를 생성하세요.");
+  $("#copyPairingCommandButton").disabled = !command;
+}
+
+async function copyText(value, fallbackTarget, successTitle) {
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(value);
+    else {
+      const helper = document.createElement("textarea");
+      helper.value = value;
+      helper.style.position = "fixed"; helper.style.opacity = "0";
+      document.body.append(helper); helper.select();
+      if (!document.execCommand("copy")) throw new Error("copy unsupported");
+      helper.remove();
+    }
+    toast(successTitle);
+  } catch (_error) {
+    const range = document.createRange();
+    range.selectNodeContents(fallbackTarget);
+    const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+    toast("내용을 선택했습니다", "복사가 차단되어 있습니다. 선택된 내용을 직접 복사하세요.", "error");
+  }
+}
+
 function renderDevices(scan) {
   state.devices = scan.devices || [];
   const networks = (scan.networks || []).map(item => `${item.interface} · ${item.network}`).join(", ");
@@ -1978,6 +2020,7 @@ function renderDevices(scan) {
     $$('.device-card').forEach(item => item.classList.toggle("selected", item === button));
     state.onboardingProbe = null;
     $("#probeResult").hidden = true;
+    renderOnboardingKey();
   }));
 }
 
@@ -2034,6 +2077,7 @@ function resetNodeForm() {
   $("#nodePlatform").value = "auto";
   $("#probeResult").hidden = true;
   state.onboardingProbe = null;
+  renderOnboardingKey();
 }
 
 function bindEvents() {
@@ -2110,6 +2154,19 @@ function bindEvents() {
     }
   });
   $("#scanNetworkButton").addEventListener("click", () => scanNetwork(true));
+  ["#nodeHost", "#nodeUser"].forEach(selector => $(selector).addEventListener("input", renderOnboardingKey));
+  $("#createKeyButton").addEventListener("click", async () => {
+    try {
+      $("#createKeyButton").disabled = true;
+      const result = await api("/api/onboarding/ssh-key", { method: "POST" });
+      state.onboarding = { ...state.onboarding, ...result };
+      renderOnboardingKey();
+      toast("Controller SSH 키 생성 완료", "공개키만 표시됩니다. 아래 명령으로 워커에 등록하세요.");
+    } catch (error) {
+      renderOnboardingKey();
+      toast("SSH 키 생성 실패", error.message, "error");
+    }
+  });
   $("#probeNodeButton").addEventListener("click", async () => {
     try { await probeCandidate(); }
     catch (error) { toast("환경 확인 실패", error.message, "error"); }
@@ -2137,23 +2194,12 @@ function bindEvents() {
   });
   $("#copyKeyButton").addEventListener("click", async () => {
     if (!state.onboarding.public_key) return toast("SSH 키 없음", "Controller에서 키 생성 스크립트를 실행하세요.", "error");
-    try {
-      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(state.onboarding.public_key);
-      else {
-        const helper = document.createElement("textarea");
-        helper.value = state.onboarding.public_key;
-        helper.style.position = "fixed"; helper.style.opacity = "0";
-        document.body.append(helper); helper.select();
-        if (!document.execCommand("copy")) throw new Error("copy unsupported");
-        helper.remove();
-      }
-      toast("SSH 공개 키 복사됨");
-    } catch (_error) {
-      const range = document.createRange();
-      range.selectNodeContents($("#publicKey"));
-      const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
-      toast("키를 선택했습니다", "복사가 차단되어 있습니다. 선택된 키를 직접 복사하세요.", "error");
-    }
+    await copyText(state.onboarding.public_key, $("#publicKey"), "SSH 공개 키 복사됨");
+  });
+  $("#copyPairingCommandButton").addEventListener("click", async () => {
+    const command = workerKeyRegistrationCommand();
+    if (!command) return toast("등록 명령 없음", "Controller 키를 생성하고 워커의 SSH 사용자와 IP를 선택하세요.", "error");
+    await copyText(command, $("#pairingCommand"), "워커 키 등록 명령 복사됨");
   });
   $("#refreshButton").addEventListener("click", () => api("/api/status/refresh", { method: "POST" }).catch(error => toast("새로고침 실패", error.message, "error")));
   ["#quickHealthButton", "#checkEnvironmentButton", "#environmentCheckAllButton"].forEach(selector => {
