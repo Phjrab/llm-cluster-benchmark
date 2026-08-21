@@ -52,8 +52,8 @@ assert.doesNotMatch(appSource, /\/api\/events\?token=/);
 assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260821\.5/);
-assert.match(template, /app\.js\?v=20260821\.5/);
+assert.match(template, /styles\.css\?v=20260821\.6/);
+assert.match(template, /app\.js\?v=20260821\.6/);
 assert.match(template, /nodeRenameDialog[\s\S]*nodeRenameForm[\s\S]*renameNodeInput/);
 assert.match(template, /data-node-platform-tab="all"[\s\S]*data-node-platform-tab="jetson"[\s\S]*data-node-platform-tab="raspberry-pi"/);
 assert.match(template, /experimentPowerBanner/);
@@ -216,6 +216,23 @@ const deduplicatedWarnings = vm.runInContext(`(() => {
   return [ClusterDashboard.power.newPowerWarnings(input, seen).length, ClusterDashboard.power.newPowerWarnings(input, seen).length];
 })()`, context);
 assert.deepEqual(JSON.parse(JSON.stringify(deduplicatedWarnings)), [1, 0]);
+const transitionLine = vm.runInContext(`ClusterDashboard.power.transitionLine({
+  type: "power_integrity_changed",
+  node: "pi-1",
+  message: "Active Raspberry Pi power condition cleared (history_warning).",
+  evidence: {
+    previous_status: "active_degraded",
+    status: "history_warning",
+    previous_raw_hex: "0x50001",
+    raw_hex: "0x50000",
+    blocking: false,
+    stage: "postflight"
+  }
+})`, context);
+assert.match(transitionLine, /^pi-1 · Active Raspberry Pi power condition cleared/);
+assert.match(transitionLine, /history_warning · 0x50000$/);
+assert.doesNotMatch(transitionLine, /unknown/);
+assert.match(appSource, /ClusterDashboard\.power\.transitionLine\(inner\)/);
 const powerBanner = vm.runInContext(`ClusterDashboard.power.selectedBanner([
   { name: 99, platform: "raspberry-pi", selected: true },
   { name: "jetson", platform: "jetson", selected: true }

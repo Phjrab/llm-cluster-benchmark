@@ -99,6 +99,16 @@
     });
   }
 
+  function transitionLine(event) {
+    const source = event && typeof event === "object" ? event : {};
+    const evidence = source.evidence && typeof source.evidence === "object" ? source.evidence : {};
+    const node = text(source.node) || "Pi worker";
+    const status = text(evidence.status).toLowerCase() || "unknown";
+    const rawHex = text(evidence.raw_hex);
+    const message = text(source.message) || `Raspberry Pi power integrity changed to ${status}.`;
+    return `${node} · ${message} · ${status}${rawHex ? ` · ${rawHex}` : ""}`;
+  }
+
   function detailHtml(model) {
     if (!model?.applicable) return "";
     const meta = model.quality || qualityMeta("unknown");
@@ -165,5 +175,5 @@
     return `<section class="measurement-environment" aria-label="측정 환경"><div class="measurement-environment-head"><div><span>MEASUREMENT ENVIRONMENT</span><h4>전력 측정 품질</h4></div><span class="measurement-quality ${meta.tone}">${meta.icon} ${meta.label}</span></div><p>${dashboard.escapeHtml(failureNote)}</p>${rows || `<p>Pi 전력 표본이 기록되지 않았습니다.</p>`}</section>`;
   }
 
-  dashboard.power = { qualityMeta, normalizeIntegrity, nodeIntegrity, pillHtml, detailHtml, selectedBanner, resultEnvironment, resultEnvironmentHtml, platformIsPi, warningKey, newPowerWarnings };
+  dashboard.power = { qualityMeta, normalizeIntegrity, nodeIntegrity, pillHtml, detailHtml, selectedBanner, resultEnvironment, resultEnvironmentHtml, platformIsPi, warningKey, newPowerWarnings, transitionLine };
 })();

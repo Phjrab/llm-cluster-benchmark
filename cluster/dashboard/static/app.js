@@ -1939,10 +1939,7 @@ function connectEvents() {
       if (inner.type === "request_completed") logLine("RUN", `${inner.completed}/${inner.total} · ${inner.result?.node} · ${inner.result?.ok ? "OK" : "FAIL"}`);
       if (inner.type === "warning") logLine("WARN", inner.message);
       if (inner.type === "power_integrity_changed") {
-        const snapshot = inner.power_integrity || {};
-        const current = Object.entries(snapshot.current || {}).filter(([, active]) => active).map(([name]) => name).join(", ");
-        const history = Object.entries(snapshot.history || {}).filter(([, active]) => active).map(([name]) => name).join(", ");
-        logLine("POWER", `${inner.node || "Pi worker"} · ${snapshot.status || "unknown"}${current ? ` · current ${current}` : history ? ` · history ${history}` : ""}`);
+        logLine("POWER", window.ClusterDashboard.power.transitionLine(inner));
       }
       if (inner.type === "measurement_quality_finalized") {
         const quality = inner.measurement_quality || "unknown";
