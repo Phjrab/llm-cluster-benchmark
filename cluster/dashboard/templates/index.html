@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>MediFlow Cluster Lab</title>
   <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=20260821.2">
 </head>
 <body>
   <div class="app-shell">
@@ -350,11 +350,11 @@
           <span class="ssh-key-status" id="sshKeyStatus">KEY MISSING</span>
         </div>
         <div class="ssh-public-key-row">
-          <div><span>PUBLIC KEY</span><code id="publicKey">키가 아직 생성되지 않았습니다.</code></div>
-          <div class="ssh-key-actions"><button type="button" class="button ghost compact" id="createKeyButton">키 생성</button><button type="button" class="button ghost compact" id="copyKeyButton">공개키 복사</button></div>
+          <div><span>PUBLIC KEY · 실행 명령 아님</span><code id="publicKey">키가 아직 생성되지 않았습니다.</code><small>키 값만 필요한 경우에만 복사하세요. 터미널에서는 아래 WORKER TERMINAL COMMAND를 실행합니다.</small></div>
+          <div class="ssh-key-actions"><button type="button" class="button ghost compact" id="createKeyButton">키 생성</button><button type="button" class="button ghost compact" id="copyKeyButton">키 값 복사</button></div>
         </div>
         <div class="ssh-command-card">
-          <div class="ssh-command-head"><div><span>WORKER TERMINAL COMMAND</span><strong id="pairingCommandTarget">연결할 워커 터미널에서 실행</strong></div><button type="button" class="button ghost compact" id="copyPairingCommandButton">명령 복사</button></div>
+          <div class="ssh-command-head"><div><span>WORKER TERMINAL COMMAND</span><strong id="pairingCommandTarget">연결할 워커 터미널에서 실행</strong></div><button type="button" class="button primary compact" id="copyPairingCommandButton">복사 후 워커에서 실행</button></div>
           <pre><code id="pairingCommand">먼저 Controller SSH 키를 생성하세요.</code></pre>
         </div>
         <p class="pairing-note">위 명령을 선택한 워커의 터미널에서 실행하세요. 같은 키가 이미 있으면 중복으로 추가하지 않습니다. SSH 또는 sudo 비밀번호는 대시보드가 받거나 저장하지 않습니다.</p>
@@ -426,10 +426,10 @@
   </dialog>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-  <script src="/static/app.js" defer></script>
-  <script src="/static/js/utils.js" defer></script>
-  <script src="/static/js/console.js" defer></script>
-  <script src="/static/js/models.js" defer></script>
-  <script src="/static/js/results.js" defer></script>
+  <script src="/static/app.js?v=20260821.2" defer></script>
+  <script src="/static/js/utils.js?v=20260821.2" defer></script>
+  <script src="/static/js/console.js?v=20260821.2" defer></script>
+  <script src="/static/js/models.js?v=20260821.2" defer></script>
+  <script src="/static/js/results.js?v=20260821.2" defer></script>
 </body>
 </html>

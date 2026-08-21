@@ -2200,8 +2200,8 @@ function bindEvents() {
     } catch (error) { toast("워커 등록 실패", error.message, "error"); }
   });
   $("#copyKeyButton").addEventListener("click", async () => {
-    if (!state.onboarding.public_key) return toast("SSH 키 없음", "Controller에서 키 생성 스크립트를 실행하세요.", "error");
-    await copyText(state.onboarding.public_key, $("#publicKey"), "SSH 공개 키 복사됨");
+    if (!state.onboarding.public_key) return toast("SSH 키 없음", "먼저 Controller SSH 키를 생성하세요.", "error");
+    await copyText(state.onboarding.public_key, $("#publicKey"), "공개키 값만 복사됨 · 실행 명령이 아닙니다");
   });
   $("#copyPairingCommandButton").addEventListener("click", async () => {
     const command = workerKeyRegistrationCommand();

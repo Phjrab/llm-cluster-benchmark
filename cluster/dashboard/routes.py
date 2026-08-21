@@ -49,7 +49,9 @@ def _error_response(error: ValueError) -> JSONResponse:
 def register_routers(app: Any, templates: Jinja2Templates) -> None:
     @web_router.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
-        return templates.TemplateResponse(request=request, name="index.html", context={})
+        response = templates.TemplateResponse(request=request, name="index.html", context={})
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @web_router.get("/dashboard/health")
     async def dashboard_health(

@@ -77,6 +77,7 @@ class DashboardBackendTests(unittest.TestCase):
                 controller = client.get("/api/controller/status")
                 models = client.get("/api/models")
                 health = client.get("/dashboard/health")
+                index = client.get("/")
             self.assertEqual(controller.status_code, 200)
             self.assertEqual(controller.json()["role"], "controller")
             self.assertFalse(controller.json()["inference_enabled"])
@@ -84,6 +85,7 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertFalse(health.json()["inference_enabled"])
             self.assertEqual(models.status_code, 200)
             self.assertEqual(set(models.json()), {"models", "inventories", "catalog", "recommendations"})
+            self.assertEqual(index.headers["cache-control"], "no-store")
 
     def test_structured_failure_and_raw_run_response_are_exposed(self) -> None:
         from fastapi.testclient import TestClient
