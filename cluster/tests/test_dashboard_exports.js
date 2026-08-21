@@ -201,21 +201,33 @@ const topology = vm.runInContext(`(() => {
   state.status = [];
   state.selectedNodes = new Set();
   reconcileSelection();
+  const defaultSelected = [...state.selectedNodes];
   const counts = platformNodeCounts();
   state.nodePlatformTab = "jetson";
   const jetsons = visibleTopologyNodes().map(node => node.name);
   state.nodePlatformTab = "raspberry-pi";
   const pis = visibleTopologyNodes().map(node => node.name);
+  const piGroupSelected = selectPlatformGroup("raspberry-pi");
+  const selectedPiNames = [...state.selectedNodes];
+  const allTabPreservesSelection = !selectPlatformGroup("all");
   return {
     names: topologyNodes().map(node => node.name),
     selected: [...state.selectedNodes],
+    defaultSelected,
     counts,
     jetsons,
-    pis
+    pis,
+    piGroupSelected,
+    selectedPiNames,
+    allTabPreservesSelection
   };
 })()`, context);
 assert.equal(topology.names.length, 6);
-assert.equal(topology.selected.length, 6);
+assert.deepEqual([...topology.defaultSelected], ["jetson-1", "jetson-2", "jetson-3"]);
+assert.equal(topology.piGroupSelected, true);
+assert.deepEqual([...topology.selectedPiNames], ["pi-1", "pi-2"]);
+assert.equal(topology.allTabPreservesSelection, true);
+assert.deepEqual([...topology.selected], ["pi-1", "pi-2"]);
 assert.deepEqual(JSON.parse(JSON.stringify(topology.counts)), { all: 6, jetson: 3, "raspberry-pi": 2, unknown: 1 });
 assert.deepEqual([...topology.jetsons], ["jetson-1", "jetson-2", "jetson-3"]);
 assert.deepEqual([...topology.pis], ["pi-1", "pi-2"]);

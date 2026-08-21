@@ -147,6 +147,11 @@ python -m cluster.benchmark.runner \
 예제의 `node_names`는 실제 등록 이름으로 바꾼다. Worker-only 인벤토리가 정상 형식이며,
 legacy head 행을 새로 만들 필요가 없다.
 
+Dashboard는 실험 노드를 플랫폼별로 다루는 것을 기본으로 한다. 최초 선택은 등록된
+Jetson 그룹을 우선하며, `NVIDIA Jetson` 또는 `Raspberry Pi` 탭을 누르면 해당 플랫폼의
+활성 Worker만 선택된다. 이종 혼합 구성은 `전체 워커`에서 명시적으로 선택할 수 있지만
+탐색용으로 표시되며, 정식 성능 비교는 같은 플랫폼끼리 실행하는 것을 권장한다.
+
 `environment-install`과 `prepare`는 Python 추론 환경뿐 아니라 고정 llama.cpp RPC
 런타임도 함께 확인한다. 정확한 고정 커밋의 빌드가 이미 있으면 재사용하고, 없거나
 검증에 실패한 경우에만 Worker 프로젝트의 `.run/cluster` 아래에서 다시 빌드한다.

@@ -304,7 +304,20 @@ function reconcileSelection(nodes = topologyNodes()) {
   state.selectedNodes.forEach(name => {
     if (!selectableNames.has(name)) state.selectedNodes.delete(name);
   });
-  if (!state.selectedNodes.size) selectable.forEach(node => state.selectedNodes.add(node.name));
+  if (!state.selectedNodes.size) {
+    const jetsons = selectable.filter(node => nodePlatformGroup(node) === "jetson");
+    const pis = selectable.filter(node => nodePlatformGroup(node) === "raspberry-pi");
+    const preferred = jetsons.length ? jetsons : pis.length ? pis : selectable;
+    preferred.forEach(node => state.selectedNodes.add(node.name));
+  }
+}
+
+function selectPlatformGroup(platform, nodes = topologyNodes()) {
+  if (!["jetson", "raspberry-pi"].includes(platform)) return false;
+  const group = nodes.filter(node => node.enabled && nodePlatformGroup(node) === platform);
+  if (!group.length) return false;
+  state.selectedNodes = new Set(group.map(node => node.name));
+  return true;
 }
 
 function nodePlatformGroup(node) {
@@ -523,6 +536,7 @@ function updatePlatformGuidance() {
     return node ? actualPlatform(node) : "auto";
   });
   const hasPi = selectedKinds.includes("raspberry-pi");
+  const mixedPlatforms = hasPi && selectedKinds.includes("jetson");
   const layers = $("#layersInput");
   const rpc = selectedStrategy() === "model_parallel_rpc";
   layers.max = hasPi && !rpc ? "0" : "120";
@@ -531,8 +545,9 @@ function updatePlatformGuidance() {
   layers.title = rpc ? "RPC 모델 분할은 coordinator와 원격 장치의 전체 가속 가능 레이어를 사용합니다." : "";
   $("#uniformInput").disabled = rpc;
   $("#configValidity").textContent = rpc
-    ? ($("#rpcAcknowledgeInput").checked ? "RPC 실험 준비됨" : "RPC 위험 확인 필요")
-    : hasPi ? "Pi 포함 · CPU 모드" : "설정 준비됨";
+    ? `${mixedPlatforms ? "Jetson+Pi 혼합 RPC · 탐색용 · " : ""}${$("#rpcAcknowledgeInput").checked ? "RPC 실험 준비됨" : "RPC 위험 확인 필요"}`
+    : mixedPlatforms ? "Jetson+Pi 혼합 구성 · 탐색용 (플랫폼별 비교 권장)"
+      : hasPi ? "Raspberry Pi 그룹 · CPU/OpenBLAS" : "Jetson 그룹 · CUDA";
 }
 
 function renderRpcCoordinatorOptions() {
@@ -2228,6 +2243,7 @@ function bindEvents() {
   $("#addNodeButton").addEventListener("click", () => openNodeOnboarding("auto"));
   $$('[data-node-platform-tab]').forEach(button => button.addEventListener("click", () => {
     state.nodePlatformTab = button.dataset.nodePlatformTab;
+    selectPlatformGroup(state.nodePlatformTab);
     renderNodes();
   }));
   $("#settingsButton").addEventListener("click", () => {
