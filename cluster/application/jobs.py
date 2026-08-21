@@ -215,7 +215,9 @@ class JobService:
         if job.get("status") not in {"queued", "running"}:
             return False
         spawned_pid = job.get("spawned_pid")
-        if not isinstance(spawned_pid, int) or spawned_pid <= 1:
+        if job.get("status") == "running" and (
+            not isinstance(spawned_pid, int) or spawned_pid <= 1
+        ):
             return False
         created_at = job.get("created_at")
         if not isinstance(created_at, str):

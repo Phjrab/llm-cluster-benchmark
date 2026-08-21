@@ -307,7 +307,6 @@ class JobRegistryRecoveryTests(unittest.TestCase):
     def test_fresh_queued_spawn_gets_bounded_identity_claim_grace(self) -> None:
         job, _identity = self.job(status="queued")
         job.pop("process")
-        job["spawned_pid"] = 4321
         job["created_at"] = datetime.now(timezone.utc).isoformat()
         FilesystemJobRepository(self.jobs).write(job["job_id"], job)
         saved = self.service().active()
