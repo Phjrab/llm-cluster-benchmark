@@ -19,6 +19,7 @@ from cluster.worker.telemetry import (
     RaspberryPiTelemetry,
     TelemetryService,
 )
+from cluster.domain.power import decode_get_throttled, unavailable_power_integrity
 
 
 class FakeInferenceBackend:
@@ -89,10 +90,11 @@ class FakeInferenceBackend:
 
 
 class FakeTelemetry:
-    def __init__(self, *, ready: bool = True, degraded: bool = False) -> None:
+    def __init__(self, *, ready: bool = True, degraded: bool = False, power: Optional[Dict[str, Any]] = None) -> None:
         self.ready = ready
         self.degraded = degraded
         self.started = False
+        self.power = power
 
     def start(self) -> None:
         self.started = True
@@ -111,11 +113,14 @@ class FakeTelemetry:
     def snapshot(self) -> Dict[str, Any]:
         return {"gpu_pct": None, "power_w": None, "platform_kind": "raspberry-pi"}
 
+    def power_integrity(self) -> Optional[Dict[str, Any]]:
+        return self.power
+
 
 class WorkerRouteContractTests(unittest.TestCase):
-    def make_client(self, *, auth: bool = False, backend_ready: bool = True) -> tuple[TestClient, FakeInferenceBackend, FakeTelemetry]:
+    def make_client(self, *, auth: bool = False, backend_ready: bool = True, power: Optional[Dict[str, Any]] = None) -> tuple[TestClient, FakeInferenceBackend, FakeTelemetry]:
         backend = FakeInferenceBackend(ready=backend_ready)
-        provider = FakeTelemetry(ready=False, degraded=True)
+        provider = FakeTelemetry(ready=False, degraded=True, power=power)
         telemetry = TelemetryService(provider)
         app = create_app(
             backend=backend,
@@ -198,6 +203,28 @@ class WorkerRouteContractTests(unittest.TestCase):
         self.assertEqual(client.get("/cluster/health").status_code, 401)
         authorized = client.get("/cluster/health", headers={"X-Cluster-Worker-Token": "test-token"})
         self.assertEqual(authorized.status_code, 200)
+
+    def test_health_adds_power_integrity_without_changing_readiness(self) -> None:
+        history = decode_get_throttled(
+            "throttled=0x50000", observed_at="2026-08-21T00:00:00+00:00"
+        ).to_dict()
+        client, _, _ = self.make_client(backend_ready=True, power=history)
+        payload = client.get("/cluster/health").json()
+        self.assertTrue(payload["capabilities"]["inference_ready"])
+        self.assertFalse(payload["capabilities"]["telemetry_ready"])
+        self.assertTrue(payload["capabilities"]["telemetry_degraded"])
+        self.assertEqual(payload["power_integrity"]["status"], "history_warning")
+        self.assertFalse(payload["power_integrity"]["blocking"])
+
+    def test_unavailable_power_integrity_keeps_health_successful(self) -> None:
+        unavailable = unavailable_power_integrity(
+            observed_at="2026-08-21T00:00:00+00:00"
+        ).to_dict()
+        client, _, _ = self.make_client(backend_ready=True, power=unavailable)
+        response = client.get("/cluster/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["capabilities"]["inference_ready"])
+        self.assertEqual(response.json()["power_integrity"]["status"], "unavailable")
 
 
 class WorkerTelemetryTests(unittest.TestCase):

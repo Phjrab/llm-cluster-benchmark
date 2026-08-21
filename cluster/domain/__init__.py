@@ -8,6 +8,17 @@ from .experiment import ExperimentConfig, normalize_model_ids, validate_model_id
 from .identifiers import validate_experiment_id, validate_node_id, validate_run_id, validate_suite_id
 from .layout import ProjectLayout
 from .model import ModelCatalogEntry, ModelInventoryEntry, infer_quantization, recommend_models, validate_model_checksum
+from .power import (
+    MeasurementQuality,
+    PowerConditionBits,
+    PowerIntegrityStatus,
+    PowerWarningCode,
+    RaspberryPiPowerIntegrity,
+    decode_get_throttled,
+    decode_throttled_mask,
+    parse_get_throttled_output,
+    unavailable_power_integrity,
+)
 from .strategy import (
     EXECUTION_STRATEGIES,
     EXECUTION_STRATEGY_ORDER,
@@ -34,7 +45,12 @@ __all__ = [
     "FailureRecord",
     "ModelCatalogEntry",
     "ModelInventoryEntry",
+    "MeasurementQuality",
+    "PowerConditionBits",
+    "PowerIntegrityStatus",
+    "PowerWarningCode",
     "ProjectLayout",
+    "RaspberryPiPowerIntegrity",
     "RpcSplitMode",
     "RpcSplitPolicy",
     "SweepMode",
@@ -46,6 +62,9 @@ __all__ = [
     "failure_from_message",
     "http_status_for_failure",
     "infer_quantization",
+    "decode_get_throttled",
+    "decode_throttled_mask",
+    "parse_get_throttled_output",
     "recommend_models",
     "validate_experiment_id",
     "validate_model_id",
@@ -53,4 +72,5 @@ __all__ = [
     "validate_node_id",
     "validate_run_id",
     "validate_suite_id",
+    "unavailable_power_integrity",
 ]

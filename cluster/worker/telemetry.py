@@ -14,6 +14,12 @@ from typing import Any, Callable, Dict, Optional, Protocol
 
 import psutil
 
+from cluster.domain.power import (
+    RaspberryPiPowerIntegrity,
+    decode_get_throttled,
+    unavailable_power_integrity,
+)
+
 
 def safe_float(value: Any) -> Optional[float]:
     if isinstance(value, bool):
@@ -70,6 +76,8 @@ class TelemetryProvider(Protocol):
 
     def status(self) -> Dict[str, Any]: ...
 
+    def power_integrity(self) -> Optional[Dict[str, Any]]: ...
+
 
 class GenericPsutilTelemetry:
     """Portable base telemetry.  It is healthy even without vendor sensors."""
@@ -90,6 +98,10 @@ class GenericPsutilTelemetry:
 
     def status(self) -> Dict[str, Any]:
         return {"provider": "psutil", "ready": True, "degraded": False, "error": None}
+
+    def power_integrity(self) -> Optional[Dict[str, Any]]:
+        """Only Raspberry Pi firmware exposes this observation contract."""
+        return None
 
     def _vendor_snapshot(self) -> Dict[str, Any]:
         return {}
@@ -182,8 +194,42 @@ class GenericPsutilTelemetry:
 class RaspberryPiTelemetry(GenericPsutilTelemetry):
     """Pi telemetry deliberately leaves unavailable GPU/power values as None."""
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(
+        self,
+        project_root: Path,
+        *,
+        power_command_runner: Optional[Callable[..., subprocess.CompletedProcess[str]]] = None,
+        clock: Optional[Callable[[], datetime]] = None,
+    ) -> None:
         super().__init__(project_root, "raspberry-pi")
+        self._power_command_runner = power_command_runner or subprocess.run
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def power_integrity(self) -> Dict[str, Any]:
+        """Read one non-blocking firmware power-state observation.
+
+        The command and its output never originate from HTTP input. Any command,
+        timeout, non-zero exit, or parser failure is intentionally normalized to
+        an unavailable observation so the Worker health route stays healthy.
+        """
+        observed_at = self._clock().isoformat()
+        try:
+            completed = self._power_command_runner(
+                ["vcgencmd", "get_throttled"],
+                text=True,
+                capture_output=True,
+                timeout=2,
+                check=False,
+                shell=False,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError("vcgencmd exited unsuccessfully")
+            record: RaspberryPiPowerIntegrity = decode_get_throttled(
+                completed.stdout, observed_at=observed_at
+            )
+        except Exception:
+            record = unavailable_power_integrity(observed_at=observed_at)
+        return record.to_dict()
 
 
 class JetsonTelemetry(GenericPsutilTelemetry):
@@ -349,6 +395,10 @@ class TelemetryService:
 
     def status(self) -> Dict[str, Any]:
         return self.provider.status()
+
+    def power_integrity(self) -> Optional[Dict[str, Any]]:
+        probe = getattr(self.provider, "power_integrity", None)
+        return probe() if callable(probe) else None
 
 
 __all__ = [

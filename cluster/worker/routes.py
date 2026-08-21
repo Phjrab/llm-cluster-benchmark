@@ -151,7 +151,7 @@ def mount_worker_routes(
         models = backend.list_models()
         telemetry_status = telemetry.status()
         inference_status = backend.readiness()
-        return {
+        response: Dict[str, Any] = {
             "ok": True,
             "node": {
                 "name": runtime.node_name,
@@ -181,6 +181,14 @@ def mount_worker_routes(
             "model_ids": [str(item["id"]) for item in models],
             "metrics": telemetry.snapshot(),
         }
+        power_probe = getattr(telemetry, "power_integrity", None)
+        power_integrity = power_probe() if callable(power_probe) else None
+        if power_integrity is not None:
+            # Additive Pi-only research context. It never changes inference or
+            # telemetry readiness above, and non-Pi Workers keep their legacy
+            # payload shape until a later Controller normalization phase.
+            response["power_integrity"] = power_integrity
+        return response
 
     @app.get("/cluster/models")
     async def cluster_models() -> Dict[str, Any]:
