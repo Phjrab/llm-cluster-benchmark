@@ -51,8 +51,9 @@ assert.doesNotMatch(appSource, /\/api\/events\?token=/);
 assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260821\.2/);
-assert.match(template, /app\.js\?v=20260821\.2/);
+assert.match(template, /styles\.css\?v=20260821\.3/);
+assert.match(template, /app\.js\?v=20260821\.3/);
+assert.match(template, /nodeRenameDialog[\s\S]*nodeRenameForm[\s\S]*renameNodeInput/);
 const workerRegistrationCommand = vm.runInContext(`buildWorkerKeyRegistrationCommand("ssh-ed25519 AAAA-test controller@mac")`, context);
 assert.match(workerRegistrationCommand, /^umask 077; mkdir -p ~\/\.ssh/);
 assert.match(workerRegistrationCommand, /grep -qxF "\$KEY"/);
@@ -172,6 +173,37 @@ assert.deepEqual([...topology.selected], ["pi-worker"]);
 assert.equal(topology.capacity.count, 3);
 assert.equal(topology.capacity.remaining, 1);
 assert.equal(topology.capacity.full, false);
+
+const renamedNodeState = vm.runInContext(`(() => {
+  state.nodes = [{ name: "worker-wrong-name", role: "worker", enabled: true }];
+  state.selectedNodes = new Set(["worker-wrong-name"]);
+  state.detailNode = "worker-wrong-name";
+  state.renameNode = "worker-wrong-name";
+  state.rpcCoordinatorNode = "worker-wrong-name";
+  state.metricHistory = new Map([["worker-wrong-name", [{ cpu_pct: 12 }]]]);
+  state.status = [{ name: "worker-wrong-name", api: true }];
+  state.environment = [{ node: "worker-wrong-name", status: "ready" }];
+  state.devices = [{ known_node: "worker-wrong-name" }];
+  migrateRenamedNodeState("worker-wrong-name", "jetson-worker-02");
+  return {
+    selected: [...state.selectedNodes],
+    detailNode: state.detailNode,
+    renameNode: state.renameNode,
+    rpcCoordinatorNode: state.rpcCoordinatorNode,
+    historyNames: [...state.metricHistory.keys()],
+    status: state.status,
+    environment: state.environment,
+    knownNode: state.devices[0].known_node
+  };
+})()`, context);
+assert.deepEqual([...renamedNodeState.selected], ["jetson-worker-02"]);
+assert.equal(renamedNodeState.detailNode, "jetson-worker-02");
+assert.equal(renamedNodeState.renameNode, "jetson-worker-02");
+assert.equal(renamedNodeState.rpcCoordinatorNode, "jetson-worker-02");
+assert.deepEqual([...renamedNodeState.historyNames], ["jetson-worker-02"]);
+assert.equal(renamedNodeState.status.length, 0);
+assert.equal(renamedNodeState.environment.length, 0);
+assert.equal(renamedNodeState.knownNode, "jetson-worker-02");
 
 const wrappedLegend = vm.runInContext(`buildPublicationSvg({
   type: "line", title: "Many models", subtitle: "legend wrapping",

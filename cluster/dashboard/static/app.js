@@ -19,6 +19,7 @@ const state = {
   eventSource: null,
   metricHistory: new Map(),
   detailNode: "",
+  renameNode: "",
   selectedModels: [],
   suites: [],
   chartModels: new Map(),
@@ -1448,6 +1449,7 @@ function renderNodeDetail() {
   const metrics = live.metrics || {};
   const profile = live.profile || {};
   const kind = profile.platform_kind || node.platform;
+  $("#nodeRenameButton").classList.toggle("hidden", node.role !== "worker");
   $("#detailNodeName").textContent = node.name;
   const cores = metrics.cpu?.cores_pct || [];
   const temperatures = metrics.temperatures_c || {};
@@ -1527,6 +1529,35 @@ function openNodeDetail(nodeName) {
   state.detailNode = nodeName;
   $("#nodeDetailDialog").showModal();
   renderNodeDetail();
+}
+
+function openNodeRename(nodeName) {
+  const node = state.nodes.find(item => item.name === nodeName && item.role === "worker");
+  if (!node) return toast("이름 변경 불가", "등록된 워커를 찾을 수 없습니다.", "error");
+  state.renameNode = node.name;
+  $("#renameNodeCurrent").textContent = node.name;
+  $("#renameNodeInput").value = node.name;
+  $("#nodeRenameDialog").showModal();
+  requestAnimationFrame(() => $("#renameNodeInput").select());
+}
+
+function migrateRenamedNodeState(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) return;
+  const wasSelected = state.selectedNodes.has(oldName);
+  state.selectedNodes.delete(oldName);
+  if (wasSelected) state.selectedNodes.add(newName);
+  if (state.detailNode === oldName) state.detailNode = newName;
+  if (state.renameNode === oldName) state.renameNode = newName;
+  if (state.rpcCoordinatorNode === oldName) state.rpcCoordinatorNode = newName;
+  if (state.metricHistory.has(oldName)) {
+    state.metricHistory.set(newName, state.metricHistory.get(oldName));
+    state.metricHistory.delete(oldName);
+  }
+  state.status = state.status.filter(item => item.name !== oldName);
+  state.environment = state.environment.filter(item => (item.node || item.name) !== oldName);
+  state.devices.forEach(device => {
+    if (device.known_node === oldName) device.known_node = newName;
+  });
 }
 
 function setRunState(active) {
@@ -1773,8 +1804,12 @@ function connectEvents() {
       renderNodes();
       renderNodeDetail();
     } else if (message.type === "inventory_changed") {
+      if (message.renamed) {
+        migrateRenamedNodeState(message.renamed.old_name, message.renamed.new_name);
+      }
       state.nodes = message.nodes || state.nodes;
       renderNodes();
+      renderNodeDetail();
     } else if (message.type === "environment_changed") {
       setEnvironmentReports(message.environment || message.reports || message.node_readiness || message.report || message);
       const changed = normalizedEnvironmentItems(message.environment || message.reports || message.node_readiness || message.report || message);
@@ -2158,6 +2193,35 @@ function bindEvents() {
       renderSettings();
       connectEvents();
       toast("설정 적용 실패", error.message, "error");
+    }
+  });
+  $("#nodeRenameButton").addEventListener("click", () => openNodeRename(state.detailNode));
+  $("#nodeRenameForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const oldName = state.renameNode;
+    const newName = $("#renameNodeInput").value.trim();
+    if (!oldName) return toast("이름 변경 실패", "변경할 워커를 다시 선택하세요.", "error");
+    try {
+      const result = await api(`/api/nodes/${encodeURIComponent(oldName)}/name`, {
+        method: "PATCH",
+        body: { new_name: newName },
+      });
+      migrateRenamedNodeState(oldName, result.node.name);
+      const index = state.nodes.findIndex(node => node.name === oldName);
+      if (index >= 0) state.nodes[index] = result.node;
+      else if (!state.nodes.some(node => node.name === result.node.name)) state.nodes.push(result.node);
+      state.renameNode = "";
+      $("#nodeRenameDialog").close();
+      renderNodes();
+      renderNodeDetail();
+      window.ClusterDashboard?.modelLibrary?.refresh().catch(() => {});
+      toast(
+        "워커 이름 변경 완료",
+        result.warning || (result.action ? `${oldName} → ${result.node.name} · 워커 API 재시작 중` : `${oldName} → ${result.node.name}`),
+        result.warning ? "error" : "success",
+      );
+    } catch (error) {
+      toast("워커 이름 변경 실패", error.message, "error");
     }
   });
   $("#scanNetworkButton").addEventListener("click", () => scanNetwork(true));

@@ -23,6 +23,7 @@ from cluster.dashboard.schemas import (
     ClusterSettingsPayload,
     ExperimentPayload,
     NodePayload,
+    NodeRenamePayload,
 )
 from cluster.dashboard.services import DashboardFacade
 
@@ -150,6 +151,17 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
     ) -> Dict[str, Any]:
         try:
             return dashboard.upsert_node(payload)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @nodes_router.patch("/api/nodes/{node_name}/name")
+    async def rename_node(
+        node_name: str,
+        payload: NodeRenamePayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.rename_node(node_name, payload.new_name)
         except ValueError as exc:
             return _error_response(exc)
 

@@ -213,6 +213,92 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertTrue(identity.with_suffix(".pub").is_file())
             self.assertEqual(stat.S_IMODE(identity.stat().st_mode), 0o600)
 
+    def test_registered_worker_can_be_renamed_and_restarted(self) -> None:
+        from fastapi.testclient import TestClient
+        from cluster.clusterctl import Node
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self.load_dashboard(root)
+            old_name = "worker-wrong-name"
+            new_name = "jetson-worker-02"
+            dashboard.services.write_all_nodes(
+                [
+                    Node(
+                        old_name,
+                        "worker",
+                        "192.168.0.26",
+                        "jetson",
+                        22,
+                        8000,
+                        "/opt/llm-cluster",
+                        True,
+                        platform="jetson",
+                    )
+                ]
+            )
+            dashboard.services._environment_repository().write(
+                old_name,
+                {"node": old_name, "status": "ready"},
+            )
+            queued_action = {"id": "restart-1", "action": "restart", "status": "queued"}
+            with mock.patch.object(
+                dashboard.services.actions,
+                "start",
+                return_value=queued_action,
+            ) as start_action, mock.patch.object(
+                dashboard.services.status_monitor,
+                "refresh_now",
+                return_value=None,
+            ), TestClient(dashboard.app) as client:
+                response = client.patch(
+                    f"/api/nodes/{old_name}/name",
+                    json={"new_name": new_name},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["old_name"], old_name)
+            self.assertEqual(payload["node"]["name"], new_name)
+            self.assertEqual(payload["node"]["host"], "192.168.0.26")
+            self.assertEqual(payload["action"], queued_action)
+            saved_nodes = dashboard.services.read_all_nodes()
+            self.assertEqual([node.name for node in saved_nodes], [new_name])
+            action_payload = start_action.call_args.args[0]
+            self.assertEqual(action_payload.action, "restart")
+            self.assertEqual(action_payload.node_names, [new_name])
+            with self.assertRaises(FileNotFoundError):
+                dashboard.services._environment_repository().read(old_name)
+
+    def test_worker_rename_rejects_duplicate_and_invalid_names(self) -> None:
+        from fastapi.testclient import TestClient
+        from cluster.clusterctl import Node
+
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self.load_dashboard(Path(directory))
+            dashboard.services.write_all_nodes(
+                [
+                    Node("worker-one", "worker", "192.168.0.26", "jetson", 22, 8000, "/opt/one", True),
+                    Node("worker-two", "worker", "192.168.0.27", "jetson", 22, 8000, "/opt/two", True),
+                ]
+            )
+            with TestClient(dashboard.app) as client:
+                duplicate = client.patch(
+                    "/api/nodes/worker-one/name",
+                    json={"new_name": "worker-two"},
+                )
+                invalid = client.patch(
+                    "/api/nodes/worker-one/name",
+                    json={"new_name": "worker name with spaces"},
+                )
+
+            self.assertEqual(duplicate.status_code, 409)
+            self.assertEqual(invalid.status_code, 422)
+            self.assertEqual(
+                [node.name for node in dashboard.services.read_all_nodes()],
+                ["worker-one", "worker-two"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

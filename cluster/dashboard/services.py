@@ -42,6 +42,7 @@ from cluster.application.model_service import (
 )
 from cluster.application.suite_runner import suite_document, suite_model_records
 from cluster.domain.events import ClusterEvent, EventChannel
+from cluster.domain.identifiers import validate_node_id
 from cluster.benchmark.runner import (
     ExperimentConfig,
     experiment_strategy_catalog,
@@ -1850,6 +1851,80 @@ class DashboardFacade:
         )
         threading.Thread(target=status_monitor.refresh_now, daemon=True).start()
         return {"ok": True, "node": serialize_node(node)}
+
+    def rename_node(self, node_name: str, new_name: str) -> Dict[str, Any]:
+        new_name = new_name.strip()
+        try:
+            validate_node_id(node_name)
+            validate_node_id(new_name)
+        except ValueError as exc:
+            raise DashboardServiceError(400, str(exc)) from exc
+        with inventory_lock:
+            active = experiments.active()
+            if (
+                active
+                and active.get("status") in NONTERMINAL_JOB_STATES
+                and node_name in set(active.get("nodes") or [])
+            ):
+                raise DashboardServiceError(409, "Node is busy with an experiment")
+            if node_name in set(actions.busy_nodes()):
+                raise DashboardServiceError(409, "Node has a running control action")
+            nodes = read_all_nodes()
+            target_index = next((index for index, node in enumerate(nodes) if node.name == node_name), None)
+            if target_index is None:
+                raise DashboardServiceError(404, "Node not found")
+            target = nodes[target_index]
+            if target.role != "worker":
+                raise DashboardServiceError(400, "Only worker nodes can be renamed")
+            if node_name == new_name:
+                return {
+                    "ok": True,
+                    "old_name": node_name,
+                    "node": serialize_node(target),
+                    "action": None,
+                    "warning": "",
+                }
+            if any(node.name == new_name for node in nodes):
+                raise DashboardServiceError(409, "Another node already uses that name")
+            renamed = Node(
+                name=new_name,
+                role=target.role,
+                host=target.host,
+                user=target.user,
+                ssh_port=target.ssh_port,
+                api_port=target.api_port,
+                project_dir=target.project_dir,
+                enabled=target.enabled,
+                identity_file=target.identity_file,
+                platform=target.platform,
+            )
+            nodes[target_index] = renamed
+            try:
+                write_all_nodes(nodes)
+            except ValueError as exc:
+                raise DashboardServiceError(400, str(exc)) from exc
+            _invalidate_environment_report(node_name)
+        events.publish(
+            "inventory_changed",
+            channel=EventChannel.NODE_OPS,
+            nodes=[serialize_node(item) for item in nodes],
+            renamed={"old_name": node_name, "new_name": new_name},
+        )
+        action = None
+        warning = ""
+        if renamed.enabled:
+            try:
+                action = actions.start(ActionPayload(action="restart", node_names=[new_name], options={}))
+            except ValueError as exc:
+                warning = f"Name changed, but worker restart could not start: {exc}"
+        threading.Thread(target=status_monitor.refresh_now, daemon=True).start()
+        return {
+            "ok": True,
+            "old_name": node_name,
+            "node": serialize_node(renamed),
+            "action": action,
+            "warning": warning,
+        }
 
     def delete_node(self, node_name: str) -> Dict[str, Any]:
         with inventory_lock:

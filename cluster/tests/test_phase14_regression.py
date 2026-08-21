@@ -342,6 +342,7 @@ class PublicCompatibilityAndPackagingTests(unittest.TestCase):
                 ("POST", "/api/network/scan"),
                 ("POST", "/api/nodes/probe"),
                 ("POST", "/api/nodes"),
+                ("PATCH", "/api/nodes/{node_name}/name"),
                 ("DELETE", "/api/nodes/{node_name}"),
                 ("POST", "/api/actions"),
                 ("GET", "/api/actions"),

@@ -87,6 +87,10 @@ class NodePayload(BaseModel):
         return value
 
 
+class NodeRenamePayload(BaseModel):
+    new_name: str = Field(min_length=1, max_length=40, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+
+
 class ActionPayload(BaseModel):
     action: str
     node_names: List[str] = Field(default_factory=list)

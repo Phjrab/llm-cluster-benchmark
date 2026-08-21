@@ -419,6 +419,11 @@ footer { display: flex; justify-content: space-between; padding: 25px 5vw; backg
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }.modal .ghost { color: var(--ink); }
 .node-detail-modal { width: min(1080px, calc(100vw - 30px)); }
 .node-detail-shell { padding: 30px; }
+.node-detail-head-actions { display: flex; align-items: center; gap: 10px; }
+.rename-node-modal { width: min(520px, calc(100vw - 30px)); }
+.rename-node-modal form { padding: 28px; }
+.rename-node-modal .field small { display: block; margin-top: 7px; color: var(--muted); font-size: 9px; }
+.rename-node-note { margin: 16px 0 0; padding: 11px 13px; border-left: 3px solid var(--orange); background: rgba(255,107,61,.07); color: var(--muted); font-size: 9px; line-height: 1.55; }
 .detail-identity { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 24px 0 14px; border: 1px solid var(--line); background: var(--line); }
 .detail-identity > div { min-width: 0; padding: 15px; background: var(--paper); }
 .detail-identity span, .telemetry-title span, .telemetry-history > div span { display: block; color: var(--muted); font: 600 7px/1 var(--mono); letter-spacing: .1em; }
