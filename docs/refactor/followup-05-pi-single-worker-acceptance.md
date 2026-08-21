@@ -1,31 +1,33 @@
 # FOLLOWUP 05 — Raspberry Pi Single-Worker Hardware Acceptance
 
-Status: **BLOCKED_BY_HARDWARE**
+Status: **COMPLETE**
 
-This phase executed only the Raspberry Pi single-Worker acceptance scope. It did not begin multi-Worker or RPC acceptance, did not reboot or reconfigure the Raspberry Pi, and did not modify or delete the legacy Jetson workspace.
+This phase executed only the Raspberry Pi single-Worker acceptance scope. It did not begin multi-Worker or RPC acceptance, did not reboot or reconfigure either Raspberry Pi, and did not modify or delete the legacy Jetson workspace.
+
+The first candidate, `pi-worker-01`, became unreachable during its bounded model smoke. At the user's request, acceptance restarted from the read-only baseline on the independently registered `pi-worker-02`; all final acceptance claims below apply to that Worker.
 
 ## Device identity
 
-- Inventory node: `pi-worker-01`
-- Address: private RFC1918 IPv4 `192.168.0.16`
-- Role: enabled Worker; the Controller was not a benchmark participant
-- Hostname: `pi1`
+- Inventory node: `pi-worker-02`
+- Address: private RFC1918 IPv4 `192.168.0.14`
+- Role: enabled Worker; the Mac Controller was not a participant
+- Hostname: `pi2`
 - Board: Raspberry Pi 5 Model B Rev 1.0
 - OS: Ubuntu 24.04.4 LTS
 - Kernel/architecture: Linux 6.8.0-1060-raspi, `aarch64`
 - CPU: 4 × Cortex-A76, up to 2.4 GHz
-- RAM: 8,322,748,416 bytes total; 7,880,642,560 bytes available at baseline
-- Storage: approximately 214 GiB available at baseline
+- RAM: 7,937.19 MiB reported by Worker health
+- Storage: 23.29 GiB available at baseline
 - Python: 3.12.3
 - Deployment: inventory-managed isolated Worker project path; source sync excluded `.git`, `.venv`, `.run`, models, outputs, results, tokens, keys, and caches
 
-The pre-change listener baseline showed the Worker API on TCP 8000 and no RPC listeners on 50052 or 18080. Unrelated process details and credentials were not collected.
+The relevant listener baseline showed the Worker API on TCP 8000 and no RPC listeners on 50052 or 18080. Unrelated process details and credentials were not collected.
 
 ## Git/deployment commit
 
 - Branch: `codex/mac-control-plane`
 - Follow-up 04 baseline: `edffe7ea8f14d8e68af2badfac7a3ae3fdeccc88`
-- Deployed correction: `727fae03dcb2fdca074044a06ba090daae999926`
+- Deployment/correction source: `727fae03dcb2fdca074044a06ba090daae999926`
 - Source flow: clean Mac feature branch → regression tests → commit/push → repository `sync-code` → isolated Worker path
 - The Worker source was never edited directly.
 
@@ -39,6 +41,7 @@ The pre-change listener baseline showed the Worker API on TCP 8000 and no RPC li
 - Exact pinned Python runtime requirements: pass
 - `llama-cpp-python` 0.3.20: pass
 - OpenBLAS backend: verified
+- Inference threads: 4
 - CUDA requirement: none
 - Jetson/jtop requirement: none
 - Model inventory after sync: one GGUF
@@ -49,28 +52,25 @@ Because the existing environment was already ready, `environment-install`, packa
 
 - Probe source: fixed `vcgencmd get_throttled`
 - Command availability: yes
-- Raw value: `327680` / `0x50000`
-- Current undervoltage: false
-- Current frequency capped: false
-- Current throttled: false
-- Current soft-temperature limit: false
-- Historical undervoltage: true
-- Historical throttling: true
-- Status: `history_warning`
+- Raw value: `0` / `0x0`
+- Current undervoltage/frequency cap/throttling/soft-temperature limit: all false
+- Historical undervoltage/frequency cap/throttling/soft-temperature limit: all false
+- Status: `ok`
 - Blocking: false
 
-The Worker health contract correctly kept inference and telemetry ready while reporting this non-blocking historical warning. No adapter type or cause was inferred.
+Power integrity remained a separate observation axis and did not alter inference or telemetry readiness.
 
 ## Worker API
 
-Before the model smoke, the repository lifecycle completed:
+The repository lifecycle completed on `pi-worker-02`:
 
-- `start`: running
-- second `start`: idempotent; same PID
-- `restart`: new PID observed
+- existing Worker stopped cleanly before loading the deployed source
+- `start`: PID 50480, TCP 8000 online
+- second `start`: idempotent; PID 50480 retained
+- `restart`: new PID 50728 observed
 - `status`/health: online
-- `stop`: Worker PID and TCP 8000 listener removed
-- benchmark preparation `start`: online with an exact guarded PID/listener
+- `stop`: PID 50728 and TCP 8000 listener removed
+- benchmark preparation `start`: PID 51042, guarded listener online
 
 Health reported:
 
@@ -78,9 +78,10 @@ Health reported:
 - `telemetry_ready=true`
 - `telemetry_degraded=false`
 - OpenBLAS backend verified
-- inference threads: 4
-- `power_integrity.status=history_warning`
+- `power_integrity.status=ok`
 - `power_integrity.blocking=false`
+
+The final cleanup check reconfirmed that PID 51042 owned TCP 8000. No 50052 or 18080 listener was present.
 
 ## Model identity/checksum
 
@@ -91,107 +92,128 @@ Health reported:
 - SHA-256: `6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83`
 - Worker inventory: present, `checksum_valid=true`
 - Worker verification endpoint: exact SHA-256 pass
-- Partial download artifacts: none observed before the hardware loss
+- Partial download artifacts after acceptance: none
 
-The model was copied from an already accepted, checksum-verified source without modifying that source workspace. The Controller-to-Worker transfer completed before benchmark timing.
+The model transfer occurred before benchmark timing. A separate load/inference/unload smoke used context 512, zero GPU layers, seed 42, and 16 generated tokens. It completed in 2.359451 seconds with 16 streamed tokens and unloaded successfully.
 
 ## Single-node config
 
-The planned acceptance configuration was:
-
 - strategy: `single_node`
-- participant: `pi-worker-01` only
-- requests: 2
+- participant: `pi-worker-02` only
+- logical/physical requests: 2 / 2
 - concurrency: 1
 - warmup requests: 1
 - max generated tokens: 24
 - context: 512
 - GPU layers: 0
-- temperature: 0.0
+- temperature/top-p: 0.0 / 0.9
 - seed: 42
 - prompt persistence: enabled
+- run ID: `20260821_140452_69cf30`
 
-The model-load smoke returned `OK` with the requested model, context 512, and zero GPU layers. A bounded 24-token inference was then submitted.
+The warmup was excluded from measurement, and the Mac Controller received no physical inference call.
 
 ## Functional result
 
-**Functional Acceptance: INCOMPLETE — BLOCKED_BY_HARDWARE**
+**Functional Acceptance: PASS**
 
-The model load succeeded, but the Raspberry Pi disappeared from the network while the short inference was in progress. Afterward:
+- Run status: `completed`
+- Requests: 2
+- Successful/failed: 2 / 0
+- Responses: 2
+- Success rate: 100%
+- Generated tokens: 48
+- Structured failures: none
+- Deterministic response hashes: identical across both requests
 
-- Worker API: unreachable
-- SSH: `Host is down`
-- ICMP: no responses
-- ARP: prior device entry remained visible
+Metrics:
 
-This was a device-level availability loss, not merely a Worker API failure. No response completion was observed, so the benchmark was not started and no successful inference claim is made. The recorded historical power warning is not treated as a blocker or asserted as the cause of the outage.
+- TTFT p50/p95: 0.179275 / 0.217554 seconds
+- E2E p50/p95: 2.769557 / 2.826853 seconds
+- Cluster throughput: 8.654476 tokens/second
+- Average generation throughput: 9.265822 tokens/second
+- Measured wall time: 5.546263 seconds
 
 ## Measurement quality
 
-- Preflight quality: `warning`
-- Preflight power raw: `0x50000`
-- Benchmark quality: `unknown` because no measurement run was created
-- Run status: not created
+- Final quality: `clean`
+- Preflight: `0x0`, status `ok`
+- Pre-measurement: `0x0`, status `ok`
+- Measurement: 1/1 valid sample, zero unavailable samples, zero active-warning samples
+- Postflight: `0x0`, status `ok`
+- Warnings: none
 - Power blocking policy: false
 
-No completed, degraded, failed, or partial benchmark result was synthesized.
+The earlier `pi-worker-01` outage is retained as a separate hardware risk and is not attributed to power without evidence.
 
 ## Durable artifacts
 
-No benchmark run directory was created because the prerequisite load/inference smoke did not finish. Therefore this phase has no new:
+The run directory contains private-mode artifacts:
 
 - `config.json`
-- `events.jsonl`
-- `requests.csv`
-- `responses.jsonl`
-- `summary.json`
+- `events.jsonl` — 14 records
+- `requests.csv` — exact 19-column contract, two data rows
+- `responses.jsonl` — two response records
+- `summary.json` — schema version 2
 
-This is intentional: incomplete hardware activity was not represented as a completed durable run.
+Prompt text, raw generated responses, full SHA-256 response hashes, per-request TTFT/E2E/TPS, additive power snapshots, and final measurement quality were all persisted. No benchmark download log appeared in the experiment event stream.
 
 ## Dashboard validation
 
-Before the outage, the Worker API payload required by the Dashboard was verified: the Raspberry Pi remained inference-ready and telemetry-ready while `0x50000` was represented as a non-blocking historical warning.
+The Mac Dashboard was restarted once so the already-pushed power-observability backend was loaded. This was deployment refresh, not a source fix.
 
-The completed-result Dashboard acceptance could not be performed because no benchmark result exists. In particular, completed status, Measurement Environment, prompt/response, response hash, and TTFT/E2E/TPS remain unverified in this hardware phase.
+Browser acceptance confirmed:
+
+- `pi-worker-02`: ONLINE and INFERENCE READY
+- Worker card: `POWER NORMAL` rather than UNKNOWN
+- experiment: `FOLLOWUP 05 Raspberry Pi 2 single-worker acceptance · COMPLETED`
+- summary cards: 8.7 tok/s, TTFT p50 0.18s, E2E p95 2.83s, 100% success
+- interactive throughput, latency, and per-node charts rendered
+- Measurement Environment: NORMAL with before/during/after details
+- both prompts and raw responses displayed
+- response hash prefix displayed and matched persisted SHA-256
+- per-response TTFT, E2E, generated-token count, and throughput displayed
 
 ## Cleanup
 
+- Selected model unloaded; final health reported no loaded model.
+- Worker API remains running under the guarded repository lifecycle policy.
+- PID 51042 owns TCP 8000.
 - No RPC process or listener was started.
-- No model download remained partial before device loss.
-- No temporary Controller benchmark server was started.
-- The model was not deleted.
+- No partial model file remained.
+- The accepted model was not deleted.
 - The legacy Jetson workspace was not modified or deleted.
-- Model unload and final Worker PID/listener ownership could not be confirmed after the device became unreachable.
-
-The Raspberry Pi was not rebooted, power-cycled, reconfigured, overclocked, underclocked, or otherwise mutated in an attempt to recover it.
+- No Raspberry Pi was rebooted, power-cycled, reconfigured, overclocked, or underclocked.
 
 ## Defects/fixes
 
-Hardware discovery exposed a macOS portability defect in model synchronization: the command used GNU-rsync-only `--append-verify` and `--info=progress2`, which macOS built-in rsync rejected before transfer.
+The original `pi-worker-01` attempt exposed a macOS portability defect before its hardware outage: model synchronization used GNU-rsync-only `--append-verify` and `--info=progress2`, which macOS built-in rsync rejected before transfer.
 
 The Mac source-of-truth fix:
 
 - replaced those flags with portable `--partial --progress`
 - retained mandatory remote SHA-256 verification
-- retained model path containment and mismatch cleanup
+- retained model path containment and checksum-mismatch cleanup
 - added a regression test that rejects reintroduction of the GNU-only flags
 
-Correction commit: `727fae03dcb2fdca074044a06ba090daae999926` (`fix(models): support verified sync from macOS`). The correction was tested, pushed, redeployed, and the full model transfer/checksum then succeeded.
+Correction commit: `727fae03dcb2fdca074044a06ba090daae999926` (`fix(models): support verified sync from macOS`). It was tested, pushed, redeployed, and used successfully for the full `pi-worker-02` transfer.
+
+No additional product defect was found on `pi-worker-02`. The initial Dashboard `POWER UNKNOWN` observation was resolved by restarting a stale pre-feature Dashboard process; the current source correctly renders `POWER NORMAL`.
 
 ## Remaining hardware risks
 
-- The Raspberry Pi must return to stable SSH/API reachability before inference acceptance resumes.
-- The short inference, unload, single-node benchmark, durable artifact contract, and Dashboard result view remain unverified.
-- The observed outage coincided with inference but its cause is unknown; the report does not attribute it to power integrity without evidence.
-- On resumption, verify the guarded Worker PID/listener and current model state before retrying. Do not assume the prior process or model lock survived.
-- Multi-Worker and RPC acceptance are explicitly outside this phase and were not started.
+- `pi-worker-01` remains unstable/unreachable after its short inference attempt; its root cause is unknown.
+- This acceptance proves one Raspberry Pi Worker only. Multi-Worker and RPC acceptance are explicitly outside FOLLOWUP 05 and were not started.
+- The smoke workload is intentionally small and does not establish sustained thermal, power, storage, or long-duration stability.
+- The Raspberry Pi reports no swap and has 23.29 GiB free storage; larger models require a separate fit/preflight decision.
 
 ## Tests and gates
 
 - Focused portable model-sync regression: pass
 - Relevant model tests: 37/37 pass
-- Full Mac regression after the correction and hardware attempt: 279/279 pass
+- Full Mac regression before this acceptance: 279/279 pass
+- Full Mac regression after this acceptance: 279/279 pass
 - `git diff --check`: pass
-- Hardware-safe read-only and approved lifecycle/model commands: executed only against the inventory-selected Raspberry Pi Worker
+- Hardware commands were limited to the inventory-selected Raspberry Pi Worker and approved repository lifecycle/model flows.
 
-FOLLOWUP 05 stopped at the hardware availability blocker. FOLLOWUP 06 has not been started.
+FOLLOWUP 05 is complete. FOLLOWUP 06 has not been started.
