@@ -1947,12 +1947,13 @@ function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\"'\"'")}'`;
 }
 
+function buildWorkerKeyRegistrationCommand(publicKey) {
+  if (!publicKey) return "";
+  return `umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; KEY=${shellQuote(publicKey)}; grep -qxF "$KEY" ~/.ssh/authorized_keys || printf '%s\\n' "$KEY" >> ~/.ssh/authorized_keys; chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys`;
+}
+
 function workerKeyRegistrationCommand() {
-  if (!state.onboarding.public_key) return "";
-  const user = $("#nodeUser").value.trim();
-  const host = $("#nodeHost").value.trim();
-  if (!user || !host) return "";
-  return "cat ~/.ssh/id_ed25519_llm_cluster.pub | ssh " + shellQuote(`${user}@${host}`) + " 'umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys'";
+  return buildWorkerKeyRegistrationCommand(state.onboarding.public_key || "");
 }
 
 function renderOnboardingKey() {
@@ -1960,8 +1961,14 @@ function renderOnboardingKey() {
   $("#publicKey").textContent = available ? state.onboarding.public_key : "키가 아직 생성되지 않았습니다.";
   $("#createKeyButton").textContent = available ? "키 준비됨" : "키 생성";
   $("#createKeyButton").disabled = available;
+  $("#copyKeyButton").disabled = !available;
+  $("#sshKeyStatus").textContent = available ? "KEY READY" : "KEY MISSING";
+  $("#sshKeyStatus").classList.toggle("ready", available);
+  const user = $("#nodeUser").value.trim();
+  const host = $("#nodeHost").value.trim();
+  $("#pairingCommandTarget").textContent = user && host ? `${user}@${host} 터미널에서 실행` : "연결할 워커 터미널에서 실행";
   const command = workerKeyRegistrationCommand();
-  $("#pairingCommand").textContent = command || (available ? "먼저 SSH 사용자와 기기를 선택하세요." : "먼저 Controller SSH 키를 생성하세요.");
+  $("#pairingCommand").textContent = command || "먼저 Controller SSH 키를 생성하세요.";
   $("#copyPairingCommandButton").disabled = !command;
 }
 

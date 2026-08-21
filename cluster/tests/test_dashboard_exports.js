@@ -49,6 +49,12 @@ assert.match(appSource, /headers\["X-Cluster-Token"\] = state\.token/);
 assert.match(appSource, /authenticatedEventStream\("\/api\/events"\)/);
 assert.doesNotMatch(appSource, /\/api\/events\?token=/);
 assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
+assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
+const workerRegistrationCommand = vm.runInContext(`buildWorkerKeyRegistrationCommand("ssh-ed25519 AAAA-test controller@mac")`, context);
+assert.match(workerRegistrationCommand, /^umask 077; mkdir -p ~\/\.ssh/);
+assert.match(workerRegistrationCommand, /grep -qxF "\$KEY"/);
+assert.match(workerRegistrationCommand, /chmod 600 ~\/\.ssh\/authorized_keys$/);
+assert.doesNotMatch(workerRegistrationCommand, /\| ssh /);
 assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/results.js"), "utf8"), /output_sha256/);
 const responseGrouping = vm.runInContext(`ClusterDashboard.results.responseGroups([
   { logical_request_id: 1, node: "jetson-a" },
