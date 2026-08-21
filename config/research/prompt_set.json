@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "lock_version": 1,
+  "lock_id": "formal-study-v1",
+  "created_at": "2026-08-21T11:59:46Z",
+  "source_commit": "e70f63e797b9952ad1073ce16f556f0ff874b43b",
+  "lock_sha256": "4a03235dd7ae27a0a915e918c583df99aad2011e99f0baf1a9f61a3dcb5c3ab4",
+  "prompt_set_version": 1,
+  "encoding": "UTF-8",
+  "hash_contract": "SHA-256 over the exact UTF-8 bytes of text with no added newline",
+  "prompts": [
+    {
+      "prompt_id": "general-ko-001",
+      "category": "Korean generation",
+      "language": "ko",
+      "text": "엣지 장치에서 대규모 언어 모델을 실행할 때의 장점과 한계를 한 문단으로 설명하라.",
+      "sha256": "344784b477a37d11e32546c5233b27509587baa4c56b8b516943bfc3de071fb0",
+      "expected_output_mode": "free_generation",
+      "notes": "Korean instruction-following throughput and latency prompt"
+    },
+    {
+      "prompt_id": "general-en-001",
+      "category": "English generation",
+      "language": "en",
+      "text": "In exactly three sentences, explain why reproducible benchmarks need fixed software versions.",
+      "sha256": "ab6768c11549b26e1ada917325d9a4c3e873f21864a789a746151bf8b6c8449b",
+      "expected_output_mode": "free_generation",
+      "notes": "Short constrained English response"
+    },
+    {
+      "prompt_id": "reasoning-en-001",
+      "category": "reasoning",
+      "language": "en",
+      "text": "A sensor records 240 readings in 12 seconds at a constant rate. How many readings will it record in 45 seconds? Show the calculation and give the final number.",
+      "sha256": "bb678d6221c27438a76c91bc2979e1108b4761e599f445a41135efe3638223e6",
+      "expected_output_mode": "calculation_then_answer",
+      "notes": "Small deterministic arithmetic workload; not a quality score"
+    },
+    {
+      "prompt_id": "coding-en-001",
+      "category": "coding",
+      "language": "en",
+      "text": "Write a Python function named moving_average that accepts a list of numbers and a positive window size, returns the simple moving averages, and raises ValueError when the window is invalid. Include one short example.",
+      "sha256": "a67736a62ab1b2302d12261e675d718639e4f007c2859907fa330e5051bd4b83",
+      "expected_output_mode": "code_generation",
+      "notes": "Longer structured-output workload"
+    }
+  ]
+}

@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "lock_version": 1,
+  "lock_id": "formal-study-v1",
+  "created_at": "2026-08-21T11:59:46Z",
+  "source_commit": "e70f63e797b9952ad1073ce16f556f0ff874b43b",
+  "lock_sha256": "4a03235dd7ae27a0a915e918c583df99aad2011e99f0baf1a9f61a3dcb5c3ab4",
+  "campaign_policy": {
+    "formal_matrix_requires_status": "approved",
+    "automatic_download_in_this_phase": false,
+    "selection_basis": "minimal cohorts for cross-platform, family scaling, Jetson medium, RPC upper-bound, and cross-family comparison"
+  },
+  "models": [
+    {
+      "model_key": "qwen2.5-1.5b-instruct-q4-k-m-official",
+      "catalog_id": "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+      "display_name": "Qwen2.5 1.5B Instruct Q4_K_M",
+      "campaign_roles": ["cross_platform_small", "qwen_size_scaling"],
+      "vendor": "Alibaba Cloud / Qwen",
+      "family": "Qwen2.5",
+      "parameters_total_b": 1.5,
+      "parameters_effective_b": 1.5,
+      "source": {
+        "provider": "huggingface",
+        "repository": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        "revision": "91cad51170dc346986eccefdc2dd33a9da36ead9",
+        "revision_type": "commit",
+        "official_gguf": true,
+        "gated": false
+      },
+      "binary": {
+        "filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "size_bytes": 1117320736,
+        "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+        "quantization": "Q4_K_M",
+        "gguf_architecture": "unverified",
+        "converter": "provider-managed official GGUF",
+        "converter_revision": "unpublished_by_provider"
+      },
+      "runtime_contract": {
+        "chat_template_hash": "unverified",
+        "tokenizer_metadata_hash": "unverified",
+        "default_reasoning_mode": "not_applicable",
+        "modalities": ["text"]
+      },
+      "license": {
+        "spdx_or_name": "Apache-2.0",
+        "source_url_or_identifier": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/blob/91cad51170dc346986eccefdc2dd33a9da36ead9/LICENSE",
+        "acceptance_required": false,
+        "accepted_for_this_project": true
+      },
+      "verification": {
+        "status": "source_locked",
+        "verified_workers": [],
+        "observed_worker_checksums": {
+          "jetson-worker-02": "1adf0b11065d8ad2e8123ea110d1ec956dab4ab038eab665614adba04b6c3370"
+        },
+        "observed_worker_sizes": {"jetson-worker-02": 986048768},
+        "observed_identity_matches_expected": false,
+        "verified_llama_cpp_commits": [],
+        "verified_at": null,
+        "blockers": ["installed Worker binary size and SHA-256 do not match the official locked binary", "chat template and tokenizer metadata hashes are unverified"]
+      }
+    },
+    {
+      "model_key": "qwen2.5-3b-instruct-q4-k-m-official",
+      "catalog_id": "qwen2.5-3b/Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+      "display_name": "Qwen2.5 3B Instruct Q4_K_M",
+      "campaign_roles": ["qwen_size_scaling", "jetson_medium"],
+      "vendor": "Alibaba Cloud / Qwen",
+      "family": "Qwen2.5",
+      "parameters_total_b": 3.0,
+      "parameters_effective_b": 3.0,
+      "source": {
+        "provider": "huggingface",
+        "repository": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+        "revision": "7dabda4d13d513e3e842b20f0d435c732f172cbe",
+        "revision_type": "commit",
+        "official_gguf": true,
+        "gated": false
+      },
+      "binary": {
+        "filename": "qwen2.5-3b-instruct-q4_k_m.gguf",
+        "size_bytes": 2104932768,
+        "sha256": "626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d",
+        "quantization": "Q4_K_M",
+        "gguf_architecture": "unverified",
+        "converter": "provider-managed official GGUF",
+        "converter_revision": "unpublished_by_provider"
+      },
+      "runtime_contract": {
+        "chat_template_hash": "unverified",
+        "tokenizer_metadata_hash": "unverified",
+        "default_reasoning_mode": "not_applicable",
+        "modalities": ["text"]
+      },
+      "license": {
+        "spdx_or_name": "Qwen Research License Agreement",
+        "source_url_or_identifier": "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/blob/7dabda4d13d513e3e842b20f0d435c732f172cbe/LICENSE",
+        "acceptance_required": true,
+        "accepted_for_this_project": false
+      },
+      "verification": {
+        "status": "source_locked",
+        "verified_workers": [],
+        "observed_worker_checksums": {},
+        "observed_worker_sizes": {},
+        "observed_identity_matches_expected": false,
+        "verified_llama_cpp_commits": [],
+        "verified_at": null,
+        "blockers": ["license acceptance is not recorded", "binary is not installed and verified on the campaign Workers", "chat template and tokenizer metadata hashes are unverified"]
+      }
+    },
+    {
+      "model_key": "granite-3.3-2b-instruct-q4-k-m-official",
+      "catalog_id": "granite-3.3-2b/granite-3.3-2b-instruct-Q4_K_M.gguf",
+      "display_name": "Granite 3.3 2B Instruct Q4_K_M",
+      "campaign_roles": ["cross_platform_small", "granite_size_scaling", "cross_family"],
+      "vendor": "IBM",
+      "family": "Granite 3.3",
+      "parameters_total_b": 2.0,
+      "parameters_effective_b": 2.0,
+      "source": {
+        "provider": "huggingface",
+        "repository": "ibm-granite/granite-3.3-2b-instruct-GGUF",
+        "revision": "7cdf86ccd1f1bb3491c9b7017b033f2e51367397",
+        "revision_type": "commit",
+        "official_gguf": true,
+        "gated": false
+      },
+      "binary": {
+        "filename": "granite-3.3-2b-instruct-Q4_K_M.gguf",
+        "size_bytes": 1545303328,
+        "sha256": "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852",
+        "quantization": "Q4_K_M",
+        "gguf_architecture": "unverified",
+        "converter": "provider-managed official GGUF",
+        "converter_revision": "unpublished_by_provider"
+      },
+      "runtime_contract": {
+        "chat_template_hash": "unverified",
+        "tokenizer_metadata_hash": "unverified",
+        "default_reasoning_mode": "not_applicable",
+        "modalities": ["text"]
+      },
+      "license": {
+        "spdx_or_name": "Apache-2.0",
+        "source_url_or_identifier": "https://huggingface.co/ibm-granite/granite-3.3-2b-instruct-GGUF/tree/7cdf86ccd1f1bb3491c9b7017b033f2e51367397",
+        "acceptance_required": false,
+        "accepted_for_this_project": true
+      },
+      "verification": {
+        "status": "source_locked",
+        "verified_workers": [],
+        "observed_worker_checksums": {},
+        "observed_worker_sizes": {},
+        "observed_identity_matches_expected": false,
+        "verified_llama_cpp_commits": [],
+        "verified_at": null,
+        "blockers": ["binary is not installed and verified on the campaign Workers", "chat template and tokenizer metadata hashes are unverified"]
+      }
+    },
+    {
+      "model_key": "granite-3.3-8b-instruct-q4-k-m-official",
+      "catalog_id": "granite-3.3-8b/granite-3.3-8b-instruct-Q4_K_M.gguf",
+      "display_name": "Granite 3.3 8B Instruct Q4_K_M",
+      "campaign_roles": ["granite_size_scaling", "rpc_upper_bound", "cross_family"],
+      "vendor": "IBM",
+      "family": "Granite 3.3",
+      "parameters_total_b": 8.0,
+      "parameters_effective_b": 8.0,
+      "source": {
+        "provider": "huggingface",
+        "repository": "ibm-granite/granite-3.3-8b-instruct-GGUF",
+        "revision": "e40e9dd739c7be00fa965c16ce167088190ce114",
+        "revision_type": "commit",
+        "official_gguf": true,
+        "gated": false
+      },
+      "binary": {
+        "filename": "granite-3.3-8b-instruct-Q4_K_M.gguf",
+        "size_bytes": 4942873344,
+        "sha256": "77bcee066a76dcdd10d0d123c87e32c8ec2c74e31b6ffd87ebee49c9ac215dca",
+        "quantization": "Q4_K_M",
+        "gguf_architecture": "unverified",
+        "converter": "provider-managed official GGUF",
+        "converter_revision": "unpublished_by_provider"
+      },
+      "runtime_contract": {
+        "chat_template_hash": "unverified",
+        "tokenizer_metadata_hash": "unverified",
+        "default_reasoning_mode": "not_applicable",
+        "modalities": ["text"]
+      },
+      "license": {
+        "spdx_or_name": "Apache-2.0",
+        "source_url_or_identifier": "https://huggingface.co/ibm-granite/granite-3.3-8b-instruct-GGUF/tree/e40e9dd739c7be00fa965c16ce167088190ce114",
+        "acceptance_required": false,
+        "accepted_for_this_project": true
+      },
+      "verification": {
+        "status": "source_locked",
+        "verified_workers": [],
+        "observed_worker_checksums": {},
+        "observed_worker_sizes": {},
+        "observed_identity_matches_expected": false,
+        "verified_llama_cpp_commits": [],
+        "verified_at": null,
+        "blockers": ["binary is not installed and verified on the campaign Workers", "chat template and tokenizer metadata hashes are unverified"]
+      }
+    }
+  ],
+  "excluded_observed_installations": [
+    {
+      "catalog_id": "llama3.2-1b/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+      "workers": ["jetson-worker-01", "jetson-worker-02", "jetson-worker-03", "pi-worker-02", "pi-worker-03", "pi-worker-04"],
+      "size_bytes": 807694464,
+      "sha256": "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83",
+      "decision": "deferred",
+      "reason": "six-Worker binary equality is verified, but community GGUF repository revision, converter revision, chat template hash, tokenizer metadata hash, and project license acceptance are unresolved"
+    },
+    {
+      "catalog_id": "qwen2.5-7b/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+      "decision": "rejected",
+      "reason": "the pinned official repository publishes Q4_K_M as multiple parts, while the current catalog describes one filename"
+    }
+  ]
+}

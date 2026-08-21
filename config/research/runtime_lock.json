@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "lock_version": 1,
+  "lock_id": "formal-study-v1",
+  "created_at": "2026-08-21T11:59:46Z",
+  "source_commit": "e70f63e797b9952ad1073ce16f556f0ff874b43b",
+  "lock_sha256": "4a03235dd7ae27a0a915e918c583df99aad2011e99f0baf1a9f61a3dcb5c3ab4",
+  "controller": {
+    "role": "controller_only_not_a_participant",
+    "git_branch": "codex/mac-control-plane",
+    "git_commit": "e70f63e797b9952ad1073ce16f556f0ff874b43b",
+    "working_tree_clean_at_lock_start": true,
+    "operating_system": "macOS 26.3 (Build 25D125)",
+    "kernel": "Darwin 25.3.0 RELEASE_ARM64_T8103",
+    "architecture": "arm64",
+    "python": "3.13.2",
+    "packages": {
+      "fastapi": "0.136.0",
+      "uvicorn": "0.44.0",
+      "pydantic": "2.13.1",
+      "psutil": "7.2.2",
+      "httpx": "0.28.1"
+    },
+    "requirements_sha256": {
+      "requirements-controller.txt": "3620c00a1bfdacc61fef39f8662bd192a3bf805a3905ce56b2540881ab937638",
+      "requirements-worker.txt": "fbd9a542316c260b4f641da695f9da710b39cf9a0895ab95d6d52bb3e7310431",
+      "cluster/requirements-runtime.txt": "c27be7a7f9bcb8455b875276c427b3c875aa6002556978746d5a1812ce9519c4"
+    }
+  },
+  "native_llama_cpp_rpc": {
+    "pinned_commit": "f49e9178767d557a522618b16ce8694f9ddac628",
+    "commit_source": "cluster/rpc/runtime.sh",
+    "verified_workers": ["jetson-worker-01", "jetson-worker-02", "jetson-worker-03", "pi-worker-02", "pi-worker-03", "pi-worker-04"],
+    "observation": "all six environment-check probes reported the pinned RPC runtime ready"
+  },
+  "workers": [
+    {
+      "node": "jetson-worker-01",
+      "platform": "jetson",
+      "hardware_model": "NVIDIA Jetson Orin Nano Engineering Reference Developer Kit Super",
+      "architecture": "aarch64",
+      "ram_total_bytes": 7977933210,
+      "storage_free_bytes_at_lock": 57971321078,
+      "operating_system": "Ubuntu 22.04.5 LTS",
+      "kernel": "5.15.148-tegra",
+      "python": "3.10.12",
+      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "runtime": {"backend": "cuda", "backend_verified": true, "gpu_offload": true, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "05e2c27b3bf0eff2", "cuda": "12.6 compiler build 35059454_0", "l4t": "R36.4.7", "jetson_stats": "7.2.1", "psutil": "7.2.2", "inference_threads": 6},
+      "power": {"mode": "MAXN_SUPER", "mode_verified": true, "jetson_clocks": "OFF", "power_integrity_status": "clean", "power_warning_blocking": false},
+      "observed_at": "2026-08-21T11:57:19Z"
+    },
+    {
+      "node": "jetson-worker-02",
+      "platform": "jetson",
+      "hardware_model": "NVIDIA Jetson Orin Nano Engineering Reference Developer Kit Super",
+      "architecture": "aarch64",
+      "ram_total_bytes": 7976905605,
+      "storage_free_bytes_at_lock": 187196149596,
+      "operating_system": "Ubuntu 22.04.5 LTS",
+      "kernel": "5.15.185-tegra",
+      "python": "3.10.12",
+      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "runtime": {"backend": "cuda", "backend_verified": true, "gpu_offload": true, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "05e2c27b3bf0eff2", "cuda": "12.6 compiler build 34714021_0", "l4t": "R36.5.0", "jetson_stats": "7.2.1", "psutil": "7.2.2", "inference_threads": 6},
+      "power": {"mode": "MAXN_SUPER", "mode_verified": true, "jetson_clocks": "OFF", "power_integrity_status": "clean", "power_warning_blocking": false},
+      "observed_at": "2026-08-21T11:57:19Z"
+    },
+    {
+      "node": "jetson-worker-03",
+      "platform": "jetson",
+      "hardware_model": "NVIDIA Jetson Orin Nano Engineering Reference Developer Kit Super",
+      "architecture": "aarch64",
+      "ram_total_bytes": 7976863662,
+      "storage_free_bytes_at_lock": 194680130109,
+      "operating_system": "Ubuntu 22.04.5 LTS",
+      "kernel": "5.15.185-tegra",
+      "python": "3.10.12",
+      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "runtime": {"backend": "cuda", "backend_verified": true, "gpu_offload": true, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "05e2c27b3bf0eff2", "cuda": "12.6 compiler build 34714021_0", "l4t": "R36.5.0", "jetson_stats": "7.2.1", "psutil": "7.2.2", "inference_threads": 6},
+      "power": {"mode": "15W", "mode_verified": true, "jetson_clocks": "OFF", "power_integrity_status": "clean", "power_warning_blocking": false},
+      "observed_at": "2026-08-21T11:57:21Z"
+    },
+    {
+      "node": "pi-worker-02",
+      "platform": "raspberry-pi",
+      "hardware_model": "Raspberry Pi 5 Model B Rev 1.0",
+      "architecture": "aarch64",
+      "ram_total_bytes": 8322746941,
+      "storage_free_bytes_at_lock": 23611582710,
+      "operating_system": "Ubuntu 24.04.4 LTS",
+      "kernel": "6.8.0-1060-raspi",
+      "python": "3.12.3",
+      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "runtime": {"backend": "openblas", "backend_verified": true, "gpu_offload": false, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "b4387053e655722a", "openblas": "verified by worker_setup backend probe", "psutil": "7.2.2", "inference_threads": 4},
+      "power": {"mode": "not_applicable", "mode_verified": true, "firmware_raw": "0x50000", "current_fault_bits": [], "history_bits": ["undervoltage", "throttling"], "power_integrity_status": "warning", "power_warning_blocking": false},
+      "observed_at": "2026-08-21T11:57:17Z"
+    },
+    {
+      "node": "pi-worker-03",
+      "platform": "raspberry-pi",
+      "hardware_model": "Raspberry Pi 5 Model B Rev 1.0",
+      "architecture": "aarch64",
+      "ram_total_bytes": 8322757427,
+      "storage_free_bytes_at_lock": 23922967839,
+      "operating_system": "Ubuntu 24.04.4 LTS",
+      "kernel": "6.8.0-1060-raspi",
+      "python": "3.12.3",
+      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "runtime": {"backend": "openblas", "backend_verified": true, "gpu_offload": false, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "b4387053e655722a", "openblas": "verified by worker_setup backend probe", "psutil": "7.2.2", "inference_threads": 4},
+      "power": {"mode": "not_applicable", "mode_verified": true, "firmware_raw": "0x50000", "current_fault_bits": [], "history_bits": ["undervoltage", "throttling"], "power_integrity_status": "warning", "power_warning_blocking": false},
+      "observed_at": "2026-08-21T11:57:17Z"
+    },
+    {
+      "node": "pi-worker-04",
+      "platform": "raspberry-pi",
+      "hardware_model": "Raspberry Pi 5 Model B Rev 1.0",
+      "architecture": "aarch64",
+      "ram_total_bytes": 8322757427,
+      "storage_free_bytes_at_lock": 23869280748,
+      "operating_system": "Ubuntu 24.04.4 LTS",
+      "kernel": "6.8.0-1060-raspi",
+      "python": "3.12.3",
+      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "runtime": {"backend": "openblas", "backend_verified": true, "gpu_offload": false, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "b4387053e655722a", "openblas": "verified by worker_setup backend probe", "psutil": "7.2.2", "inference_threads": 4},
+      "power": {"mode": "not_applicable", "mode_verified": true, "firmware_raw": "0x0", "current_fault_bits": [], "history_bits": [], "power_integrity_status": "clean", "power_warning_blocking": false},
+      "observed_at": "2026-08-21T11:57:17Z"
+    }
+  ],
+  "formal_readiness": {
+    "eligible": false,
+    "blocking_issues": [
+      {"code": "WORKER_DEPLOYMENT_COMMIT_UNVERIFIED", "nodes": ["jetson-worker-01", "jetson-worker-02", "jetson-worker-03", "pi-worker-02", "pi-worker-03", "pi-worker-04"]},
+      {"code": "JETSON_POWER_MODE_MISMATCH", "modes": {"jetson-worker-01": "MAXN_SUPER", "jetson-worker-02": "MAXN_SUPER", "jetson-worker-03": "15W"}},
+      {"code": "JETSON_RUNTIME_VERSION_MISMATCH", "detail": "jetson-worker-01 runs L4T R36.4.7 while workers 02/03 run R36.5.0"}
+    ],
+    "non_blocking_warnings": [
+      {"code": "PI_POWER_HISTORY", "nodes": ["pi-worker-02", "pi-worker-03"]}
+    ]
+  }
+}

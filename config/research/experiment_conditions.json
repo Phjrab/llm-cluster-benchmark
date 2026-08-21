@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "lock_version": 1,
+  "lock_id": "formal-study-v1",
+  "created_at": "2026-08-21T11:59:46Z",
+  "source_commit": "e70f63e797b9952ad1073ce16f556f0ff874b43b",
+  "lock_sha256": "4a03235dd7ae27a0a915e918c583df99aad2011e99f0baf1a9f61a3dcb5c3ab4",
+  "fixed_profile": {
+    "profile_id": "deterministic-throughput-v1",
+    "n_ctx": 4096,
+    "n_batch": "platform_profile",
+    "n_threads": "platform_profile",
+    "n_gpu_layers": "platform_profile",
+    "max_tokens": 128,
+    "temperature": 0.0,
+    "top_p": 0.9,
+    "top_k": "unsupported_by_worker_api",
+    "min_p": "unsupported_by_worker_api",
+    "repeat_penalty": "unsupported_by_worker_api",
+    "seed": 42,
+    "reasoning_mode": "not_applicable",
+    "chat_template": "locked_model_gguf_template_hash_required",
+    "streaming": true,
+    "stop_sequences": "unsupported_by_worker_api",
+    "conversation_history": [],
+    "request_timeout_s": 600.0
+  },
+  "benchmark_profile": {
+    "profile_id": "formal-load-v1",
+    "requests_per_scenario": 20,
+    "logical_concurrency": 4,
+    "warmup_requests_per_node": 1,
+    "model_cooldown_s": 3,
+    "require_uniform_config": true,
+    "persist_prompt": true,
+    "model_suite_execution": "sequential_with_unload_and_cooldown",
+    "prompt_order": ["general-ko-001", "general-en-001", "reasoning-en-001", "coding-en-001"]
+  },
+  "platform_profiles": {
+    "jetson": {
+      "profile_id": "jetson-cuda-v1",
+      "backend": "cuda",
+      "backend_verified_required": true,
+      "n_threads": 6,
+      "n_batch": 256,
+      "n_batch_contract": "requested value; actual loaded value must equal 256",
+      "n_gpu_layers": 30,
+      "power_mode_policy": "all participating Jetsons must report MAXN_SUPER before a formal comparison",
+      "jetson_clocks": "OFF"
+    },
+    "raspberry_pi": {
+      "profile_id": "pi5-openblas-v1",
+      "backend": "openblas",
+      "backend_verified_required": true,
+      "n_threads": 4,
+      "n_batch": 256,
+      "n_batch_contract": "requested value; actual loaded value must equal 256",
+      "n_gpu_layers": 0,
+      "power_warning_policy": "history warning is recorded but does not block functional or formal admission; active throttling marks measurement degraded"
+    },
+    "rpc": {
+      "profile_id": "llama-cpp-rpc-layer-auto-v1",
+      "runtime": "native_llama_cpp",
+      "pinned_commit": "f49e9178767d557a522618b16ce8694f9ddac628",
+      "split_mode": "layer",
+      "split_policy": "auto",
+      "tensor_split": [],
+      "coordinator_policy": "explicit selected Jetson coordinator",
+      "coordinator_n_gpu_layers": "all",
+      "minimum_nodes": 2,
+      "platform_mix_policy": "homogeneous platform groups are the formal default; mixed Jetson/Pi is exploratory only"
+    }
+  },
+  "formal_factors": ["platform", "node_count", "execution_strategy", "model_key", "rpc_or_non_rpc"],
+  "run_trace_contract": {
+    "required_additive_fields": ["experiment_lock_id", "experiment_lock_sha256", "model_lock_entry", "prompt_set_version", "runtime_lock_version"],
+    "implementation_timing": "FOLLOWUP_09 matrix configuration; this phase does not change result schema"
+  }
+}
