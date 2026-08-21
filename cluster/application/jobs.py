@@ -83,6 +83,7 @@ class JobService:
         terminate_grace_s: float = 10.0,
         poll_interval_s: float = 0.25,
         startup_grace_s: float = 5.0,
+        identity_retry_s: float = 0.5,
         start_watcher: bool = True,
     ) -> None:
         self.jobs_dir = Path(jobs_dir)
@@ -97,6 +98,7 @@ class JobService:
         self.terminate_grace_s = terminate_grace_s
         self.poll_interval_s = poll_interval_s
         self.startup_grace_s = startup_grace_s
+        self.identity_retry_s = identity_retry_s
         self._lock = threading.RLock()
         self._watch_stop = threading.Event()
         self._last_change: tuple[str, str, str] = ("", "", "")
@@ -203,6 +205,22 @@ class JobService:
             "updated_at": utc_now(),
         }
 
+    def _live_identity_with_retry(
+        self, job: Mapping[str, Any]
+    ) -> Optional[ProcessIdentity]:
+        """Confirm liveness across a bounded transient inspection window."""
+        deadline = time.monotonic() + self.identity_retry_s
+        while True:
+            try:
+                observed = self._live_identity(job)
+            except RuntimeError:
+                observed = None
+            if observed is not None:
+                return observed
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+
     def _within_startup_grace(self, job: Mapping[str, Any]) -> bool:
         """Allow a freshly spawned queued child time to claim its identity.
 
@@ -261,7 +279,7 @@ class JobService:
                     updated = self.repository.update(job_id, lambda value: value.update(terminal))
                     recovered.append(updated)
                     continue
-                if self._live_identity(job) is not None:
+                if self._live_identity_with_retry(job) is not None:
                     recovered.append(job)
                     continue
                 if self._within_startup_grace(job):

@@ -35,6 +35,17 @@ class FakeInspector:
         return True
 
 
+class TransientMissingInspector(FakeInspector):
+    def __init__(self, identity: ProcessIdentity) -> None:
+        super().__init__()
+        self.identity = identity
+        self.calls = 0
+
+    def inspect(self, pid: int):
+        self.calls += 1
+        return None if self.calls == 1 else self.identity
+
+
 def config() -> ExperimentConfig:
     return ExperimentConfig(
         experiment_id="experiment-1",
@@ -196,16 +207,17 @@ class JobRegistryRecoveryTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp.cleanup()
 
-    def service(self) -> JobService:
+    def service(self, *, inspector=None) -> JobService:
         return JobService(
             self.jobs,
             self.inventory,
             self.results,
             self.project,
             python_bin=self.python,
-            inspector=self.inspector,
+            inspector=inspector or self.inspector,
             start_watcher=False,
             cancel_grace_s=60,
+            identity_retry_s=0.1,
         )
 
     def job(self, job_id="job_01", suite_id="suite_01", status="running"):
@@ -267,6 +279,14 @@ class JobRegistryRecoveryTests(unittest.TestCase):
         self.assertEqual(first.active()["status"], "running")
         self.assertEqual(second.active()["process"]["pid"], identity.pid)
         self.assertEqual(second.active()["latest_event"]["type"], "request_completed")
+
+    def test_recovery_retries_one_transient_missing_identity_sample(self) -> None:
+        job, identity = self.job()
+        FilesystemJobRepository(self.jobs).write(job["job_id"], job)
+        inspector = TransientMissingInspector(identity)
+        saved = self.service(inspector=inspector).active()
+        self.assertEqual(saved["status"], "running")
+        self.assertGreaterEqual(inspector.calls, 2)
 
     def test_restart_adopts_exact_spawned_process_before_child_claim(self) -> None:
         job, identity = self.job()
