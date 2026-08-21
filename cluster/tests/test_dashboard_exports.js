@@ -53,7 +53,8 @@ assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
 assert.match(template, /styles\.css\?v=20260821\.6/);
-assert.match(template, /app\.js\?v=20260821\.6/);
+assert.match(template, /app\.js\?v=20260821\.7/);
+assert.match(template, /results\.js\?v=20260821\.8/);
 assert.match(template, /nodeRenameDialog[\s\S]*nodeRenameForm[\s\S]*renameNodeInput/);
 assert.match(template, /data-node-platform-tab="all"[\s\S]*data-node-platform-tab="jetson"[\s\S]*data-node-platform-tab="raspberry-pi"/);
 assert.match(template, /experimentPowerBanner/);
@@ -69,6 +70,30 @@ const responseGrouping = vm.runInContext(`ClusterDashboard.results.responseGroup
   { logical_request_id: 2, node: "jetson-a" }
 ]).map(([id, records]) => [id, records.length])`, context);
 assert.deepEqual(JSON.parse(JSON.stringify(responseGrouping)), [["1", 2], ["2", 1]]);
+const sweepResponseGrouping = vm.runInContext(`ClusterDashboard.results.responseGroups([
+  { scenario_id: "nodes-1", logical_request_id: 1, node: "jetson-a" },
+  { scenario_id: "nodes-2", logical_request_id: 1, node: "jetson-a" },
+  { scenario_id: "nodes-2", logical_request_id: 1, node: "pi-b" }
+]).map(([id, records]) => [id, records.length])`, context);
+assert.deepEqual(JSON.parse(JSON.stringify(sweepResponseGrouping)), [["nodes-1\u00001", 1], ["nodes-2\u00001", 2]]);
+const clearedInspector = vm.runInContext(`(() => {
+  const elements = {
+    "#resultInspector": { innerHTML: "stale responses" },
+    "#resultInspectorStatus": { className: "completed", textContent: "old run" }
+  };
+  const originalDollar = ClusterDashboard.$;
+  ClusterDashboard.$ = selector => elements[selector] || null;
+  ClusterDashboard.results.clear();
+  ClusterDashboard.$ = originalDollar;
+  return {
+    status: elements["#resultInspectorStatus"].textContent,
+    className: elements["#resultInspectorStatus"].className,
+    body: elements["#resultInspector"].innerHTML
+  };
+})()`, context);
+assert.equal(clearedInspector.status, "실행을 선택하세요");
+assert.equal(clearedInspector.className, "inspector-status");
+assert.match(clearedInspector.body, /아직 선택한 실행이 없습니다/);
 
 const publication = vm.runInContext(`buildPublicationSvg({
   type: "bar",

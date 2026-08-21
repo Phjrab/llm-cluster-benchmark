@@ -925,6 +925,7 @@ function renderRuns() {
   if (hasCompletedMetrics && !mixedAllStrategies) requestAnimationFrame(() => drawResultCharts(runs));
   $$('[data-run-experiment]').forEach(row => row.addEventListener("click", () => {
     $("#resultExperimentFilter").value = row.dataset.runExperiment;
+    window.ClusterDashboard.results?.clear?.();
     renderRuns();
   }));
   updateSummary();
@@ -2377,9 +2378,13 @@ function bindEvents() {
     $("#experimentName").value = group.name;
     applyConfig(group.default_config || {}, false);
     $("#resultExperimentFilter").value = group.experiment_id;
+    window.ClusterDashboard.results?.clear?.();
     renderRuns();
   });
-  $("#resultExperimentFilter").addEventListener("change", renderRuns);
+  $("#resultExperimentFilter").addEventListener("change", () => {
+    window.ClusterDashboard.results?.clear?.();
+    renderRuns();
+  });
   $("#experimentPickerSearch").addEventListener("input", event => {
     const query = event.currentTarget.value.trim().toLowerCase();
     const select = $("#experimentGroupSelect");

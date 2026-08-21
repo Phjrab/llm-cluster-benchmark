@@ -6,7 +6,9 @@
   function responseGroups(responses) {
     const groups = new Map();
     (responses || []).forEach((response, index) => {
-      const key = String(response.logical_request_id ?? response.request_id ?? index + 1);
+      const requestId = String(response.logical_request_id ?? response.request_id ?? index + 1);
+      const scenarioId = String(response.scenario_id || "");
+      const key = scenarioId ? `${scenarioId}\u0000${requestId}` : requestId;
       const list = groups.get(key) || [];
       list.push(response);
       groups.set(key, list);
@@ -40,12 +42,18 @@
     const strategy = dashboard.runStrategy?.(run);
     label.className = `inspector-status ${dashboard.utils.statusPresentation(run?.status).tone}`;
     label.textContent = `${dashboard.utils.statusPresentation(run?.status).icon} ${dashboard.utils.statusPresentation(run?.status).label} · ${responses.length} response records`;
-    const content = groups.length ? groups.map(([requestId, group]) => {
+    const content = groups.length ? groups.map(([groupKey, group]) => {
+      const keyParts = String(groupKey).split("\u0000");
+      const scenarioId = keyParts.length > 1 ? keyParts[0] : "";
+      const requestId = keyParts.length > 1 ? keyParts[1] : keyParts[0];
       const prompt = group.find(item => item.prompt !== undefined)?.prompt || "Prompt was not persisted for this run.";
       const hashes = new Set(group.map(item => item.output_sha256).filter(Boolean));
       const broadcast = strategy === "broadcast_compare" && group.length > 1;
       const agreement = broadcast ? (hashes.size === 1 ? "EXACT HASH AGREEMENT" : hashes.size ? "HASH MISMATCH" : "HASH UNAVAILABLE") : "SINGLE RESPONSE";
-      return `<article class="response-group"><div class="response-group-head"><div><span>LOGICAL REQUEST ${dashboard.escapeHtml(requestId)}</span><strong>${broadcast ? `${group.length} worker responses` : `${group.length} response`}</strong></div><b class="hash-agreement ${hashes.size === 1 ? "match" : hashes.size > 1 ? "mismatch" : "unknown"}">${agreement}</b></div><div class="prompt-block"><span>PROMPT</span><pre>${dashboard.escapeHtml(prompt)}</pre></div><div class="response-grid">${group.map(response => {
+      const requestLabel = strategy === "node_sweep" && scenarioId
+        ? `SCENARIO ${scenarioId} · LOGICAL REQUEST ${requestId}`
+        : `LOGICAL REQUEST ${requestId}`;
+      return `<article class="response-group"><div class="response-group-head"><div><span>${dashboard.escapeHtml(requestLabel)}</span><strong>${broadcast ? `${group.length} worker responses` : `${group.length} response`}</strong></div><b class="hash-agreement ${hashes.size === 1 ? "match" : hashes.size > 1 ? "mismatch" : "unknown"}">${agreement}</b></div><div class="prompt-block"><span>PROMPT</span><pre>${dashboard.escapeHtml(prompt)}</pre></div><div class="response-grid">${group.map(response => {
         const status = dashboard.utils.statusPresentation(response.ok === false || response.error ? "failed" : "completed");
         const output = response.response ?? response.output ?? response.text ?? response.error ?? "No generated response was persisted.";
         const metrics = [
@@ -59,6 +67,20 @@
     }).join("") : `<div class="empty-result"><strong>저장된 응답이 없습니다.</strong><span>이전 형식의 결과이거나 prompt/response persistence가 꺼진 실행일 수 있습니다.</span></div>`;
     const environment = dashboard.power?.resultEnvironmentHtml?.(run) || "";
     inspector.innerHTML = `${environment}${content}${renderFailureCards(run, responses)}`;
+  }
+
+  function clear() {
+    selected.runId = "";
+    selected.responses = [];
+    const inspector = dashboard.$?.("#resultInspector");
+    const label = dashboard.$?.("#resultInspectorStatus");
+    if (label) {
+      label.className = "inspector-status";
+      label.textContent = "실행을 선택하세요";
+    }
+    if (inspector) {
+      inspector.innerHTML = `<div class="empty-result"><strong>아직 선택한 실행이 없습니다.</strong><span>표의 <em>응답 보기</em>를 눌러 프롬프트, 모델별 생성 결과, 구조화된 실패를 확인하세요.</span></div>`;
+    }
   }
 
   async function show(runId) {
@@ -82,7 +104,7 @@
     }
   }
 
-  dashboard.results = { show, renderResponses, responseGroups, errorRecords };
+  dashboard.results = { show, clear, renderResponses, responseGroups, errorRecords };
 
   document.addEventListener("DOMContentLoaded", () => {
     document.addEventListener("click", event => {
