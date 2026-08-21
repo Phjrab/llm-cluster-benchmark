@@ -91,6 +91,12 @@ class NodeRenamePayload(BaseModel):
     new_name: str = Field(min_length=1, max_length=40, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
 
 
+class JetsonPowerModePayload(BaseModel):
+    """A locally advertised nvpmodel ID; the Worker validates it again."""
+
+    mode_id: int = Field(ge=0, le=99_999)
+
+
 class ActionPayload(BaseModel):
     action: str
     node_names: List[str] = Field(default_factory=list)

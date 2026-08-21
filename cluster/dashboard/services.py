@@ -56,6 +56,7 @@ from cluster.clusterctl import (
     Node,
     discover_node,
     load_nodes,
+    power_status_one,
     request_json,
     run_on_node,
     select_nodes,
@@ -1208,6 +1209,7 @@ class ActionManager:
         "select-model",
         "environment-check",
         "environment-install",
+        "power-set",
     }
 
     def __init__(self) -> None:
@@ -1350,6 +1352,13 @@ class ActionManager:
                     str(payload.options.get("n_gpu_layers", 30)),
                 ]
             )
+        elif payload.action == "power-set":
+            mode_id = payload.options.get("mode_id")
+            if isinstance(mode_id, bool) or not isinstance(mode_id, int) or not 0 <= mode_id <= 99_999:
+                raise ValueError("power-set requires a valid nvpmodel mode_id")
+            if len(payload.node_names) != 1:
+                raise ValueError("power-set requires exactly one selected Jetson node")
+            command.extend(["--mode-id", str(mode_id), "--confirmed"])
         elif payload.action == "environment-install":
             command.append("--confirmed")
 
@@ -1985,6 +1994,53 @@ class DashboardFacade:
     async def scan_network(self, force: bool) -> Dict[str, Any]:
         return await asyncio.to_thread(scan_lan_devices, force)
 
+    def _jetson_power_node(self, node_name: str) -> Node:
+        try:
+            validate_node_id(node_name)
+        except ValueError as exc:
+            raise DashboardServiceError(400, str(exc)) from exc
+        node = next((item for item in read_all_nodes() if item.name == node_name), None)
+        if node is None:
+            raise DashboardServiceError(404, "Node not found")
+        if node.role != "worker":
+            raise DashboardServiceError(400, "Jetson power control is available for worker nodes only")
+        if not node.enabled:
+            raise DashboardServiceError(409, "Enable this worker before changing its power mode")
+        live = next((item for item in status_monitor.snapshot() if item.get("name") == node_name), {})
+        detected = str((live.get("profile") or {}).get("platform_kind") or "")
+        if node.platform == "raspberry-pi" or detected == "raspberry-pi":
+            raise DashboardServiceError(400, "Raspberry Pi does not support Jetson nvpmodel power control")
+        return node
+
+    async def jetson_power_status(self, node_name: str) -> Dict[str, Any]:
+        node = self._jetson_power_node(node_name)
+        result = await asyncio.to_thread(power_status_one, node)
+        report = result.get("power") if isinstance(result.get("power"), dict) else {}
+        if not report:
+            detail = result.get("stderr") or result.get("stdout") or "Jetson power helper is unavailable. Run Sync code for this worker, then retry."
+            raise DashboardServiceError(502, detail)
+        return {
+            "ok": result.get("ok") is True,
+            "node": node.name,
+            "power": report,
+        }
+
+    def start_jetson_power_mode(self, node_name: str, mode_id: int) -> Dict[str, Any]:
+        node = self._jetson_power_node(node_name)
+        if isinstance(mode_id, bool) or not isinstance(mode_id, int) or not 0 <= mode_id <= 99_999:
+            raise DashboardServiceError(400, "mode_id must be a valid nvpmodel integer")
+        try:
+            record = actions.start(
+                ActionPayload(
+                    action="power-set",
+                    node_names=[node.name],
+                    options={"mode_id": mode_id, "confirmed": True},
+                )
+            )
+        except ValueError as exc:
+            raise DashboardServiceError(409, str(exc)) from exc
+        return {"ok": True, "action": record}
+
     async def probe_candidate(self, payload: NodePayload) -> Dict[str, Any]:
         if payload.role != "worker":
             raise DashboardServiceError(400, "Only worker candidates can be probed")
@@ -2132,7 +2188,7 @@ class DashboardFacade:
 
     def start_action(self, payload: ActionPayload) -> Dict[str, Any]:
         requires_confirmation = {
-            "setup", "prepare", "prepare-rpc", "environment-install", "delete-models", "install-model-url"
+            "setup", "prepare", "prepare-rpc", "environment-install", "delete-models", "install-model-url", "power-set"
         }
         if payload.action in requires_confirmation and payload.options.get("confirmed") is not True:
             raise DashboardServiceError(400, "This worker operation requires explicit confirmation")

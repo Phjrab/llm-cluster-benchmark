@@ -32,6 +32,9 @@ const state = {
   rpcCoordinatorNode: "",
   powerStartWarnings: [],
   powerWarningKeys: new Set(),
+  jetsonPower: new Map(),
+  jetsonPowerLoading: new Set(),
+  jetsonPowerApplying: new Set(),
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -194,6 +197,87 @@ function environmentFor(nodeName) {
     missing_system_packages: [],
     manual_commands: [],
   };
+}
+
+function jetsonPowerFor(nodeName) {
+  return state.jetsonPower.get(nodeName) || null;
+}
+
+function jetsonPowerModeLabel(mode) {
+  if (!mode || typeof mode !== "object") return "—";
+  const name = String(mode.name || `ID ${mode.id ?? "?"}`);
+  const budget = finite(mode.power_budget_w) ? ` · ${fmt(mode.power_budget_w, 0)}W` : "";
+  return `${name}${budget}`;
+}
+
+function renderJetsonPowerControl(node, kind) {
+  if (kind !== "jetson") return "";
+  const report = jetsonPowerFor(node.name);
+  const loading = state.jetsonPowerLoading.has(node.name);
+  const applying = state.jetsonPowerApplying.has(node.name);
+  if (!report) {
+    return `<section class="jetson-power-control pending"><div><span>JETSON POWER MODE</span><h3>전력 모드</h3><p>이 Jetson이 제공하는 nvpmodel 모드 목록을 SSH로 읽습니다.</p></div><button class="button ghost compact" type="button" data-jetson-power-refresh="${escapeHtml(node.name)}" ${loading ? "disabled" : ""}>${loading ? "불러오는 중" : "전력 모드 확인"}</button></section>`;
+  }
+  if (report.supported !== true) {
+    return `<section class="jetson-power-control unavailable"><div><span>JETSON POWER MODE</span><h3>전력 모드</h3><p>${escapeHtml(report.message || "이 노드에서는 nvpmodel을 사용할 수 없습니다.")}</p></div></section>`;
+  }
+  const modes = Array.isArray(report.modes) ? report.modes : [];
+  const current = report.current || {};
+  const recommended = report.recommended_mode || null;
+  const selectedId = current.id ?? recommended?.id ?? "";
+  const disabled = loading || applying || !report.ok || !report.can_apply || !modes.length;
+  const recommendation = recommended
+    ? `최대 전력 후보 · ${jetsonPowerModeLabel(recommended)}`
+    : "최대 전력 모드를 자동으로 판별할 수 없습니다. 장비의 실제 모드를 직접 선택하세요.";
+  const guidance = report.can_apply
+    ? "적용 시 nvpmodel만 변경하고 자동 재부팅·jetson_clocks 변경은 하지 않습니다."
+    : "이 노드에서는 passwordless sudo가 없어 직접 명령을 실행해야 합니다.";
+  return `<section class="jetson-power-control ${report.ok ? "ready" : "warning"}" aria-labelledby="jetsonPowerTitle">
+    <div class="jetson-power-head"><div><span>JETSON POWER MODE</span><h3 id="jetsonPowerTitle">전력 모드</h3><p>현재 · <strong>${escapeHtml(jetsonPowerModeLabel(current))}</strong></p></div><button class="button ghost compact" type="button" data-jetson-power-refresh="${escapeHtml(node.name)}" ${loading || applying ? "disabled" : ""}>새로고침</button></div>
+    <label class="jetson-power-select"><span>설정할 모드</span><select data-jetson-power-select="${escapeHtml(node.name)}" ${disabled ? "disabled" : ""}>${modes.map(mode => `<option value="${Number(mode.id)}" ${Number(mode.id) === Number(selectedId) ? "selected" : ""}>${escapeHtml(jetsonPowerModeLabel(mode))}</option>`).join("")}</select></label>
+    <div class="jetson-power-guidance"><strong>${escapeHtml(recommendation)}</strong><small>${escapeHtml(guidance)}</small>${report.reboot_required ? "<small class=\"warning\">이 변경에는 재부팅이 필요할 수 있습니다. 대시보드는 재부팅하지 않습니다.</small>" : ""}</div>
+    ${report.manual_command ? `<code>${escapeHtml(report.manual_command)}</code>` : ""}
+    ${report.error ? `<p class="jetson-power-error">${escapeHtml(report.message || report.error)}</p>` : ""}
+    <button class="button secondary compact" type="button" data-jetson-power-apply="${escapeHtml(node.name)}" ${disabled ? "disabled" : ""}>${applying ? "적용 중" : "선택 모드 적용"}</button>
+  </section>`;
+}
+
+async function refreshJetsonPower(nodeName, { silent = false } = {}) {
+  if (!nodeName || state.jetsonPowerLoading.has(nodeName)) return;
+  state.jetsonPowerLoading.add(nodeName);
+  renderNodeDetail();
+  try {
+    const result = await api(`/api/nodes/${encodeURIComponent(nodeName)}/power`);
+    state.jetsonPower.set(nodeName, result.power || {});
+    if (!silent) toast("전력 모드 갱신", `${nodeName}의 nvpmodel 상태를 읽었습니다.`);
+  } catch (error) {
+    state.jetsonPower.set(nodeName, { ok: false, supported: true, message: error.message, error: "status_unavailable", modes: [], current: null, can_apply: false });
+    if (!silent) toast("전력 모드 확인 실패", error.message, "error");
+  } finally {
+    state.jetsonPowerLoading.delete(nodeName);
+    renderNodeDetail();
+  }
+}
+
+async function applyJetsonPower(nodeName) {
+  const select = $$('[data-jetson-power-select]').find(item => item.dataset.jetsonPowerSelect === nodeName);
+  const modeId = Number(select?.value);
+  if (!Number.isInteger(modeId) || modeId < 0) return toast("전력 모드 선택 필요", "이 Jetson이 제공한 유효한 모드를 선택하세요.", "error");
+  const report = jetsonPowerFor(nodeName);
+  const target = (report?.modes || []).find(mode => Number(mode.id) === modeId);
+  if (!confirm(`${nodeName}의 전력 모드를 ${jetsonPowerModeLabel(target)}로 변경할까요? 실행 중인 실험에서는 변경할 수 없습니다.`)) return;
+  state.jetsonPowerApplying.add(nodeName);
+  renderNodeDetail();
+  try {
+    const result = await api(`/api/nodes/${encodeURIComponent(nodeName)}/power`, { method: "POST", body: { mode_id: modeId } });
+    toast("전력 모드 적용 시작", `${nodeName} · ${jetsonPowerModeLabel(target)}`);
+    const actionId = result.action?.id;
+    if (actionId) state.actions = [...state.actions, result.action];
+  } catch (error) {
+    toast("전력 모드 적용 실패", error.message, "error");
+    state.jetsonPowerApplying.delete(nodeName);
+    renderNodeDetail();
+  }
 }
 
 const READINESS = {
@@ -1560,11 +1644,18 @@ function renderNodeDetail() {
       </section>
     </div>
     <section class="telemetry-history"><div><span>LIVE HISTORY</span><strong>최근 ${state.metricHistory.get(node.name)?.length || 0}개 표본 · CPU / GPU / RAM</strong></div><canvas id="telemetryChart" height="230" aria-label="노드 CPU GPU RAM 실시간 사용률 그래프"></canvas></section>
+    ${renderJetsonPowerControl(node, kind)}
     ${window.ClusterDashboard?.power?.detailHtml(powerIntegrity) || ""}
     ${renderEnvironmentDetail(environment)}
     ${metrics.sampler_error ? `<div class="telemetry-warning">${escapeHtml(metrics.sampler_error)}</div>` : ""}`;
   $$('[data-environment-node-action]', $("#nodeDetailContent")).forEach(button => button.addEventListener("click", () => {
     runEnvironmentAction(button.dataset.environmentNodeAction, [node.name]);
+  }));
+  $$('[data-jetson-power-refresh]', $("#nodeDetailContent")).forEach(button => button.addEventListener("click", () => {
+    refreshJetsonPower(button.dataset.jetsonPowerRefresh);
+  }));
+  $$('[data-jetson-power-apply]', $("#nodeDetailContent")).forEach(button => button.addEventListener("click", () => {
+    applyJetsonPower(button.dataset.jetsonPowerApply);
   }));
   requestAnimationFrame(drawTelemetryChart);
 }
@@ -1606,6 +1697,8 @@ function openNodeDetail(nodeName) {
   state.detailNode = nodeName;
   $("#nodeDetailDialog").showModal();
   renderNodeDetail();
+  const node = state.nodes.find(item => item.name === nodeName);
+  if (node && actualPlatform(node) === "jetson") refreshJetsonPower(nodeName, { silent: true });
 }
 
 function openNodeRename(nodeName) {
@@ -1938,6 +2031,12 @@ function connectEvents() {
       } else {
         const status = action?.status || message.status;
         const nodes = Array.isArray(action?.nodes) ? action.nodes : [];
+        if (actionName(action) === "power-set") {
+          nodes.forEach(nodeName => {
+            state.jetsonPowerApplying.delete(nodeName);
+            refreshJetsonPower(nodeName, { silent: true });
+          });
+        }
         toast(status === "completed" ? "작업 완료" : "작업 실패", `${actionName(action)} · ${nodes.join(", ")}`, status === "completed" ? "success" : "error");
         if (["sync-models", "delete-models", "install-model-url"].includes(actionName(action))) {
           window.ClusterDashboard?.modelLibrary?.refresh().catch(error => environmentLogLine("WARN", `모델 인벤토리 갱신 실패 · ${error.message}`));

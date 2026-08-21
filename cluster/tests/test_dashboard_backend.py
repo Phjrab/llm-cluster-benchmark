@@ -412,6 +412,43 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertEqual(len(payload.node_names), 8)
             self.assertEqual(len(payload.rpc_tensor_split), 8)
 
+    def test_jetson_power_modes_are_worker_ssh_actions(self) -> None:
+        """The dashboard reads and applies only a Worker-advertised mode ID."""
+        from fastapi.testclient import TestClient
+        from cluster.clusterctl import Node
+
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self.load_dashboard(Path(directory))
+            dashboard.services.write_all_nodes(
+                [
+                    Node(
+                        "jetson-01", "worker", "192.168.0.26", "jetson", 22, 8000,
+                        "/home/jetson/llm-cluster-benchmark-worker", True, platform="jetson",
+                    )
+                ]
+            )
+            report = {
+                "ok": True,
+                "supported": True,
+                "modes": [{"id": 2, "name": "25W", "power_budget_w": 25.0}],
+                "current": {"id": 2, "name": "25W", "power_budget_w": 25.0},
+                "recommended_mode": {"id": 2, "name": "25W", "power_budget_w": 25.0},
+                "can_apply": True,
+            }
+            action = {"id": "power-1", "action": "power-set", "nodes": ["jetson-01"], "status": "queued"}
+            service = dashboard.app.state.dashboard_services
+            with mock.patch.object(dashboard.services, "power_status_one", return_value={"name": "jetson-01", "ok": True, "power": report}), mock.patch.object(dashboard.services.actions, "start", return_value=action) as started, TestClient(dashboard.app) as client:
+                status = client.get("/api/nodes/jetson-01/power")
+                applied = client.post("/api/nodes/jetson-01/power", json={"mode_id": 2})
+
+            self.assertEqual(status.status_code, 200)
+            self.assertEqual(status.json()["power"]["current"]["id"], 2)
+            self.assertEqual(applied.status_code, 200)
+            action_payload = started.call_args.args[0]
+            self.assertEqual(action_payload.action, "power-set")
+            self.assertEqual(action_payload.node_names, ["jetson-01"])
+            self.assertEqual(action_payload.options, {"mode_id": 2, "confirmed": True})
+
 
 if __name__ == "__main__":
     unittest.main()

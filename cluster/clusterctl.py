@@ -1498,6 +1498,65 @@ def command_prepare_rpc(nodes: Sequence[Node], _args: argparse.Namespace) -> int
     return 0
 
 
+def _power_control_one(node: Node, action: str, mode_id: Optional[int] = None) -> Dict[str, Any]:
+    """Call the fixed Worker-side nvpmodel helper through the SSH boundary."""
+    script = f"{node.project_dir}/cluster/worker/power_control.py"
+    command = ["python3", script, action]
+    if mode_id is not None:
+        command.append(str(mode_id))
+    try:
+        process = run_on_node(node, command, timeout=45)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"name": node.name, "ok": False, "power": {}, "stdout": "", "stderr": str(exc)}
+    payload: Dict[str, Any] = {}
+    for line in reversed(process.stdout.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(candidate, dict):
+            payload = candidate
+            break
+    if not payload:
+        return {
+            "name": node.name,
+            "ok": False,
+            "power": {},
+            "stdout": process.stdout.strip(),
+            "stderr": (process.stderr or "Jetson power helper returned no JSON report").strip(),
+        }
+    return {
+        "name": node.name,
+        "ok": process.returncode == 0 and payload.get("ok") is True,
+        "power": payload,
+        "stdout": process.stdout.strip(),
+        "stderr": process.stderr.strip(),
+    }
+
+
+def power_status_one(node: Node) -> Dict[str, Any]:
+    return _power_control_one(node, "status")
+
+
+def command_power_status(nodes: Sequence[Node], _args: argparse.Namespace) -> int:
+    results = run_parallel(nodes, power_status_one)
+    print(json.dumps(results, ensure_ascii=False, indent=2))
+    return 0 if results and all(item["ok"] or item.get("power", {}).get("supported") is False for item in results) else 1
+
+
+def command_power_set(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    """Set exactly one Jetson's locally advertised nvpmodel ID."""
+    if not args.confirmed:
+        print("power-set requires --confirmed", file=sys.stderr)
+        return 2
+    if len(nodes) != 1:
+        print("power-set requires exactly one --node", file=sys.stderr)
+        return 2
+    result = _power_control_one(nodes[0], "set", args.mode_id)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result["ok"] else 1
+
+
 def _lifecycle_one(node: Node, action: str) -> Dict[str, Any]:
     if action == "restart":
         stopped = _lifecycle_one(node, "stop")
@@ -1741,6 +1800,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Build the pinned native llama.cpp RPC model-parallel runtime",
     )
 
+    subparsers.add_parser("power-status", help="Read Jetson nvpmodel modes through SSH")
+    power_set_parser = subparsers.add_parser(
+        "power-set",
+        help="Apply one locally advertised Jetson nvpmodel ID through SSH",
+    )
+    power_set_parser.add_argument("--mode-id", type=int, required=True)
+    power_set_parser.add_argument("--confirmed", action="store_true")
+
     subparsers.add_parser("start", help="Start API servers on enabled nodes")
     subparsers.add_parser("stop", help="Stop API servers on enabled nodes")
     subparsers.add_parser("restart", help="Restart API servers with current settings")
@@ -1791,6 +1858,10 @@ def main() -> int:
         return command_prepare(nodes, args)
     if args.command == "prepare-rpc":
         return command_prepare_rpc(nodes, args)
+    if args.command == "power-status":
+        return command_power_status(nodes, args)
+    if args.command == "power-set":
+        return command_power_set(nodes, args)
     if args.command == "start":
         return command_lifecycle(nodes, "start")
     if args.command == "stop":
