@@ -100,6 +100,8 @@ class ModelInventoryEntry:
     source_revision: str = ""
     architecture: str = ""
     chat_template_hash: str = ""
+    tokenizer_metadata_hash: str = ""
+    metadata_contract: str = ""
     license_accepted: bool = False
     metadata_inspected: bool = False
 
@@ -114,7 +116,10 @@ class ModelInventoryEntry:
         object.__setattr__(self, "sha256", validate_model_checksum(self.sha256))
         if self.quantization is not None:
             object.__setattr__(self, "quantization", validate_quantization(self.quantization))
-        for field in ("source_revision", "architecture", "chat_template_hash"):
+        for field in (
+            "source_revision", "architecture", "chat_template_hash",
+            "tokenizer_metadata_hash", "metadata_contract",
+        ):
             if not isinstance(getattr(self, field), str):
                 raise DomainValidationError(f"Model {field} must be a string")
         if not isinstance(self.checksum_valid, bool) or not isinstance(self.license_accepted, bool) or not isinstance(self.metadata_inspected, bool):
@@ -126,6 +131,8 @@ class ModelInventoryEntry:
             "sha256": self.sha256, "quantization": self.quantization,
             "checksum_valid": self.checksum_valid, "source_revision": self.source_revision,
             "architecture": self.architecture, "chat_template_hash": self.chat_template_hash,
+            "tokenizer_metadata_hash": self.tokenizer_metadata_hash,
+            "metadata_contract": self.metadata_contract,
             "license_accepted": self.license_accepted, "metadata_inspected": self.metadata_inspected,
         }
 

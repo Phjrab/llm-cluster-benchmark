@@ -197,7 +197,7 @@ class ModelControllerBoundaryTests(unittest.TestCase):
         self.assertEqual(catalog["qwen3-1.7b/Qwen3-1.7B-Q8_0.gguf"].quantization, "Q8_0")
         self.assertEqual(catalog["gemma-4-e2b/gemma-4-E2B-it-qat-q4_0.gguf"].parameters_effective_b, 2.3)
         self.assertEqual(catalog["gemma-4-e2b/gemma-4-E2B-it-qat-q4_0.gguf"].parameters_total_b, 5.1)
-        self.assertFalse(catalog["qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"].identity_locked)
+        self.assertTrue(catalog["qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf"].identity_locked)
 
     def test_local_catalog_cache_remains_usable_without_remote_metadata(self) -> None:
         from cluster.dashboard import app as dashboard
@@ -226,7 +226,7 @@ class ModelControllerBoundaryTests(unittest.TestCase):
         ) as fetch:
             models = service.list_models()
         self.assertIn(MODEL_ID, [item["id"] for item in models])
-        self.assertIn("qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf", [item["id"] for item in models])
+        self.assertIn("qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf", [item["id"] for item in models])
         self.assertEqual(fetch.call_count, 1)
 
     def test_controller_model_operations_are_node_events_and_experiment_never_syncs_models(self) -> None:
@@ -269,12 +269,15 @@ class ModelSyncCompatibilityTests(unittest.TestCase):
                 json.dumps({"schema_version": 1, "models": {MODEL_ID: {
                     "source_revision": "a" * 40, "architecture": "qwen2",
                     "chat_template_hash": "b" * 64, "license_accepted": True,
+                    "tokenizer_metadata_hash": "c" * 64,
+                    "metadata_contract": "gguf-metadata-v1",
                 }}}), encoding="utf-8"
             )
             backend = LlamaCppInferenceBackend(root)
             record = backend.model_inventory()[0]
         self.assertEqual(record["source_revision"], "a" * 40)
         self.assertEqual(record["architecture"], "qwen2")
+        self.assertEqual(record["tokenizer_metadata_hash"], "c" * 64)
         self.assertTrue(record["license_accepted"])
         self.assertTrue(record["metadata_inspected"])
 

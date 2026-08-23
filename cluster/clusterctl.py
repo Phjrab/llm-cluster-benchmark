@@ -1957,7 +1957,12 @@ def command_install_model_url(nodes: Sequence[Node], args: argparse.Namespace) -
         return 0
     metadata = {
         "source_revision": args.source_revision,
+        "source_repo": args.source_repo,
+        "provenance_status": args.provenance_status,
         "architecture": args.architecture,
+        "chat_template_hash": args.chat_template_hash,
+        "tokenizer_metadata_hash": args.tokenizer_metadata_hash,
+        "metadata_contract": args.metadata_contract,
         "license_accepted": args.license_accepted,
     }
     results = [install_model_url_one(node, args.model_id, args.source_url, args.expected_sha256, metadata) for node in workers]
@@ -2068,7 +2073,12 @@ def build_parser() -> argparse.ArgumentParser:
     install_url_parser.add_argument("--source-url", required=True)
     install_url_parser.add_argument("--expected-sha256", required=True)
     install_url_parser.add_argument("--source-revision", default="", help="Immutable source revision recorded with the Worker model")
-    install_url_parser.add_argument("--architecture", default="", help="GGUF architecture recorded after manual metadata inspection")
+    install_url_parser.add_argument("--source-repo", default="", help="Official source repository identifier")
+    install_url_parser.add_argument("--provenance-status", default="", help="Source provenance status recorded with the model")
+    install_url_parser.add_argument("--architecture", default="", help="Expected GGUF architecture; verified from the file")
+    install_url_parser.add_argument("--chat-template-hash", default="", help="Expected canonical chat-template metadata SHA-256")
+    install_url_parser.add_argument("--tokenizer-metadata-hash", default="", help="Expected canonical tokenizer metadata SHA-256")
+    install_url_parser.add_argument("--metadata-contract", default="gguf-metadata-v1", help="Expected GGUF metadata identity contract")
     install_url_parser.add_argument("--license-accepted", action="store_true", help="Confirm the selected model license/access conditions were accepted")
 
     prepare_parser = subparsers.add_parser(

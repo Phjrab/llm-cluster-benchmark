@@ -33,7 +33,7 @@ class ExperimentConfig:
     experiment_id: str = ""
     name: str = "cluster-load-test"
     node_names: List[str] = field(default_factory=list)
-    model_id: str = "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+    model_id: str = "qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf"
     n_ctx: int = 4096
     n_gpu_layers: int = 30
     requests: int = 20

@@ -49,6 +49,8 @@ def parse_worker_inventory(node: str, raw_models: Iterable[Mapping[str, Any]]) -
                     source_revision=str(raw.get("source_revision") or ""),
                     architecture=str(raw.get("architecture") or ""),
                     chat_template_hash=str(raw.get("chat_template_hash") or ""),
+                    tokenizer_metadata_hash=str(raw.get("tokenizer_metadata_hash") or ""),
+                    metadata_contract=str(raw.get("metadata_contract") or ""),
                     license_accepted=raw.get("license_accepted") is True,
                     metadata_inspected=raw.get("metadata_inspected") is True,
                 )

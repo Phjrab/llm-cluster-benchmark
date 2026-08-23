@@ -43,7 +43,7 @@ from cluster.domain.strategy import (
 from cluster.integrations.legacy_inventory import adapt_legacy_inventory
 
 
-DEFAULT_MODEL_ID = "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf"
+DEFAULT_MODEL_ID = "qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf"
 
 
 def make_worker(**overrides: object) -> WorkerNode:
