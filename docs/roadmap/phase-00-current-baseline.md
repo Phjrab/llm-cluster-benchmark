@@ -115,12 +115,12 @@ The local Controller inventory contains six enabled Worker-only rows.
 
 | Worker | Platform | Address | Project directory | Current read-only status |
 |---|---|---|---|---|
-| `jetson-worker-01` | Jetson | `192.168.0.26` | `/home/jetson_orin_nano/project/llm/llm-cluster-benchmark-worker` | SSH timeout; API not verified |
-| `jetson-worker-02` | Jetson | `192.168.0.19` | `/home/jetson2/project/llm/llm-cluster-benchmark-worker` | SSH timeout; API not verified |
-| `jetson-worker-03` | Jetson | `192.168.0.6` | `/home/ho/project/llm/llm-cluster-benchmark-worker` | SSH timeout; API not verified |
-| `pi-worker-02` | Raspberry Pi | `192.168.0.14` | `/home/pi2/project/llm/local_llm_bench` | SSH timeout; API not verified |
-| `pi-worker-03` | Raspberry Pi | `192.168.0.9` | `/home/pi3/llm-cluster-benchmark` | SSH timeout; API not verified |
-| `pi-worker-04` | Raspberry Pi | `192.168.0.5` | `/home/pi4/llm-cluster-benchmark` | SSH timeout; API not verified |
+| `jetson-worker-01` | Jetson | `192.168.0.26` | `/home/jetson_orin_nano/project/llm/llm-cluster-benchmark-worker` | SSH/project ready; API stopped (`connection refused`) |
+| `jetson-worker-02` | Jetson | `192.168.0.19` | `/home/jetson2/project/llm/llm-cluster-benchmark-worker` | SSH/project ready; API stopped (`connection refused`) |
+| `jetson-worker-03` | Jetson | `192.168.0.6` | `/home/ho/project/llm/llm-cluster-benchmark-worker` | SSH/project ready; API stopped (`connection refused`) |
+| `pi-worker-02` | Raspberry Pi | `192.168.0.14` | `/home/pi2/project/llm/local_llm_bench` | SSH/project ready; API stopped (`connection refused`) |
+| `pi-worker-03` | Raspberry Pi | `192.168.0.9` | `/home/pi3/llm-cluster-benchmark` | SSH/project ready; API stopped (`connection refused`) |
+| `pi-worker-04` | Raspberry Pi | `192.168.0.5` | `/home/pi4/llm-cluster-benchmark` | SSH/project ready; API stopped (`connection refused`) |
 
 Command used:
 
@@ -128,14 +128,17 @@ Command used:
 .venv/bin/python -m cluster.clusterctl status
 ```
 
-All six connections timed out on SSH port 22 from the Controller during this
-baseline. This report therefore distinguishes:
+The initial probe timed out while the devices were disconnected. After the
+operator reconnected them, the same read-only command verified SSH access and
+the configured project directory on all six Workers. Worker API port 8000 was
+not listening on any device, and Phase 00 did not start it. This report therefore
+distinguishes:
 
 - checked-in/previously accepted hardware facts; and
 - live facts observed on 2026-08-23.
 
-No previous acceptance result is presented as current live readiness. Hardware
-and model mutation tests were not attempted while the devices were unreachable.
+No previous acceptance result is presented as current API/inference readiness.
+Hardware and model mutation tests were not attempted.
 
 ## 6. Formal research lock baseline
 
@@ -347,9 +350,9 @@ with `py_compile`. This was a test-harness correction, not a product failure.
 
 | Test | Reason |
 |---|---|
-| Live Worker health/model inventory | all six SSH connections timed out during the read-only status probe |
-| CUDA/OpenBLAS model load/generate | Worker devices were unreachable; Phase 00 does not mutate or run inference |
-| Live native RPC | Worker devices were unreachable; unauthenticated RPC was not started |
+| Live Worker health/model inventory | all six Worker APIs were stopped; Phase 00 did not start processes |
+| CUDA/OpenBLAS model load/generate | Worker APIs were stopped; Phase 00 does not mutate or run inference |
+| Live native RPC | unauthenticated RPC was not started in this read-only phase |
 | Power-mode apply | Phase 00 is read-only and does not change system power state |
 | Model download/install/delete | outside Phase 00 and would mutate Worker/model state |
 | Browser visual E2E | no product/UI behavior changed; JS contract fixture was run |
@@ -410,13 +413,12 @@ Exact design constraints for Phase 01:
 
 ### Phase 01 readiness
 
-**READY for implementation and offline tests.**
+**READY for implementation, offline tests, and SSH deployment validation.**
 
-Live Worker acceptance for Phase 01 is currently **BLOCKED_BY_WORKER_REACHABILITY**
-until at least one registered Worker is reachable from the Mac Controller. The
-manifest design, hashing, deployment simulation, API contract, and formal
-eligibility tests can be completed without hardware; final live deployment
-verification must remain explicitly pending if the devices are still offline.
+All six registered Workers are reachable through SSH and their project roots
+exist. Their APIs are currently stopped, so Phase 01 must start/restart a Worker
+only as part of its explicit deployment acceptance before checking the additive
+health manifest. Worker reachability is no longer a Phase 01 blocker.
 
 ## 12. Completion report
 
@@ -439,17 +441,17 @@ Tests passed:
 - config/research JSON parse and fingerprint validation: passed
 
 Tests not run / reason:
-- live Worker/inference/RPC/power/model mutation tests: all six SSH probes timed out;
-  Phase 00 is read-only
+- live Worker health/inference/RPC/power/model mutation tests: all six Worker APIs
+  were stopped; Phase 00 did not start or mutate them
 - browser visual E2E: no product/UI change
 
 Remaining issues:
 - Worker deployment identity unverified
 - approved model count zero
 - Jetson power mode/L4T mismatch
-- Workers not reachable during this baseline
+- Worker APIs currently stopped
 
 Next phase readiness:
-- READY for Phase 01 offline implementation
-- BLOCKED_BY_WORKER_REACHABILITY for Phase 01 live acceptance
+- READY for Phase 01 implementation and SSH deployment validation
+- Worker API manifest acceptance requires an explicit Phase 01 start/restart
 ```
