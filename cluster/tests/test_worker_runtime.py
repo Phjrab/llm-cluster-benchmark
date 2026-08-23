@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
@@ -234,6 +235,46 @@ class WorkerRouteContractTests(unittest.TestCase):
 
 
 class WorkerTelemetryTests(unittest.TestCase):
+    def test_telemetry_service_serves_background_cache_without_reprobing(self) -> None:
+        class Provider:
+            def __init__(self) -> None:
+                self.snapshots = 0
+                self.power_reads = 0
+
+            def start(self) -> None:
+                return None
+
+            def stop(self) -> None:
+                return None
+
+            def snapshot(self) -> Dict[str, Any]:
+                self.snapshots += 1
+                return {"sampled_at": str(self.snapshots), "power_w": None}
+
+            def power_integrity(self) -> Dict[str, Any]:
+                self.power_reads += 1
+                return {"available": True, "raw_hex": "0x0"}
+
+            def status(self) -> Dict[str, Any]:
+                return {"provider": "fake", "ready": True, "degraded": False, "error": None}
+
+        provider = Provider()
+        service = TelemetryService(provider)
+        service.start()
+        for _ in range(50):
+            if service._snapshot_cache is not None:
+                break
+            time.sleep(0.01)
+        first = service.snapshot()
+        second = service.snapshot()
+        first_power = service.power_integrity()
+        second_power = service.power_integrity()
+        service.stop()
+        self.assertEqual(first, second)
+        self.assertEqual(first_power, second_power)
+        self.assertEqual(provider.snapshots, 1)
+        self.assertEqual(provider.power_reads, 1)
+
     def test_provider_selection_and_pi_unavailable_metrics_are_none(self) -> None:
         root = Path(tempfile.gettempdir())
         self.assertIsInstance(TelemetryService.for_platform("generic-linux", root).provider, GenericPsutilTelemetry)

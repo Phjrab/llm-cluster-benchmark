@@ -19,6 +19,10 @@ valid and readable.
 - Telemetry samples use the midpoint of Controller probe start/finish as the
   monotonic sample estimate. The complete probe duration is retained as
   `collection_overhead_s`.
+- Worker sensor collection runs in a one-second background cache so benchmark
+  HTTP requests never execute sensor commands inline. The Worker collection
+  duration and the Controller cache-read duration are retained separately as
+  `worker_collection_overhead_s` and `collection_overhead_s`.
 - Model loading, warmup, the pre-measurement idle snapshot, and telemetry probe
   completion are outside legacy request wall-time metrics.
 - Telemetry is sampled once per second, plus a scenario boundary sample. Energy

@@ -64,7 +64,12 @@ class MeasurementNormalizationTests(unittest.TestCase):
                     "temperatures_c": {"soc": 51.0},
                     "cpu": {"frequency_mhz": 1728},
                     "network": {"bytes_sent": 10, "bytes_received": 20},
-                }
+                    "telemetry_collection_overhead_s": 0.004,
+                },
+                "power_integrity": {
+                    "available": True,
+                    "current": {"undervoltage": False, "throttled": False},
+                },
             },
             run_started_monotonic=100.0,
             probe_started=101.0,
@@ -75,8 +80,10 @@ class MeasurementNormalizationTests(unittest.TestCase):
         self.assertEqual(sample["node"], "jetson-01")
         self.assertEqual(sample["monotonic_elapsed_s"], 1.0125)
         self.assertEqual(sample["collection_overhead_s"], 0.025)
+        self.assertEqual(sample["worker_collection_overhead_s"], 0.004)
         self.assertEqual(sample["power_w"], 12.5)
-        self.assertIsNone(sample["throttled"])
+        self.assertFalse(sample["throttled"])
+        self.assertTrue(sample["throttling_supported"])
 
 
 class MeasurementSummaryTests(unittest.TestCase):

@@ -170,8 +170,19 @@ def normalize_telemetry_sample(
         if isinstance(power_integrity, Mapping)
         else None
     )
-    throttling_supported = isinstance(current_faults, list)
-    throttled = bool(current_faults) if throttling_supported else None
+    current_state = (
+        power_integrity.get("current")
+        if isinstance(power_integrity, Mapping) else None
+    )
+    if isinstance(current_faults, list):
+        throttling_supported = True
+        throttled = bool(current_faults)
+    elif isinstance(current_state, Mapping):
+        throttling_supported = True
+        throttled = any(value is True for value in current_state.values())
+    else:
+        throttling_supported = False
+        throttled = None
     return {
         "schema_version": MEASUREMENT_SCHEMA_VERSION,
         "record_type": "telemetry_sample",
@@ -186,6 +197,9 @@ def normalize_telemetry_sample(
             ((probe_started + probe_finished) / 2.0) - run_started_monotonic, 9
         ),
         "collection_overhead_s": round(probe_finished - probe_started, 9),
+        "worker_collection_overhead_s": _number(
+            metrics.get("telemetry_collection_overhead_s")
+        ),
         "power_w": power_w,
         "temperatures_c": temperatures,
         "cpu_frequency_mhz": frequency,
@@ -370,9 +384,23 @@ def summarize_measurements(
             "bytes_sent": bytes_sent,
             "bytes_received": bytes_received,
             "effective_bandwidth_bytes_s": round(bandwidth, 6) if bandwidth is not None else None,
-            "telemetry_collection_overhead_s": round(
+            "controller_collection_overhead_s": round(
                 sum(float(item.get("collection_overhead_s") or 0.0) for item in node_samples), 9
             ),
+            "worker_collection_overhead_samples_s": [
+                {
+                    "sampled_at": sampled_at,
+                    "overhead_s": overhead,
+                }
+                for sampled_at, overhead in dict.fromkeys(
+                    (
+                        str(item.get("sampled_at") or ""),
+                        _number(item.get("worker_collection_overhead_s")),
+                    )
+                    for item in node_samples
+                    if _number(item.get("worker_collection_overhead_s")) is not None
+                )
+            ],
             "availability": {
                 "energy_j": _available(
                     energy_j,

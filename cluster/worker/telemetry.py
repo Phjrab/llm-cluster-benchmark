@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import copy
 import re
 import shutil
 import subprocess
@@ -373,6 +374,12 @@ class TelemetryService:
 
     def __init__(self, provider: TelemetryProvider) -> None:
         self.provider = provider
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._snapshot_cache: Optional[Dict[str, Any]] = None
+        self._power_cache: Optional[Dict[str, Any]] = None
+        self._power_observed = False
 
     @classmethod
     def for_platform(cls, platform_kind: str, project_root: Path) -> "TelemetryService":
@@ -386,17 +393,64 @@ class TelemetryService:
 
     def start(self) -> None:
         self.provider.start()
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop.clear()
+
+        def refresh() -> None:
+            while not self._stop.is_set():
+                collection_started = time.perf_counter()
+                try:
+                    snapshot = self.provider.snapshot()
+                except Exception:
+                    snapshot = None
+                try:
+                    power = self.provider.power_integrity()
+                    power_observed = True
+                except Exception:
+                    power = None
+                    power_observed = False
+                collection_overhead_s = time.perf_counter() - collection_started
+                if snapshot is not None:
+                    snapshot["telemetry_collection_overhead_s"] = round(
+                        collection_overhead_s, 9
+                    )
+                with self._lock:
+                    if snapshot is not None:
+                        self._snapshot_cache = copy.deepcopy(snapshot)
+                    if power_observed:
+                        self._power_cache = copy.deepcopy(power)
+                        self._power_observed = True
+                self._stop.wait(1.0)
+
+        self._thread = threading.Thread(
+            target=refresh,
+            name="worker-telemetry-cache",
+            daemon=True,
+        )
+        self._thread.start()
 
     def stop(self) -> None:
+        self._stop.set()
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=4.0)
+        if thread is not None and not thread.is_alive():
+            self._thread = None
         self.provider.stop()
 
     def snapshot(self) -> Dict[str, Any]:
-        return self.provider.snapshot()
+        with self._lock:
+            cached = copy.deepcopy(self._snapshot_cache)
+        return cached if cached is not None else self.provider.snapshot()
 
     def status(self) -> Dict[str, Any]:
         return self.provider.status()
 
     def power_integrity(self) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            if self._power_observed:
+                return copy.deepcopy(self._power_cache)
         probe = getattr(self.provider, "power_integrity", None)
         return probe() if callable(probe) else None
 
