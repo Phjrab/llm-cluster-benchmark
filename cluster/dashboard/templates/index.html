@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>MediFlow Cluster Lab</title>
   <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
-  <link rel="stylesheet" href="/static/styles.css?v=20260821.8">
+  <link rel="stylesheet" href="/static/styles.css?v=20260823.1">
 </head>
 <body>
   <div class="app-shell">
@@ -21,6 +21,9 @@
         <a class="nav-link" href="#models" data-section="models"><span>03</span>모델</a>
         <a class="nav-link" href="#experiment" data-section="experiment"><span>04</span>실험</a>
         <a class="nav-link" href="#results" data-section="results"><span>05</span>결과</a>
+        <a class="nav-link" href="#campaign" data-section="campaign"><span>06</span>캠페인</a>
+        <a class="nav-link" href="#compare" data-section="compare"><span>07</span>비교</a>
+        <a class="nav-link" href="#research" data-section="research"><span>08</span>연구 준비</a>
       </nav>
       <div class="sidebar-foot">
         <div class="live-indicator"><i></i><span id="streamLabel">연결 준비 중</span></div>
@@ -333,6 +336,57 @@
         </section>
       </section>
 
+      <section id="campaign" class="section research-section campaign-section">
+        <div class="section-heading research-heading">
+          <div><span class="section-index">06 / CAMPAIGN</span><h2>캠페인 진행 현황</h2><p>재시작 가능한 연구 campaign의 cell, 반복, drift, 결과 연결률을 함께 확인합니다.</p></div>
+          <div class="heading-actions"><button class="button ghost compact" id="refreshResearchButton" type="button">연구 현황 새로고침</button></div>
+        </div>
+        <div id="campaignSummary" class="campaign-summary" aria-live="polite"><div class="research-empty"><strong>캠페인 현황을 불러오는 중입니다.</strong></div></div>
+        <div class="campaign-layout">
+          <div id="campaignList" class="campaign-list" aria-label="캠페인 목록"></div>
+          <section id="campaignDetail" class="campaign-detail" aria-live="polite"><div class="research-empty"><strong>캠페인을 선택하면 cell 커버리지와 drift를 표시합니다.</strong></div></section>
+        </div>
+      </section>
+
+      <section id="compare" class="section panel-section research-section compare-section">
+        <div class="section-heading research-heading">
+          <div><span class="section-index">07 / CROSS-RUN COMPARE</span><h2>실행 간 비교</h2><p>같은 의미의 run만 골라 플랫폼·노드 수·전략·실행 환경과 측정 품질을 비교합니다.</p></div>
+          <div class="chart-actions"><button type="button" id="researchCompareCsv">CSV <b>↓</b></button><button type="button" data-chart-png="researchCompareChart">PNG <b>↓</b></button><button type="button" data-paper-export="researchCompareChart">논문용 <b>↗</b></button></div>
+        </div>
+        <div class="compare-filter-grid" id="compareFilters">
+          <label><span>CAMPAIGN</span><select data-compare-filter="campaign_id"><option value="all">전체</option></select></label>
+          <label><span>MODEL LOCK</span><select data-compare-filter="model_lock"><option value="all">전체</option></select></label>
+          <label><span>PLATFORM</span><select data-compare-filter="platform"><option value="all">전체</option></select></label>
+          <label><span>NODE COUNT</span><select data-compare-filter="node_count"><option value="all">전체</option></select></label>
+          <label><span>STRATEGY</span><select data-compare-filter="strategy"><option value="all">전체</option></select></label>
+          <label><span>RUNTIME</span><select data-compare-filter="runtime_fingerprint"><option value="all">전체</option></select></label>
+          <label><span>POWER MODE</span><select data-compare-filter="power_mode"><option value="all">전체</option></select></label>
+          <label><span>QUALITY</span><select data-compare-filter="measurement_quality"><option value="all">전체</option></select></label>
+        </div>
+        <div class="compare-toolbar">
+          <label><span>비교 지표</span><select id="compareMetric"><option value="throughput_tokens_s">처리량 · tok/s</option><option value="ttft_p50_s">TTFT · p50</option><option value="e2e_p95_s">E2E · p95</option><option value="success_rate">성공률</option></select></label>
+          <label><span>기준 RUN</span><select id="compareBaseline"><option value="">최초 표시 run</option></select></label>
+          <button class="button ghost compact" id="resetCompareFilters" type="button">필터 초기화</button>
+          <small id="compareCoverage">0 runs</small>
+        </div>
+        <article class="chart-card research-chart-card" data-chart-card="researchCompareChart">
+          <div class="chart-card-head"><div class="chart-heading"><span>CROSS-RUN METRIC</span><strong id="researchCompareTitle">조건별 처리량</strong></div><span id="compareLegacyNote" class="legacy-note"></span></div>
+          <div class="chart-stage"><canvas id="researchCompareChart" height="330" tabindex="0" role="img" aria-label="필터된 실행 간 성능 비교 그래프" aria-describedby="researchCompareHint"></canvas><div class="chart-tooltip" id="researchCompareChartTooltip" role="status" hidden></div></div>
+          <div class="chart-footer"><div class="chart-legend" id="researchCompareChartLegend" aria-label="비교 그래프 범례"></div><small id="researchCompareHint">점을 가리키면 run·모델·플랫폼·품질을 확인할 수 있습니다.</small></div>
+        </article>
+        <div class="table-wrap research-table-wrap"><table><thead><tr><th>RUN</th><th>모델</th><th>플랫폼 / 노드</th><th>전략</th><th>환경</th><th>품질 / 상태</th><th id="compareMetricColumn">처리량</th><th>기준 대비</th></tr></thead><tbody id="compareRunsTable"><tr><td colspan="8" class="empty-cell">비교할 실행 없음</td></tr></tbody></table></div>
+      </section>
+
+      <section id="research" class="section research-section readiness-section">
+        <div class="section-heading research-heading"><div><span class="section-index">08 / RESEARCH READINESS</span><h2>연구 준비도</h2><p>승인 모델, Worker 소스·런타임, 전력 조건, 라이선스, 계측 가능 여부를 독립적으로 판정합니다.</p></div><span id="researchEligibility" class="research-eligibility unknown">CHECKING</span></div>
+        <div id="readinessSummary" class="readiness-summary-grid" aria-live="polite"></div>
+        <div class="readiness-layout">
+          <section><div class="research-subhead"><span>APPROVED MODEL LOCK</span><strong>모델 및 라이선스</strong></div><div id="approvedModelList" class="approved-model-list"></div></section>
+          <section><div class="research-subhead"><span>WORKER IDENTITY</span><strong>소스·런타임·전력·계측</strong></div><div id="researchWorkerList" class="research-worker-list"></div></section>
+        </div>
+        <section id="researchBlockers" class="research-blockers"></section>
+      </section>
+
       <footer><span>MediFlow Cluster Lab</span><span>Internal LAN · Reproducible Edge LLM Evaluation</span></footer>
     </main>
   </div>
@@ -460,11 +514,12 @@
   </dialog>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-  <script src="/static/app.js?v=20260821.11" defer></script>
+  <script src="/static/app.js?v=20260823.1" defer></script>
   <script src="/static/js/utils.js?v=20260821.6" defer></script>
   <script src="/static/js/power.js?v=20260821.6" defer></script>
   <script src="/static/js/console.js?v=20260821.6" defer></script>
   <script src="/static/js/models.js?v=20260821.6" defer></script>
   <script src="/static/js/results.js?v=20260821.9" defer></script>
+  <script src="/static/js/research.js?v=20260823.1" defer></script>
 </body>
 </html>

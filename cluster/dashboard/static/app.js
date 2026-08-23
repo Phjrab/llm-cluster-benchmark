@@ -1536,15 +1536,20 @@ function updatePublicationSpec() {
 
 function openPublicationDialog(chartId) {
   const model = state.chartModels.get(chartId); if (!model) return;
-  if ($("#resultExperimentFilter").value === "all") return toast("실험 선택 필요", "논문 그래프는 한 실험 묶음만 선택한 뒤 다운로드하세요.", "error");
-  const strategies = new Set((model.runs || []).map(runStrategy));
-  const experiments = new Set((model.runs || []).map(canonicalExperimentId));
-  if (strategies.size > 1 || experiments.size > 1) return toast("결과 의미가 섞여 있음", "동일 experiment_id와 실행 방식의 결과만 논문 그래프로 만들 수 있습니다.", "error");
-  const signatures = new Set((model.runs || []).map(publicationComparisonSignature));
-  if (signatures.size > 1) return toast("비교 조건이 서로 다름", "프롬프트·노드·컨텍스트·동시성·생성·샘플링·실제 런타임 구성이 같은 결과만 논문 그래프로 내보낼 수 있습니다.", "error");
+  const crossRun = chartId === "researchCompareChart";
+  if (!crossRun) {
+    if ($("#resultExperimentFilter").value === "all") return toast("실험 선택 필요", "논문 그래프는 한 실험 묶음만 선택한 뒤 다운로드하세요.", "error");
+    const strategies = new Set((model.runs || []).map(runStrategy));
+    const experiments = new Set((model.runs || []).map(canonicalExperimentId));
+    if (strategies.size > 1 || experiments.size > 1) return toast("결과 의미가 섞여 있음", "동일 experiment_id와 실행 방식의 결과만 논문 그래프로 만들 수 있습니다.", "error");
+    const signatures = new Set((model.runs || []).map(publicationComparisonSignature));
+    if (signatures.size > 1) return toast("비교 조건이 서로 다름", "프롬프트·노드·컨텍스트·동시성·생성·샘플링·실제 런타임 구성이 같은 결과만 논문 그래프로 내보낼 수 있습니다.", "error");
+  }
   state.publicationChartId = chartId;
   $("#publicationChartName").textContent = model.title;
-  $("#publicationStrategy").textContent = `${strategyMeta(model.strategy).label} · ${publicationMetadata(model)}`;
+  $("#publicationStrategy").textContent = crossRun
+    ? `Cross-run filtered comparison · ${(model.runs || []).length} runs · ${model.subtitle || ""}`
+    : `${strategyMeta(model.strategy).label} · ${publicationMetadata(model)}`;
   $("#publicationTitleInput").value = model.title;
   updatePublicationSpec(); $("#publicationDialog").showModal();
 }
@@ -1943,6 +1948,7 @@ async function bootstrap() {
     runningEnvironmentActions.forEach(action => { const id = actionId(action); if (id) state.environmentActionIds.add(id); });
     setEnvironmentBusy(Boolean(runningEnvironmentActions.length), runningEnvironmentActions.length ? "노드 환경 작업 진행 중" : "환경 점검 대기");
     connectEvents();
+    window.ClusterDashboard?.research?.load?.();
     if (!location.hash) requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
   } catch (error) {
     if (/401|token|invalid|missing/i.test(error.message)) {
@@ -1959,6 +1965,7 @@ async function refreshExperimentData() {
   state.experimentGroups = data.experiment_groups || [];
   renderExperimentGroups();
   renderRuns();
+  window.ClusterDashboard?.research?.load?.();
 }
 
 function authenticatedEventStream(path) {
@@ -2369,6 +2376,7 @@ function resetNodeForm(preferredPlatform = "auto") {
 }
 
 function bindEvents() {
+  window.ClusterDashboard?.research?.bind?.();
   $("#authForm").addEventListener("submit", event => {
     event.preventDefault();
     state.token = $("#tokenInput").value.trim();
@@ -2646,7 +2654,7 @@ function bindEvents() {
   let resizeTimer;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { renderRuns(); renderNodeDetail(); }, 140);
+    resizeTimer = setTimeout(() => { renderRuns(); renderNodeDetail(); window.ClusterDashboard?.research?.renderCompare?.(); }, 140);
   });
 }
 

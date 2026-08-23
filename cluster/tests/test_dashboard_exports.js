@@ -24,17 +24,17 @@ const context = vm.createContext({
 });
 context.window = context;
 vm.runInContext(fs.readFileSync(appPath, "utf8"), context, { filename: appPath });
-for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "results.js"]) {
+for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "results.js", "research.js"]) {
   const modulePath = path.join(dashboardRoot, "static/js", moduleName);
   vm.runInContext(fs.readFileSync(modulePath, "utf8"), context, { filename: modulePath });
 }
 
 const template = fs.readFileSync(path.join(dashboardRoot, "templates/index.html"), "utf8");
 const appSource = fs.readFileSync(appPath, "utf8");
-assert.match(template, /01<\/span>개요[\s\S]*02<\/span>노드[\s\S]*03<\/span>모델[\s\S]*04<\/span>실험[\s\S]*05<\/span>결과/);
+assert.match(template, /01<\/span>개요[\s\S]*02<\/span>노드[\s\S]*03<\/span>모델[\s\S]*04<\/span>실험[\s\S]*05<\/span>결과[\s\S]*06<\/span>캠페인[\s\S]*07<\/span>비교[\s\S]*08<\/span>연구 준비/);
 assert.match(template, /CONTROLLER[\s\S]*DASHBOARD[\s\S]*SCHEDULER[\s\S]*STORAGE/);
 assert.doesNotMatch(template, /HEAD · CONTROL \+ INFERENCE/);
-for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "results.js"]) {
+for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "results.js", "research.js"]) {
   assert.match(template, new RegExp(`/static/js/${moduleName.replace(".", "\\.")}`));
 }
 
@@ -54,13 +54,19 @@ assert.match(appSource, /telemetryDegraded/);
 assert.match(appSource, /channel === "experiment"/);
 assert.match(appSource, /headers\["X-Cluster-Token"\] = state\.token/);
 assert.match(appSource, /authenticatedEventStream\("\/api\/events"\)/);
+assert.match(appSource, /chartId === "researchCompareChart"/);
+assert.match(appSource, /Cross-run filtered comparison/);
 assert.doesNotMatch(appSource, /\/api\/events\?token=/);
 assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260821\.8/);
-assert.match(template, /app\.js\?v=20260821\.11/);
+assert.match(template, /styles\.css\?v=20260823\.1/);
+assert.match(template, /app\.js\?v=20260823\.1/);
 assert.match(template, /results\.js\?v=20260821\.9/);
+assert.match(template, /research\.js\?v=20260823\.1/);
+assert.match(template, /id="campaign"[\s\S]*id="campaignSummary"[\s\S]*id="campaignDetail"/);
+assert.match(template, /id="compare"[\s\S]*data-compare-filter="campaign_id"[\s\S]*data-compare-filter="measurement_quality"[\s\S]*researchCompareChart/);
+assert.match(template, /id="research"[\s\S]*approvedModelList[\s\S]*researchWorkerList[\s\S]*researchBlockers/);
 assert.match(template, /nodeRenameDialog[\s\S]*nodeRenameForm[\s\S]*renameNodeInput/);
 assert.match(template, /nodeDeleteDialog[\s\S]*removeWorkerFilesInput[\s\S]*confirmNodeDeleteButton/);
 assert.match(appSource, /method: "DELETE"[\s\S]*remove_worker_files: removeWorkerFiles, confirmed: true/);
@@ -380,6 +386,33 @@ const wrappedLegend = vm.runInContext(`buildPublicationSvg({
 }, { width: 640, sizeMm: 85 })`, context);
 assert.ok(wrappedLegend.height > Math.round(640 * 0.64));
 assert.match(wrappedLegend.svg, /long-model-name-9/);
+
+const researchFiltered = vm.runInContext(`ClusterDashboard.research.filterCompareRuns([
+  { run_id: "jetson-clean", campaign_id: "campaign-a", model_lock: "model-a", platform: "jetson", node_count: 1, strategy: "single_node", runtime_fingerprint: "cuda-a", power_mode: "MAXN", measurement_quality: "clean" },
+  { run_id: "pi-warning", campaign_id: "campaign-a", model_lock: "model-a", platform: "raspberry-pi", node_count: 3, strategy: "replicated_round_robin", runtime_fingerprint: "blas-a", power_mode: "not_applicable", measurement_quality: "warning" }
+], { campaign_id: "campaign-a", model_lock: "all", platform: "raspberry-pi", node_count: "3", strategy: "all", runtime_fingerprint: "all", power_mode: "all", measurement_quality: "warning" })`, context);
+assert.equal(researchFiltered.length, 1);
+assert.equal(researchFiltered[0].run_id, "pi-warning");
+
+const researchChart = vm.runInContext(`ClusterDashboard.research.compareChartModel([
+  { run_id: "baseline", status: "completed", finished_at: "2026-08-23T01:00:00Z", model_lock: "model-a", model_id: "a.gguf", platform: "jetson", node_count: 1, strategy: "single_node", runtime_fingerprint: "cuda", power_mode: "MAXN", measurement_quality: "clean", metrics: { throughput_tokens_s: 4 } },
+  { run_id: "scaled", status: "completed", finished_at: "2026-08-23T02:00:00Z", model_lock: "model-a", model_id: "a.gguf", platform: "raspberry-pi", node_count: 3, strategy: "replicated_round_robin", runtime_fingerprint: "blas", power_mode: "not_applicable", measurement_quality: "warning", metrics: { throughput_tokens_s: 9 } },
+  { run_id: "failed", status: "failed", measurement_quality: "degraded", metrics: { throughput_tokens_s: 99 } }
+], "throughput_tokens_s", "baseline")`, context);
+assert.equal(researchChart.runs.length, 2);
+assert.equal(researchChart.baseline.run_id, "baseline");
+assert.deepEqual(JSON.parse(JSON.stringify(researchChart.series.map(series => series.label))), ["CLEAN", "WARNING"]);
+assert.doesNotMatch(JSON.stringify(researchChart.series), /99/);
+
+const lowerIsBetter = vm.runInContext(`ClusterDashboard.research.baselineRatio(
+  { metrics: { ttft_p50_s: 1 } }, { metrics: { ttft_p50_s: 2 } }, "ttft_p50_s"
+)`, context);
+assert.equal(lowerIsBetter, 2);
+const safeResearchCsv = vm.runInContext(`ClusterDashboard.research.compareCsv([
+  { run_id: "=cmd", campaign_id: "campaign", model_lock: "unlocked", model_id: "a.gguf", platform: "unknown", node_count: 1, strategy: "legacy", runtime_fingerprint: "unknown", power_mode: "not_applicable", measurement_quality: "unknown", status: "completed", metrics: { throughput_tokens_s: 2 } }
+], "throughput_tokens_s", "=cmd")`, context);
+assert.match(safeResearchCsv, /"'=cmd"/);
+assert.match(safeResearchCsv, /baseline_ratio/);
 
 const png = new Uint8Array(33);
 png.set([137, 80, 78, 71, 13, 10, 26, 10]);
