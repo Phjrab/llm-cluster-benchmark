@@ -45,6 +45,11 @@ journals are rejected. The manifest is the source of truth for:
 - cooldown deadline, pause request, and cancel request;
 - expected run count, runtime envelope, and storage.
 
+The manifest also freezes the exact Worker-relative GGUF path for every active
+model-lock key. The basename must match the approved locked binary. This makes
+job reconstruction independent of Dashboard memory after restart and prevents
+a model key from being remapped to a different GGUF between cells.
+
 ## Lifecycle
 
 ```text

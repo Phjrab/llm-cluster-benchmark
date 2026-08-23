@@ -32,6 +32,14 @@ from cluster.research.scheduler import (
 ROOT = Path(__file__).resolve().parents[2]
 RESEARCH = ROOT / "config" / "research"
 FIXED = datetime(2026, 8, 23, 8, 0, tzinfo=timezone.utc)
+FORMAL_MODEL_IDS = {
+    "qwen2.5-1.5b-instruct-q4-k-m-official": (
+        "qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+    ),
+    "granite-3.3-2b-instruct-q4-k-m-official": (
+        "granite-3.3-2b/granite-3.3-2b-instruct-Q4_K_M.gguf"
+    ),
+}
 
 
 def read_json(name: str) -> dict:
@@ -92,6 +100,7 @@ def runner_manifest(cell_count: int = 2, cooldown_s: float = 0) -> dict:
         "repeat_count": 1,
         "repeat_count_decision_evidence": "fixture",
         "controller_participant_policy": "forbidden",
+        "model_ids": {"model-a": "models/a.gguf"},
         "retry_policy": {
             "automatic": False,
             "manual_retry_requires_reason": True,
@@ -218,6 +227,7 @@ class FormalManifestTests(unittest.TestCase):
                 campaign_id="formal-v1-test",
                 repeat_count=10,
                 repeat_count_decision_evidence="not-yet-frozen",
+                model_ids=FORMAL_MODEL_IDS,
                 **values,
             )
 
@@ -240,6 +250,7 @@ class FormalManifestTests(unittest.TestCase):
             campaign_id="formal-v1-test",
             repeat_count=10,
             repeat_count_decision_evidence="phase-09-pilot-report:fixture",
+            model_ids=FORMAL_MODEL_IDS,
             created_at=FIXED.isoformat(),
             **values,
         )

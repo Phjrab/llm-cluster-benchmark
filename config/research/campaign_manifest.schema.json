@@ -21,6 +21,7 @@
     "order_seed",
     "repeat_count",
     "controller_participant_policy",
+    "model_ids",
     "retry_policy",
     "cooldown_policy",
     "estimates",
@@ -51,6 +52,24 @@
     "repeat_count": {"type": "integer", "minimum": 10, "maximum": 30},
     "repeat_count_decision_evidence": {"type": "string", "minLength": 1},
     "controller_participant_policy": {"const": "forbidden"},
+    "model_ids": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "qwen2.5-1.5b-instruct-q4-k-m-official",
+        "granite-3.3-2b-instruct-q4-k-m-official"
+      ],
+      "properties": {
+        "qwen2.5-1.5b-instruct-q4-k-m-official": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).*qwen2\\.5-1\\.5b-instruct-q4_k_m\\.gguf$"
+        },
+        "granite-3.3-2b-instruct-q4-k-m-official": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).*granite-3\\.3-2b-instruct-Q4_K_M\\.gguf$"
+        }
+      }
+    },
     "retry_policy": {
       "type": "object",
       "additionalProperties": false,

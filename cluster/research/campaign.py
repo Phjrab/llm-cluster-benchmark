@@ -15,6 +15,7 @@ import secrets
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any, Callable, Iterator, Mapping, MutableMapping, Sequence
 
 from cluster.infrastructure.storage import (
@@ -101,6 +102,21 @@ def validate_campaign_manifest(manifest: Mapping[str, Any]) -> None:
     retry = manifest.get("retry_policy")
     if not isinstance(retry, Mapping) or retry.get("automatic") is not False:
         raise CampaignValidationError("formal campaigns must never retry automatically")
+    model_ids = manifest.get("model_ids")
+    if not isinstance(model_ids, Mapping) or not model_ids:
+        raise CampaignValidationError("campaign model_ids must freeze exact Worker paths")
+    for model_key, model_id in model_ids.items():
+        if (
+            not isinstance(model_key, str)
+            or not model_key
+            or not isinstance(model_id, str)
+            or not model_id.endswith(".gguf")
+            or model_id.startswith("/")
+            or "\\" in model_id
+            or ".." in PurePosixPath(model_id).parts
+            or str(PurePosixPath(model_id)) != model_id
+        ):
+            raise CampaignValidationError("campaign model_ids contains an unsafe mapping")
     cells = manifest.get("cells")
     if not isinstance(cells, list) or not cells:
         raise CampaignValidationError("campaign cells must be a non-empty list")
@@ -132,6 +148,8 @@ def validate_campaign_manifest(manifest: Mapping[str, Any]) -> None:
             raise CampaignValidationError(f"invalid campaign cell status: {status}")
         if status == "running":
             running_ids.append(cell_id)
+        if cell.get("model_lock_key") not in model_ids:
+            raise CampaignValidationError("every campaign cell requires a frozen model id")
         attempts = cell.get("attempts")
         if not isinstance(attempts, list):
             raise CampaignValidationError("cell attempts must be a list")
@@ -295,6 +313,7 @@ def build_campaign_manifest(
     experiment_conditions: Mapping[str, Any],
     repeat_count: int,
     repeat_count_decision_evidence: str,
+    model_ids: Mapping[str, str],
     created_at: str | None = None,
 ) -> dict[str, Any]:
     """Freeze a complete executable manifest after all formal gates are open."""
@@ -334,6 +353,24 @@ def build_campaign_manifest(
     scheduled = seeded_randomized_block_order(
         expand_formal_matrix(matrix), repeat_count=repeat_count, seed=seed
     )
+    approved_models = {
+        str(item.get("model_key")): item
+        for item in model_lock.get("models", [])
+        if isinstance(item, Mapping)
+        and (item.get("verification") or {}).get("status") == "approved"
+    }
+    active_model_keys = {str(cell["model_lock_key"]) for cell in scheduled}
+    if set(model_ids) != active_model_keys:
+        raise CampaignValidationError("model_ids must exactly cover active formal model keys")
+    frozen_model_ids: dict[str, str] = {}
+    for model_key in sorted(active_model_keys):
+        model_id = model_ids.get(model_key)
+        expected = str((approved_models.get(model_key, {}).get("binary") or {}).get("filename") or "")
+        if not isinstance(model_id, str) or PurePosixPath(model_id).name != expected:
+            raise CampaignValidationError(
+                f"model_ids does not match the locked GGUF filename for {model_key}"
+            )
+        frozen_model_ids[model_key] = model_id
     cells: list[dict[str, Any]] = []
     for cell in scheduled:
         cells.append(
@@ -369,6 +406,7 @@ def build_campaign_manifest(
         "repeat_count": repeat_count,
         "repeat_count_decision_evidence": repeat_count_decision_evidence.strip(),
         "controller_participant_policy": "forbidden",
+        "model_ids": frozen_model_ids,
         "retry_policy": {
             "automatic": False,
             "manual_retry_requires_reason": True,
