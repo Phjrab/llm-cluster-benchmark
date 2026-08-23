@@ -1306,6 +1306,8 @@ def sync_code_one(node: Node, dry_run: bool = False) -> Dict[str, Any]:
     finalized = run_on_node(
         node,
         [
+            "env",
+            f"PYTHONPATH={node.project_dir}",
             python_bin,
             "-m",
             "cluster.infrastructure.deployment",

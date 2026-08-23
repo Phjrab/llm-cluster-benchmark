@@ -215,7 +215,9 @@ class DeploymentSyncContractTests(unittest.TestCase):
         self.assertEqual(remote.call_args_list[3].args[1][:2], ["rm", "-f"])
         self.assertEqual(remote.call_args_list[4].args[1][:2], ["chmod", "600"])
         finalize_argv = remote.call_args_list[-1].args[1]
-        self.assertEqual(finalize_argv[1:3], ["-m", "cluster.infrastructure.deployment"])
+        self.assertEqual(finalize_argv[0], "env")
+        self.assertEqual(finalize_argv[1], f"PYTHONPATH={node.project_dir}")
+        self.assertEqual(finalize_argv[3:5], ["-m", "cluster.infrastructure.deployment"])
 
 
 class FormalDeploymentEligibilityTests(unittest.TestCase):
