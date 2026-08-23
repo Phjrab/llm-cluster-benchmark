@@ -1274,7 +1274,6 @@ def sync_code_one(node: Node, dry_run: bool = False) -> Dict[str, Any]:
             [
                 "rsync",
                 "-a",
-                "--chmod=F600",
                 "-e",
                 _rsync_ssh(node),
                 str(local_manifest),
@@ -1290,6 +1289,15 @@ def sync_code_one(node: Node, dry_run: bool = False) -> Dict[str, Any]:
             "ok": False,
             "stdout": proc.stdout.strip(),
             "stderr": manifest_sync.stderr.strip() or "deployment manifest transfer failed",
+        }
+
+    manifest_hardened = run_on_node(node, ["chmod", "600", remote_manifest], timeout=30)
+    if manifest_hardened.returncode != 0:
+        return {
+            "name": node.name,
+            "ok": False,
+            "stdout": proc.stdout.strip(),
+            "stderr": manifest_hardened.stderr.strip() or "deployment manifest permission hardening failed",
         }
 
     venv_python = f"{node.project_dir}/.venv/bin/python"

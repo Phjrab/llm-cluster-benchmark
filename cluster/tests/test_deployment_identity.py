@@ -183,6 +183,7 @@ class DeploymentSyncContractTests(unittest.TestCase):
                 subprocess.CompletedProcess([], 0, "", ""),  # runtime mkdir
                 subprocess.CompletedProcess([], 0, "", ""),  # chmod
                 subprocess.CompletedProcess([], 0, "", ""),  # invalidate
+                subprocess.CompletedProcess([], 0, "", ""),  # manifest chmod
                 subprocess.CompletedProcess([], 0, "", ""),  # venv python exists
                 subprocess.CompletedProcess(
                     [], 0,
@@ -209,7 +210,10 @@ class DeploymentSyncContractTests(unittest.TestCase):
         self.assertIn("--delete-delay", source_argv)
         for excluded in RSYNC_EXCLUDES:
             self.assertIn(f"--exclude={excluded}", source_argv)
+        manifest_argv = run.call_args_list[1].args[0]
+        self.assertNotIn("--chmod=F600", manifest_argv)
         self.assertEqual(remote.call_args_list[3].args[1][:2], ["rm", "-f"])
+        self.assertEqual(remote.call_args_list[4].args[1][:2], ["chmod", "600"])
         finalize_argv = remote.call_args_list[-1].args[1]
         self.assertEqual(finalize_argv[1:3], ["-m", "cluster.infrastructure.deployment"])
 
