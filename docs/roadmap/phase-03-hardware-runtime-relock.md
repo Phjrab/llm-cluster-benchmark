@@ -29,6 +29,7 @@ not by silently treating unlike hardware/runtime conditions as homogeneous.
 |---|---|
 | Feature branch | codex/roadmap-phase-03 |
 | Cohort/power-policy implementation | 6dc88f8b2feeb8d7531d966dc11e4e25bc66c093 |
+| Runtime lock v3 approval | 1160a51c320bc0060eefd175e80d4926b5b988d6 |
 | Deployed source tree | 9136db62128920190c13fc11e9a10c72b33a1fbabc91823c528fdc494c691a59 |
 | Deployed source files | 158 |
 | Native RPC commit | f49e9178767d557a522618b16ce8694f9ddac628 |
