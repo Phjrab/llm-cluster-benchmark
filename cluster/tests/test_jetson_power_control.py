@@ -23,8 +23,8 @@ class WorkerPowerControlTests(unittest.TestCase):
         modes = power_control.parse_modes(MODES)
         self.assertEqual([(item["id"], item["name"]) for item in modes], [(0, "10W"), (2, "MAXN_SUPER"), (3, "25W")])
         candidate = power_control._recommended_mode(modes)
-        self.assertEqual(candidate["id"], 3)
-        self.assertEqual(candidate["power_budget_w"], 25.0)
+        self.assertEqual(candidate["id"], 2)
+        self.assertIsNone(candidate["power_budget_w"])
 
     def test_multiple_equal_maximum_modes_do_not_silently_choose_one(self) -> None:
         modes = power_control.parse_modes("POWER_MODEL: ID=0 NAME=MAXN_25W\nPOWER_MODEL: ID=2 NAME=MAXN_SUPER_25W\n")
@@ -50,8 +50,8 @@ class WorkerPowerControlTests(unittest.TestCase):
         with mock.patch.object(power_control, "is_jetson", return_value=True), mock.patch.object(power_control, "_nvpmodel_path", return_value="/usr/sbin/nvpmodel"), mock.patch.object(power_control, "_run", side_effect=[completed, queried]), mock.patch.object(power_control, "_sudo_available", return_value=False):
             report = power_control.status()
         self.assertFalse(report["can_apply"])
-        self.assertEqual(report["recommended_mode"]["id"], 3)
-        self.assertEqual(report["manual_command"], "sudo /usr/sbin/nvpmodel -m 3")
+        self.assertEqual(report["recommended_mode"]["id"], 2)
+        self.assertEqual(report["manual_command"], "sudo /usr/sbin/nvpmodel -m 2")
 
 
 class ControllerPowerCommandTests(unittest.TestCase):

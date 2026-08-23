@@ -68,19 +68,27 @@ def parse_modes(output: str) -> list[dict[str, Any]]:
 
 
 def _recommended_mode(modes: Iterable[dict[str, Any]]) -> dict[str, Any] | None:
-    """Choose a *display-only* maximum-consumption candidate when unambiguous."""
+    """Choose a *display-only* maximum-setting candidate when unambiguous.
+
+    NVIDIA's MAXN/MAXN_SUPER profiles have no numeric watt budget, but expose
+    the maximum clocks and core configuration.  They therefore take precedence
+    over the highest bounded watt profile.  We still fail closed when a local
+    configuration advertises more than one MAXN-family candidate.
+    """
     values = list(modes)
+    maxn = [
+        mode for mode in values
+        if re.search(r"(?:^|[_-])MAXN(?:[_-]|$)", str(mode.get("name", "")), re.IGNORECASE)
+    ]
+    if maxn:
+        return dict(maxn[0]) if len(maxn) == 1 else None
     with_budget = [mode for mode in values if isinstance(mode.get("power_budget_w"), (int, float))]
     if with_budget:
         maximum = max(float(mode["power_budget_w"]) for mode in with_budget)
         candidates = [mode for mode in with_budget if float(mode["power_budget_w"]) == maximum]
         if len(candidates) == 1:
             return dict(candidates[0])
-    maxn = [
-        mode for mode in values
-        if re.search(r"(?:^|[_-])MAXN(?:[_-]|$)", str(mode.get("name", "")), re.IGNORECASE)
-    ]
-    return dict(maxn[0]) if len(maxn) == 1 else None
+    return None
 
 
 def _current_mode(output: str, modes: list[dict[str, Any]]) -> dict[str, Any] | None:

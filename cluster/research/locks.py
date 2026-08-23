@@ -228,12 +228,14 @@ def validate_runtime_lock(lock: Mapping[str, Any]) -> None:
     if not isinstance(workers, list) or not workers:
         raise LockValidationError("runtime_lock.workers must be a non-empty list")
     seen: set[str] = set()
+    worker_platforms: dict[str, str] = {}
     for raw in workers:
         worker = _require_mapping(raw, "worker")
         node = _require_nonempty(worker.get("node"), "worker.node")
         if node in seen:
             raise LockValidationError(f"duplicate runtime worker: {node}")
         seen.add(node)
+        worker_platforms[node] = _require_nonempty(worker.get("platform"), f"{node}.platform")
         runtime = _require_mapping(worker.get("runtime"), f"{node}.runtime")
         if runtime.get("backend_verified") is not True:
             raise LockValidationError(f"approved platform backend is not verified: {node}")
@@ -241,6 +243,42 @@ def validate_runtime_lock(lock: Mapping[str, Any]) -> None:
         commit = deployment.get("git_commit")
         if commit != "unverified" and not HEX_40.fullmatch(str(commit)):
             raise LockValidationError(f"invalid Worker deployment commit: {node}")
+    cohorts = lock.get("formal_cohorts")
+    if cohorts is None and int(lock.get("lock_version", 0)) < 3:
+        return
+    if not isinstance(cohorts, list) or not cohorts:
+        raise LockValidationError("runtime_lock.formal_cohorts must be a non-empty list")
+    cohort_ids: set[str] = set()
+    assigned_workers: set[str] = set()
+    for index, raw in enumerate(cohorts):
+        cohort = _require_mapping(raw, f"formal_cohorts[{index}]")
+        cohort_id = _require_nonempty(cohort.get("cohort_id"), f"formal_cohorts[{index}].cohort_id")
+        if cohort_id in cohort_ids:
+            raise LockValidationError(f"duplicate formal cohort: {cohort_id}")
+        cohort_ids.add(cohort_id)
+        platform = _require_nonempty(cohort.get("platform"), f"{cohort_id}.platform")
+        members = cohort.get("workers")
+        if not isinstance(members, list) or not members:
+            raise LockValidationError(f"{cohort_id}.workers must be a non-empty list")
+        if len(set(members)) != len(members):
+            raise LockValidationError(f"{cohort_id} contains duplicate Workers")
+        for member in members:
+            if member not in worker_platforms:
+                raise LockValidationError(f"{cohort_id} references unknown Worker: {member}")
+            if worker_platforms[member] != platform:
+                raise LockValidationError(f"{cohort_id} mixes platform identities")
+            if member in assigned_workers:
+                raise LockValidationError(f"Worker belongs to multiple formal cohorts: {member}")
+            assigned_workers.add(member)
+        conditions = _require_mapping(cohort.get("locked_conditions"), f"{cohort_id}.locked_conditions")
+        for field in ("hardware_model", "operating_system", "kernel", "backend", "runtime_fingerprint", "power_condition"):
+            _require_nonempty(conditions.get(field), f"{cohort_id}.locked_conditions.{field}")
+        maximum = cohort.get("max_homogeneous_nodes")
+        if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum != len(members):
+            raise LockValidationError(f"{cohort_id}.max_homogeneous_nodes must equal its Worker count")
+    if assigned_workers != seen:
+        missing = ", ".join(sorted(seen.difference(assigned_workers)))
+        raise LockValidationError(f"formal cohort coverage is incomplete: {missing}")
 
 
 def _issue(code: str, *, node: str | None = None, model_key: str | None = None) -> dict[str, str]:
@@ -369,6 +407,18 @@ def assess_formal_eligibility(
     }
     if len(jetson_modes) > 1:
         blocking.append(_issue("JETSON_POWER_MODE_MISMATCH"))
+    runtime_cohort_id = None
+    cohorts = runtime_lock.get("formal_cohorts")
+    if isinstance(cohorts, list):
+        selected_set = set(selected_workers)
+        matching_cohorts = [
+            cohort
+            for cohort in cohorts
+            if selected_set and selected_set.issubset(set(cohort.get("workers", [])))
+        ]
+        runtime_cohort_id = matching_cohorts[0]["cohort_id"] if len(matching_cohorts) == 1 else None
+        if runtime_cohort_id is None:
+            blocking.append(_issue("RUNTIME_COHORT_MISMATCH"))
     if model is not None and live_preflight_snapshot:
         expected = model["binary"]["sha256"]
         for node in selected_workers:
@@ -382,7 +432,12 @@ def assess_formal_eligibility(
                 live_preflight_snapshot=live_preflight_snapshot,
             )
         )
-    return {"eligible": not blocking, "blocking_issues": blocking, "warnings": warnings}
+    return {
+        "eligible": not blocking,
+        "blocking_issues": blocking,
+        "warnings": warnings,
+        "runtime_cohort_id": runtime_cohort_id,
+    }
 
 
 __all__ = [
