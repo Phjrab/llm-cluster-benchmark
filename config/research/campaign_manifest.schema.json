@@ -8,20 +8,34 @@
   "required": [
     "schema_version",
     "campaign_version",
+    "artifact_type",
     "campaign_id",
     "matrix_id",
     "matrix_version",
     "lock_ref",
     "experiment_type",
     "status",
+    "phase",
+    "created_at",
+    "updated_at",
     "order_seed",
     "repeat_count",
     "controller_participant_policy",
+    "retry_policy",
+    "cooldown_policy",
+    "estimates",
+    "coverage",
+    "current_cell_id",
+    "pause_requested",
+    "cancel_requested",
+    "cooldown_not_before",
+    "last_drift",
     "cells"
   ],
   "properties": {
     "schema_version": {"const": 1},
     "campaign_version": {"type": "integer", "minimum": 1},
+    "artifact_type": {"const": "formal_campaign"},
     "campaign_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"},
     "matrix_id": {"const": "formal-study-v1-matrix-v1"},
     "matrix_version": {"const": 1},
@@ -30,12 +44,49 @@
     "status": {
       "enum": ["planned", "ready", "running", "paused", "completed", "failed", "cancelled"]
     },
+    "phase": {"type": "string", "minLength": 1},
     "created_at": {"type": "string", "format": "date-time"},
     "updated_at": {"type": "string", "format": "date-time"},
     "order_seed": {"const": 20260823},
     "repeat_count": {"type": "integer", "minimum": 10, "maximum": 30},
     "repeat_count_decision_evidence": {"type": "string", "minLength": 1},
     "controller_participant_policy": {"const": "forbidden"},
+    "retry_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["automatic", "manual_retry_requires_reason", "preserve_every_attempt"],
+      "properties": {
+        "automatic": {"const": false},
+        "manual_retry_requires_reason": {"const": true},
+        "preserve_every_attempt": {"const": true}
+      }
+    },
+    "cooldown_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["minimum_cooldown_s", "stabilization_rule_source"],
+      "properties": {
+        "minimum_cooldown_s": {"type": "number", "minimum": 0},
+        "stabilization_rule_source": {"type": ["string", "null"]}
+      }
+    },
+    "estimates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs", "nominal_runtime_seconds", "timeout_envelope_seconds", "storage_bytes"],
+      "properties": {
+        "runs": {"type": "integer", "minimum": 1},
+        "nominal_runtime_seconds": {"type": "integer", "minimum": 0},
+        "timeout_envelope_seconds": {"type": "integer", "minimum": 0},
+        "storage_bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "current_cell_id": {"type": ["string", "null"]},
+    "pause_requested": {"type": "boolean"},
+    "cancel_requested": {"type": "boolean"},
+    "cooldown_not_before": {"type": ["string", "null"], "format": "date-time"},
+    "last_drift": {"type": ["object", "null"]},
+    "finished_at": {"type": ["string", "null"], "format": "date-time"},
     "coverage": {"$ref": "#/$defs/coverage"},
     "cells": {
       "type": "array",
@@ -64,6 +115,7 @@
       "required": [
         "campaign_cell_id",
         "cell_id",
+        "template_id",
         "experiment_type",
         "platform_cohort",
         "strategy",
@@ -78,11 +130,19 @@
         "order_block",
         "order_index",
         "measurement_quality_policy",
-        "status"
+        "status",
+        "attempt_id",
+        "run_id",
+        "failure_code",
+        "measurement_quality",
+        "attempts",
+        "warnings",
+        "drift"
       ],
       "properties": {
         "campaign_cell_id": {"type": "string", "minLength": 1, "maxLength": 512},
         "cell_id": {"type": "string", "minLength": 1, "maxLength": 480},
+        "template_id": {"type": "string", "minLength": 1},
         "experiment_type": {"const": "formal"},
         "platform_cohort": {"type": "string", "minLength": 1},
         "strategy": {"enum": ["single_node", "replicated_round_robin", "broadcast_compare"]},
@@ -111,15 +171,41 @@
         "attempt_id": {"type": ["string", "null"]},
         "run_id": {"type": ["string", "null"]},
         "failure_code": {"type": ["string", "null"]},
-        "measurement_quality": {"enum": ["clean", "warning", "degraded", "unknown", null]}
+        "measurement_quality": {"enum": ["clean", "warning", "degraded", "unknown", null]},
+        "attempts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["attempt_id", "status", "started_at"],
+            "properties": {
+              "attempt_id": {"type": "string", "minLength": 1},
+              "status": {"enum": ["preflight", "blocked", "starting", "queued", "running", "cancelling", "completed", "failed", "cancelled"]},
+              "started_at": {"type": "string", "format": "date-time"},
+              "finished_at": {"type": ["string", "null"], "format": "date-time"},
+              "backend_job_id": {"type": ["string", "null"]},
+              "run_id": {"type": ["string", "null"]},
+              "failure_code": {"type": ["string", "null"]},
+              "cleanup_status": {"enum": ["completed", "failed", null]},
+              "measurement_quality": {"enum": ["clean", "warning", "degraded", "unknown", null]},
+              "drift": {"type": "array", "items": {"type": "object"}}
+            }
+          }
+        },
+        "warnings": {"type": "array", "items": {"type": "object"}},
+        "drift": {"type": "array", "items": {"type": "object"}},
+        "started_at": {"type": ["string", "null"], "format": "date-time"},
+        "finished_at": {"type": ["string", "null"], "format": "date-time"},
+        "retry_reason": {"type": "string"}
       }
     },
     "coverage": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["planned", "completed", "failed", "cancelled", "excluded"],
+      "required": ["planned", "pending", "running", "completed", "failed", "cancelled", "excluded"],
       "properties": {
         "planned": {"type": "integer", "minimum": 0},
+        "pending": {"type": "integer", "minimum": 0},
+        "running": {"type": "integer", "minimum": 0},
         "completed": {"type": "integer", "minimum": 0},
         "failed": {"type": "integer", "minimum": 0},
         "cancelled": {"type": "integer", "minimum": 0},

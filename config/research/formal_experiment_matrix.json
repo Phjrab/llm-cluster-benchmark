@@ -2,7 +2,7 @@
   "schema_version": 1,
   "matrix_version": 1,
   "matrix_id": "formal-study-v1-matrix-v1",
-  "status": "planned_pending_phase_05_instrumentation_and_phase_09_pilot",
+  "status": "planned_pending_phase_09_pilot",
   "created_at": "2026-08-23T00:00:00Z",
   "lock_ref": {
     "lock_id": "formal-study-v1",
@@ -245,7 +245,7 @@
   },
   "execution_gate": {
     "formal_execution_allowed": false,
-    "blocking_phases": [5, 9],
-    "reason": "instrumentation and pilot-derived repeat/cooldown policy are not frozen"
+    "blocking_phases": [9],
+    "reason": "pilot-derived repeat count and cooldown/thermal policy are not frozen"
   }
 }

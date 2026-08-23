@@ -186,11 +186,16 @@ class ProtocolAndAnalysisTests(unittest.TestCase):
                 "repeat_index",
                 "order_block",
                 "measurement_quality_policy",
+                "attempts",
+                "warnings",
+                "drift",
             }.issubset(required)
         )
         self.assertEqual(schema["properties"]["controller_participant_policy"]["const"], "forbidden")
         self.assertEqual(schema["properties"]["cells"]["minItems"], 720)
         self.assertEqual(schema["properties"]["cells"]["maxItems"], 2160)
+        self.assertFalse(schema["properties"]["retry_policy"]["properties"]["automatic"]["const"])
+        self.assertIn("pending", schema["$defs"]["coverage"]["required"])
 
 
 if __name__ == "__main__":

@@ -59,6 +59,16 @@ class RunPersistence:
             "model_count": self.config.model_count,
             **payload,
         }
+        if self.config.campaign_id:
+            event.update(
+                {
+                    "campaign_id": self.config.campaign_id,
+                    "campaign_cell_id": self.config.campaign_cell_id,
+                    "campaign_attempt_id": self.config.campaign_attempt_id,
+                    "repeat_index": self.config.repeat_index,
+                    "order_index": self.config.order_index,
+                }
+            )
         self.repository.append_event(self.run_id, event)
         if self.progress:
             self.progress(event)

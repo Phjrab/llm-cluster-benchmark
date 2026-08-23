@@ -60,6 +60,27 @@ def benchmark_parameters(config: ExperimentConfig) -> Dict[str, Any]:
     }
 
 
+def research_identity(config: ExperimentConfig) -> Optional[Dict[str, Any]]:
+    """Return the frozen campaign trace only for formal campaign runs."""
+    if not config.campaign_id:
+        return None
+    return {
+        "experiment_type": config.experiment_type,
+        "campaign_id": config.campaign_id,
+        "campaign_cell_id": config.campaign_cell_id,
+        "campaign_attempt_id": config.campaign_attempt_id,
+        "repeat_index": config.repeat_index,
+        "order_index": config.order_index,
+        "experiment_lock_id": config.experiment_lock_id,
+        "experiment_lock_sha256": config.experiment_lock_sha256,
+        "model_lock_entry": config.model_lock_entry,
+        "prompt_set_version": config.prompt_set_version,
+        "runtime_lock_version": config.runtime_lock_version,
+        "condition_profile_id": config.condition_profile_id,
+        "measurement_quality_policy": config.measurement_quality_policy,
+    }
+
+
 class BenchmarkRunner:
     def __init__(
         self,
@@ -381,6 +402,9 @@ class BenchmarkRunner:
                     rpc_topology=topology,
                 ),
             })
+            identity = research_identity(config)
+            if identity is not None:
+                summary["research_identity"] = identity
             if power.has_observations:
                 power_summary = power.summarize()
                 summary.update({
@@ -455,6 +479,9 @@ class BenchmarkRunner:
                     rpc_topology=topology,
                 ),
             }
+            identity = research_identity(config)
+            if identity is not None:
+                failure["research_identity"] = identity
             if power.has_observations:
                 power_summary = power.summarize()
                 failure.update({
@@ -504,4 +531,4 @@ class BenchmarkRunner:
                     persistence.emit("rpc_cleanup_failed", errors=[str(cleanup_exc)])
 
 
-__all__ = ["BenchmarkRunner", "benchmark_parameters"]
+__all__ = ["BenchmarkRunner", "benchmark_parameters", "research_identity"]

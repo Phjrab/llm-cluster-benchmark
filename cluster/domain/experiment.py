@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 
 from .errors import DomainValidationError
 from .identifiers import (
+    validate_campaign_id,
     validate_experiment_id,
     validate_model_id,
     validate_node_id,
@@ -57,6 +58,19 @@ class ExperimentConfig:
     model_index: int = 1
     model_count: int = 1
     rpc_coordinator_node: Optional[str] = None
+    experiment_type: str = ""
+    campaign_id: str = ""
+    campaign_cell_id: str = ""
+    campaign_attempt_id: str = ""
+    repeat_index: int = 0
+    order_index: int = 0
+    experiment_lock_id: str = ""
+    experiment_lock_sha256: str = ""
+    model_lock_entry: str = ""
+    prompt_set_version: int = 0
+    runtime_lock_version: int = 0
+    condition_profile_id: str = ""
+    measurement_quality_policy: str = ""
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "ExperimentConfig":
@@ -112,6 +126,63 @@ class ExperimentConfig:
             raise DomainValidationError("require_uniform_config must be a boolean")
         if not isinstance(self.acknowledge_experimental_rpc, bool):
             raise DomainValidationError("acknowledge_experimental_rpc must be a boolean")
+
+        research_values = (
+            self.experiment_type,
+            self.campaign_id,
+            self.campaign_cell_id,
+            self.campaign_attempt_id,
+            self.experiment_lock_id,
+            self.experiment_lock_sha256,
+            self.model_lock_entry,
+            self.condition_profile_id,
+            self.measurement_quality_policy,
+        )
+        has_research_identity = any(bool(value) for value in research_values) or any(
+            value != 0
+            for value in (self.repeat_index, self.order_index, self.prompt_set_version, self.runtime_lock_version)
+        )
+        if has_research_identity:
+            if self.experiment_type != "formal":
+                raise DomainValidationError("campaign research identity requires experiment_type=formal")
+            validate_campaign_id(self.campaign_id)
+            if (
+                not isinstance(self.campaign_cell_id, str)
+                or not self.campaign_cell_id
+                or len(self.campaign_cell_id) > 512
+                or "/" in self.campaign_cell_id
+                or "\\" in self.campaign_cell_id
+                or any(ord(char) < 32 or ord(char) == 127 for char in self.campaign_cell_id)
+            ):
+                raise DomainValidationError("campaign_cell_id is invalid")
+            if (
+                not isinstance(self.campaign_attempt_id, str)
+                or not self.campaign_attempt_id.startswith("attempt_")
+                or not self.campaign_attempt_id.replace("_", "").isalnum()
+            ):
+                raise DomainValidationError("campaign_attempt_id is invalid")
+            if not _is_integer(self.repeat_index) or self.repeat_index < 1:
+                raise DomainValidationError("repeat_index must be a positive integer")
+            if not _is_integer(self.order_index) or self.order_index < 1:
+                raise DomainValidationError("order_index must be a positive integer")
+            if (
+                not isinstance(self.experiment_lock_sha256, str)
+                or len(self.experiment_lock_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in self.experiment_lock_sha256)
+            ):
+                raise DomainValidationError("experiment_lock_sha256 must be lowercase SHA-256")
+            for label, value in (
+                ("experiment_lock_id", self.experiment_lock_id),
+                ("model_lock_entry", self.model_lock_entry),
+                ("condition_profile_id", self.condition_profile_id),
+                ("measurement_quality_policy", self.measurement_quality_policy),
+            ):
+                if not isinstance(value, str) or not value.strip():
+                    raise DomainValidationError(f"{label} must be a non-empty string")
+            if not _is_integer(self.prompt_set_version) or self.prompt_set_version < 1:
+                raise DomainValidationError("prompt_set_version must be a positive integer")
+            if not _is_integer(self.runtime_lock_version) or self.runtime_lock_version < 1:
+                raise DomainValidationError("runtime_lock_version must be a positive integer")
 
         try:
             strategy = ExecutionStrategy(self.execution_strategy)

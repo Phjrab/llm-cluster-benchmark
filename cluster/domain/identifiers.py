@@ -9,6 +9,7 @@ from .errors import DomainValidationError
 
 
 NODE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$")
+CAMPAIGN_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]{2,127}$")
 
 
 def validate_node_id(node_id: str) -> str:
@@ -41,6 +42,14 @@ def validate_run_id(run_id: str) -> str:
     if not isinstance(run_id, str) or not run_id or not run_id.replace("_", "").isalnum():
         raise DomainValidationError("run_id contains unsupported characters")
     return run_id
+
+
+def validate_campaign_id(campaign_id: str) -> str:
+    if not isinstance(campaign_id, str) or not CAMPAIGN_ID_PATTERN.fullmatch(campaign_id):
+        raise DomainValidationError(
+            "campaign_id must use 3-128 lowercase letters, digits, dot, underscore or hyphen"
+        )
+    return campaign_id
 
 
 def validate_model_id(model_id: str) -> str:

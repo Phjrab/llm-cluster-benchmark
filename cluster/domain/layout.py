@@ -84,6 +84,10 @@ class ProjectLayout:
         return self.controller_runtime_dir / "jobs"
 
     @property
+    def campaigns_dir(self) -> Path:
+        return self.controller_runtime_dir / "campaigns"
+
+    @property
     def suites_dir(self) -> Path:
         return self.results_dir / "_suites"
 
