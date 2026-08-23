@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -46,6 +46,7 @@ def mount_worker_routes(
     backend: InferenceBackend,
     telemetry: TelemetryService,
     runtime: WorkerRuntimeInfo,
+    deployment_provider: Optional[Callable[[], Dict[str, Any]]] = None,
 ) -> None:
     """Register legacy and cluster API routes without exposing backend internals."""
 
@@ -151,6 +152,11 @@ def mount_worker_routes(
         models = backend.list_models()
         telemetry_status = telemetry.status()
         inference_status = backend.readiness()
+        deployment = (
+            deployment_provider()
+            if deployment_provider is not None
+            else {"available": False, "verified": False, "error": "deployment manifest is unavailable"}
+        )
         response: Dict[str, Any] = {
             "ok": True,
             "node": {
@@ -173,6 +179,7 @@ def mount_worker_routes(
                 "inference_ready": bool(inference_status.get("ready", False)),
                 "inference_error": inference_status.get("error"),
                 "worker_api_auth": runtime.worker_api_auth,
+                "deployment_verified": deployment.get("verified") is True,
             },
             "worker_api_auth": runtime.worker_api_auth,
             "telemetry_version": 2,
@@ -180,6 +187,7 @@ def mount_worker_routes(
             "model_count": len(models),
             "model_ids": [str(item["id"]) for item in models],
             "metrics": telemetry.snapshot(),
+            "deployment": deployment,
         }
         power_probe = getattr(telemetry, "power_integrity", None)
         power_integrity = power_probe() if callable(power_probe) else None

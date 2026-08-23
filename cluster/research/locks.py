@@ -244,6 +244,58 @@ def _issue(code: str, *, node: str | None = None, model_key: str | None = None) 
     return value
 
 
+def deployment_identity_issues(
+    *,
+    runtime_lock: Mapping[str, Any],
+    selected_workers: Sequence[str],
+    live_preflight_snapshot: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, str]]:
+    """Compare live Worker deployment manifests with the formal runtime lock.
+
+    Normal smoke admission never calls this function. A formal preflight must
+    provide fresh Worker health snapshots and fails closed on missing, tampered,
+    dirty, or mutually inconsistent source identities.
+    """
+    workers = {item["node"]: item for item in runtime_lock.get("workers", [])}
+    issues: list[dict[str, str]] = []
+    observed_sources: set[tuple[str, str]] = set()
+    for node in selected_workers:
+        snapshot = live_preflight_snapshot.get(node) or {}
+        raw = snapshot.get("deployment")
+        deployment = raw if isinstance(raw, Mapping) else {}
+        if not deployment:
+            issues.append(_issue("SOURCE_FINGERPRINT_MISSING", node=node))
+            continue
+        if deployment.get("verified") is not True:
+            issues.append(_issue("SOURCE_FINGERPRINT_UNVERIFIED", node=node))
+            continue
+        commit = str(deployment.get("source_commit") or "")
+        tree = str(deployment.get("source_tree_sha256") or "")
+        manifest_sha = str(deployment.get("deployment_manifest_sha256") or "")
+        if not (HEX_40.fullmatch(commit) and HEX_64.fullmatch(tree) and HEX_64.fullmatch(manifest_sha)):
+            issues.append(_issue("SOURCE_FINGERPRINT_INVALID", node=node))
+            continue
+        observed_sources.add((commit, tree))
+        locked_worker = workers.get(node) or {}
+        locked_deployment = locked_worker.get("deployment") or {}
+        expected_commit = locked_deployment.get("git_commit")
+        if expected_commit == "unverified" or not HEX_40.fullmatch(str(expected_commit or "")):
+            issues.append(_issue("RUNTIME_COMMIT_MISMATCH", node=node))
+        elif commit != expected_commit:
+            issues.append(_issue("SOURCE_FINGERPRINT_MISMATCH", node=node))
+        locked_runtime = locked_worker.get("runtime") or {}
+        if deployment.get("runtime_fingerprint") != locked_runtime.get("runtime_fingerprint"):
+            issues.append(_issue("RUNTIME_FINGERPRINT_MISMATCH", node=node))
+        expected_version = locked_runtime.get("llama_cpp_python")
+        if deployment.get("llama_cpp_python_version") != expected_version:
+            issues.append(_issue("RUNTIME_VERSION_MISMATCH", node=node))
+        if deployment.get("rpc_commit") != PINNED_RPC_COMMIT:
+            issues.append(_issue("RPC_COMMIT_MISMATCH", node=node))
+    if len(observed_sources) > 1:
+        issues.append(_issue("SOURCE_FINGERPRINT_MISMATCH"))
+    return issues
+
+
 def assess_formal_eligibility(
     *,
     experiment_config: Mapping[str, Any],
@@ -315,6 +367,13 @@ def assess_formal_eligibility(
             observed = live_preflight_snapshot.get(node, {}).get("model_sha256")
             if observed is not None and observed != expected:
                 blocking.append(_issue("MODEL_SHA_MISMATCH", node=node, model_key=model_key))
+        blocking.extend(
+            deployment_identity_issues(
+                runtime_lock=runtime_lock,
+                selected_workers=selected_workers,
+                live_preflight_snapshot=live_preflight_snapshot,
+            )
+        )
     return {"eligible": not blocking, "blocking_issues": blocking, "warnings": warnings}
 
 
@@ -323,6 +382,7 @@ __all__ = [
     "LockValidationError",
     "assess_formal_eligibility",
     "canonical_json_bytes",
+    "deployment_identity_issues",
     "lock_set_sha256",
     "validate_condition_lock",
     "validate_model_lock",

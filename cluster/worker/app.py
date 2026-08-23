@@ -24,6 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from cluster.integrations.runtime_layout import default_project_layout
+from cluster.infrastructure.deployment import deployment_status
 
 from .inference import InferenceBackend, LlamaCppInferenceBackend
 from .routes import WorkerRuntimeInfo, mount_worker_routes
@@ -171,13 +172,14 @@ def create_app(
     selected_backend = backend or LlamaCppInferenceBackend(resolved_root / "models")
     selected_telemetry = telemetry or TelemetryService.for_platform(platform_kind, resolved_root)
     backend_profile = runtime_backend()
+    initial_deployment = deployment_status(resolved_root)
     runtime = WorkerRuntimeInfo(
         node_name=node_name,
         node_role=node_role,
         hostname=socket.gethostname(),
         platform=platform.platform(),
         platform_kind=platform_kind,
-        git_commit=_git_commit(resolved_root),
+        git_commit=_git_commit(resolved_root) or initial_deployment.get("source_commit"),
         profile=system_profile(resolved_root, platform_kind, backend_profile),
         worker_api_auth=auth_enabled,
     )
@@ -216,7 +218,13 @@ def create_app(
             return JSONResponse(status_code=401, content={"detail": "Worker API authentication failed"})
         return await call_next(request)
 
-    mount_worker_routes(app, backend=selected_backend, telemetry=selected_telemetry, runtime=runtime)
+    mount_worker_routes(
+        app,
+        backend=selected_backend,
+        telemetry=selected_telemetry,
+        runtime=runtime,
+        deployment_provider=lambda: deployment_status(resolved_root),
+    )
     app.state.inference_backend = selected_backend
     app.state.telemetry = selected_telemetry
     app.state.worker_runtime = runtime

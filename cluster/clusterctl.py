@@ -17,6 +17,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import urllib.error
 import urllib.request
@@ -30,6 +31,12 @@ from cluster.domain.identifiers import validate_node_id
 from cluster.domain.worker import validate_worker_host
 from cluster.infrastructure.remote import CommandResult, SshRemoteExecutor, build_ssh_command
 from cluster.infrastructure.platform import controller_capabilities
+from cluster.infrastructure.deployment import (
+    DEPLOYMENT_MANIFEST_RELATIVE_PATH,
+    RSYNC_EXCLUDES,
+    build_deployment_manifest,
+    write_deployment_manifest,
+)
 
 PROJECT_LAYOUT = default_project_layout()
 CLUSTER_DIR = PROJECT_LAYOUT.cluster_dir
@@ -1026,6 +1033,7 @@ def status_one(node: Node) -> Dict[str, Any]:
         "project": False,
         "api": False,
         "loaded_model": None,
+        "deployment": {},
         "error": "",
     }
     discovery = discover_node(node, timeout=12)
@@ -1039,6 +1047,7 @@ def status_one(node: Node) -> Dict[str, Any]:
     try:
         health = request_json(f"{node.api_url}/cluster/health", timeout=3.0)
         result["api"] = health.get("ok") is True
+        result["deployment"] = health.get("deployment") or {}
         current = health.get("current") or {}
         result["loaded_model"] = current.get("model_id")
     except (OSError, ValueError, urllib.error.URLError) as exc:
@@ -1176,30 +1185,153 @@ def sync_code_one(node: Node, dry_run: bool = False) -> Dict[str, Any]:
     if mkdir.returncode != 0:
         return {"name": node.name, "ok": False, "stdout": mkdir.stdout, "stderr": mkdir.stderr}
 
+    try:
+        manifest_before = build_deployment_manifest(PROJECT_ROOT)
+    except (OSError, ValueError) as exc:
+        return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc)}
+
+    remote_manifest = f"{node.project_dir}/{DEPLOYMENT_MANIFEST_RELATIVE_PATH.as_posix()}"
+    remote_runtime = str(Path(remote_manifest).parent)
+    if not dry_run:
+        runtime_ready = run_on_node(
+            node,
+            ["mkdir", "-p", remote_runtime],
+            timeout=30,
+        )
+        if runtime_ready.returncode != 0:
+            return {
+                "name": node.name,
+                "ok": False,
+                "stdout": runtime_ready.stdout,
+                "stderr": runtime_ready.stderr,
+            }
+        hardened = run_on_node(node, ["chmod", "700", remote_runtime], timeout=30)
+        if hardened.returncode != 0:
+            return {
+                "name": node.name,
+                "ok": False,
+                "stdout": hardened.stdout,
+                "stderr": hardened.stderr,
+            }
+        # Never leave a previous manifest eligible while a source update is in
+        # progress. The exact path is derived from the validated project root.
+        invalidated = run_on_node(node, ["rm", "-f", remote_manifest], timeout=30)
+        if invalidated.returncode != 0:
+            return {
+                "name": node.name,
+                "ok": False,
+                "stdout": invalidated.stdout,
+                "stderr": invalidated.stderr,
+            }
+
     command = [
         "rsync",
         "-az",
+        "--delete-delay",
         "--itemize-changes",
-        "--exclude=.git/",
-        "--exclude=.venv/",
-        "--exclude=models/",
-        "--exclude=outputs/",
-        "--exclude=.run/",
-        "--exclude=__pycache__/",
-        "--exclude=cluster/nodes.local.csv",
-        "--exclude=cluster/results/",
-        "-e",
-        _rsync_ssh(node),
     ]
+    for excluded in RSYNC_EXCLUDES:
+        command.append(f"--exclude={excluded}")
+    command.extend(["-e", _rsync_ssh(node)])
     if dry_run:
         command.append("--dry-run")
     command.extend([f"{PROJECT_ROOT}/", f"{node.ssh_target}:{node.project_dir}/"])
     proc = subprocess.run(command, text=True, capture_output=True, timeout=600)
+    if proc.returncode != 0 or dry_run:
+        return {
+            "name": node.name,
+            "ok": proc.returncode == 0,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
+            "deployment": {
+                "source_commit": manifest_before.source_commit,
+                "source_tree_sha256": manifest_before.source_tree_sha256,
+                "working_tree_clean": manifest_before.working_tree_clean,
+                "dry_run": dry_run,
+            },
+        }
+
+    try:
+        manifest_after = build_deployment_manifest(PROJECT_ROOT)
+    except (OSError, ValueError) as exc:
+        return {"name": node.name, "ok": False, "stdout": proc.stdout.strip(), "stderr": str(exc)}
+    if (
+        manifest_before.source_commit != manifest_after.source_commit
+        or manifest_before.source_tree_sha256 != manifest_after.source_tree_sha256
+        or manifest_before.working_tree_clean != manifest_after.working_tree_clean
+    ):
+        return {
+            "name": node.name,
+            "ok": False,
+            "stdout": proc.stdout.strip(),
+            "stderr": "Controller source changed during deployment; Worker manifest was not published",
+        }
+
+    with tempfile.TemporaryDirectory(prefix="llm-cluster-deployment-") as directory:
+        local_manifest = Path(directory) / "deployment-manifest.json"
+        write_deployment_manifest(local_manifest, manifest_after)
+        manifest_sync = subprocess.run(
+            [
+                "rsync",
+                "-a",
+                "--chmod=F600",
+                "-e",
+                _rsync_ssh(node),
+                str(local_manifest),
+                f"{node.ssh_target}:{remote_manifest}",
+            ],
+            text=True,
+            capture_output=True,
+            timeout=60,
+        )
+    if manifest_sync.returncode != 0:
+        return {
+            "name": node.name,
+            "ok": False,
+            "stdout": proc.stdout.strip(),
+            "stderr": manifest_sync.stderr.strip() or "deployment manifest transfer failed",
+        }
+
+    venv_python = f"{node.project_dir}/.venv/bin/python"
+    executable = run_on_node(node, ["test", "-x", venv_python], timeout=30)
+    python_bin = venv_python if executable.returncode == 0 else "python3"
+    finalized = run_on_node(
+        node,
+        [
+            python_bin,
+            "-m",
+            "cluster.infrastructure.deployment",
+            "finalize",
+            "--project-root",
+            node.project_dir,
+            "--manifest",
+            remote_manifest,
+        ],
+        timeout=180,
+    )
+    deployment: Dict[str, Any] = {}
+    for line in reversed(finalized.stdout.splitlines()):
+        try:
+            candidate = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(candidate, dict):
+            deployment = candidate
+            break
+    if finalized.returncode != 0 or deployment.get("source_tree_verified") is not True:
+        return {
+            "name": node.name,
+            "ok": False,
+            "stdout": proc.stdout.strip(),
+            "stderr": finalized.stderr.strip() or deployment.get("error") or "Worker source verification failed",
+            "deployment": deployment,
+        }
     return {
         "name": node.name,
-        "ok": proc.returncode == 0,
+        "ok": True,
         "stdout": proc.stdout.strip(),
-        "stderr": proc.stderr.strip(),
+        "stderr": finalized.stderr.strip(),
+        "deployment": deployment,
     }
 
 

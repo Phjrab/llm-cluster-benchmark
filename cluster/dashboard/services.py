@@ -901,6 +901,7 @@ def probe_node(node: Node) -> Dict[str, Any]:
         result["node_info"] = reported
         result["profile"] = health.get("profile") or {}
         result["capabilities"] = health.get("capabilities") or {}
+        result["deployment"] = health.get("deployment") or {}
         result["telemetry_version"] = health.get("telemetry_version")
         platform_kind = str(result["profile"].get("platform_kind") or node.platform)
         if platform_kind == "raspberry-pi" or health.get("power_integrity") is not None:
