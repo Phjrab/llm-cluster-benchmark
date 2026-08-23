@@ -26,6 +26,7 @@ benchmark run.
 |---|---|
 | Feature branch | `codex/roadmap-phase-02` |
 | GGUF identity implementation commit | `2a46dc8edcb43e2995209b0b77382325105ce0e8` |
+| Formal approval and lock commit | `1fe16063e3cec8060a82fa5fab90d163ea49ae2f` |
 | Live Worker source tree | `483a33e0d5f3f1348667f8d2663387d63cd6bc27e7691e9af66cc1127845fa78` |
 | Live source files | 157 |
 | Native RPC pin | `f49e9178767d557a522618b16ce8694f9ddac628` |
