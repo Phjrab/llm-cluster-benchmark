@@ -1,6 +1,6 @@
 # Formal Campaign Model Provenance
 
-기준 lock은 `formal-study-v1` version 2, SHA-256 `a4ea4400841b849b87cfe7813ebd963e4d76532783a08167768fe08636469f20`다. 이 표의 checksum은 pinned Hugging Face revision의 LFS metadata와 6대 Worker의 실제 파일에서 교차 확인했다. 실제 파일·GGUF metadata·플랫폼별 생성 스모크를 모두 통과한 항목만 `approved`다.
+기준 lock은 `formal-study-v1` version 3, SHA-256 `3d5c7f2429c42d02db60ab635a263db6edd86fb4527078eb8d5ff80fc30744a5`다. 이 표의 checksum은 pinned Hugging Face revision의 LFS metadata와 6대 Worker의 실제 파일에서 교차 확인했다. 실제 파일·GGUF metadata·플랫폼별 생성 스모크를 모두 통과한 항목만 `approved`다.
 
 | model key | repository @ commit | exact GGUF | bytes | SHA-256 | quant | license | status |
 |---|---|---:|---:|---|---|---|---|

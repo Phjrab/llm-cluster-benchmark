@@ -84,7 +84,7 @@ class ShippedResearchLockTests(unittest.TestCase):
         fingerprint = lock_set_sha256(locks)
         self.assertEqual(
             fingerprint,
-            "a4ea4400841b849b87cfe7813ebd963e4d76532783a08167768fe08636469f20",
+            "3d5c7f2429c42d02db60ab635a263db6edd86fb4527078eb8d5ff80fc30744a5",
         )
         self.assertEqual({item["lock_sha256"] for item in locks.values()}, {fingerprint})
 
@@ -213,6 +213,46 @@ class RuntimeAndEligibilityTests(unittest.TestCase):
         lock["workers"][0]["runtime"]["backend_verified"] = False
         with self.assertRaisesRegex(LockValidationError, "backend is not verified"):
             validate_runtime_lock(lock)
+
+    def test_formal_cohorts_cover_each_worker_exactly_once(self) -> None:
+        lock = read_lock("runtime_lock.json")
+        lock["formal_cohorts"][0]["workers"].append("jetson-worker-02")
+        lock["formal_cohorts"][0]["max_homogeneous_nodes"] += 1
+        with self.assertRaisesRegex(LockValidationError, "multiple formal cohorts"):
+            validate_runtime_lock(lock)
+        lock = read_lock("runtime_lock.json")
+        lock["formal_cohorts"][-1]["workers"].remove("pi-worker-04")
+        lock["formal_cohorts"][-1]["max_homogeneous_nodes"] -= 1
+        with self.assertRaisesRegex(LockValidationError, "coverage is incomplete"):
+            validate_runtime_lock(lock)
+
+    def test_same_power_but_different_runtime_cohorts_are_not_pooled(self) -> None:
+        result = assess_formal_eligibility(
+            experiment_config=formal_config(),
+            experiment_conditions=read_lock("experiment_conditions.json"),
+            model_lock=approved_model_lock(),
+            prompt_lock=read_lock("prompt_set.json"),
+            runtime_lock=verified_runtime_lock(),
+            model_key="qwen2.5-1.5b-instruct-q4-k-m-official",
+            prompt_ids=["general-ko-001"],
+            selected_workers=["jetson-worker-01", "jetson-worker-02"],
+        )
+        self.assertFalse(result["eligible"])
+        self.assertIn("RUNTIME_COHORT_MISMATCH", {item["code"] for item in result["blocking_issues"]})
+
+    def test_pi_cohort_is_identified_for_formal_runs(self) -> None:
+        result = assess_formal_eligibility(
+            experiment_config=formal_config(),
+            experiment_conditions=read_lock("experiment_conditions.json"),
+            model_lock=approved_model_lock(),
+            prompt_lock=read_lock("prompt_set.json"),
+            runtime_lock=verified_runtime_lock(),
+            model_key="qwen2.5-1.5b-instruct-q4-k-m-official",
+            prompt_ids=["general-ko-001"],
+            selected_workers=["pi-worker-02", "pi-worker-03", "pi-worker-04"],
+        )
+        self.assertTrue(result["eligible"])
+        self.assertEqual(result["runtime_cohort_id"], "pi5-ubuntu2404-kernel1061-openblas")
 
     def test_jetson_power_mismatch_blocks_formal_eligibility(self) -> None:
         result = assess_formal_eligibility(
