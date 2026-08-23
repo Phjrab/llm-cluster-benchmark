@@ -39,6 +39,7 @@ settings_router = APIRouter(dependencies=[Depends(verify_token)])
 events_router = APIRouter(dependencies=[Depends(verify_token)])
 experiments_router = APIRouter(dependencies=[Depends(verify_token)])
 results_router = APIRouter(dependencies=[Depends(verify_token)])
+research_router = APIRouter(dependencies=[Depends(verify_token)])
 
 
 def _error_response(error: ValueError) -> JSONResponse:
@@ -246,6 +247,36 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
     ) -> Dict[str, Any]:
         return dashboard.experiment_groups()
 
+    @research_router.get("/api/campaigns")
+    async def list_campaigns(
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        return dashboard.campaigns()
+
+    @research_router.get("/api/campaigns/{campaign_id}")
+    async def get_campaign(
+        campaign_id: str, dashboard: DashboardFacade = Depends(get_dashboard_services)
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.campaign(campaign_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @research_router.get("/api/research/compare")
+    async def compare_research_runs(
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        return dashboard.compare_runs()
+
+    @research_router.get("/api/research/readiness")
+    async def get_research_readiness(
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.research_readiness()
+        except ValueError as exc:
+            return _error_response(exc)
+
     @experiments_router.post("/api/experiments/cancel")
     async def cancel_experiment(
         dashboard: DashboardFacade = Depends(get_dashboard_services),
@@ -301,6 +332,7 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
     app.include_router(events_router)
     app.include_router(experiments_router)
     app.include_router(results_router)
+    app.include_router(research_router)
 
 
 def dashboard_event_stream(dashboard: DashboardFacade, supplied_token: str):

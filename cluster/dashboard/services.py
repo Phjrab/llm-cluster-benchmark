@@ -31,6 +31,12 @@ from typing import Any, Dict, Generator, List, Optional, Sequence
 import psutil
 
 from cluster.dashboard.schemas import ActionPayload, ExperimentPayload, NodePayload
+from cluster.dashboard.research_views import (
+    campaign_detail as build_campaign_detail,
+    campaign_overview,
+    compare_payload,
+    research_readiness as build_research_readiness,
+)
 
 from cluster.application.jobs import JobService, NONTERMINAL_JOB_STATES
 from cluster.application.model_service import (
@@ -81,6 +87,7 @@ from cluster.infrastructure.storage import (
     FilesystemSuiteRepository,
     StorageCorruptionError,
 )
+from cluster.research.campaign import CampaignRepository, CampaignStateError
 
 
 RUNTIME_PATHS = resolve_runtime_paths()
@@ -100,11 +107,47 @@ TOKEN_PATH = RUNTIME_PATHS.dashboard_token_path
 SETTINGS_PATH = RUNTIME_PATHS.settings_path
 ENVIRONMENT_DIR = RUNTIME_PATHS.environment_dir
 JOBS_DIR = RUNTIME_PATHS.jobs_dir
+CAMPAIGNS_DIR = RUNTIME_PATHS.campaigns_dir
+RESEARCH_CONFIG_DIR = PROJECT_ROOT / "config" / "research"
 ENVIRONMENT_MARKER = "CLUSTER_ENVIRONMENT_JSON="
 MODEL_PROGRESS_MARKER = "CLUSTER_MODEL_PROGRESS_JSON="
 PRIVATE_RUN_ARTIFACTS = frozenset(
     {"config.json", "events.jsonl", "requests.csv", "responses.jsonl", "summary.json"}
 )
+
+
+def _read_research_document(name: str) -> Dict[str, Any]:
+    """Read one checked-in research document without accepting path input."""
+    allowed = {
+        "model_lock.json",
+        "runtime_lock.json",
+        "formal_experiment_matrix.json",
+    }
+    if name not in allowed:
+        raise ValueError("Unknown research document")
+    try:
+        value = json.loads((RESEARCH_CONFIG_DIR / name).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise DashboardServiceError(503, f"Research document is unavailable: {name}") from exc
+    if not isinstance(value, dict):
+        raise DashboardServiceError(503, f"Research document is invalid: {name}")
+    return value
+
+
+def _controller_git_commit() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT,
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    value = result.stdout.strip()
+    return value if result.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", value) else "unknown"
 
 
 def utc_now() -> str:
@@ -2313,6 +2356,41 @@ class DashboardFacade:
             "active": experiments.active(), "jobs": experiments.jobs(), "runs": read_run_summaries(),
             "suites": read_suite_summaries(), "experiment_groups": read_experiment_groups(),
         }
+
+    def campaigns(self) -> Dict[str, Any]:
+        """List durable campaign progress without mutating campaign lifecycle."""
+        repository = CampaignRepository(CAMPAIGNS_DIR)
+        manifests = repository.list()
+        return {
+            "schema_version": 1,
+            "campaigns": [campaign_overview(manifest) for manifest in manifests],
+        }
+
+    def campaign(self, campaign_id: str) -> Dict[str, Any]:
+        repository = CampaignRepository(CAMPAIGNS_DIR)
+        try:
+            manifest = repository.read(campaign_id)
+            events = repository.read_events(campaign_id)
+        except (CampaignStateError, ValueError) as exc:
+            raise DashboardServiceError(404, "Campaign not found") from exc
+        return build_campaign_detail(manifest, events)
+
+    def compare_runs(self) -> Dict[str, Any]:
+        """Return one additive cross-run dataset with legacy fallbacks."""
+        # Cross-run research comparison intentionally reaches beyond the
+        # existing 100-row result page while retaining a bounded read.
+        return compare_payload(read_run_summaries(limit=10_000))
+
+    def research_readiness(self) -> Dict[str, Any]:
+        """Combine frozen research locks with current non-invasive status."""
+        return build_research_readiness(
+            model_lock=_read_research_document("model_lock.json"),
+            runtime_lock=_read_research_document("runtime_lock.json"),
+            matrix=_read_research_document("formal_experiment_matrix.json"),
+            live_status=status_monitor.snapshot(),
+            environment=read_environment_reports(),
+            controller_commit=_controller_git_commit(),
+        )
 
     def experiment_groups(self) -> Dict[str, Any]:
         return {"experiment_groups": read_experiment_groups()}
