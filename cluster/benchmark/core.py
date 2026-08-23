@@ -19,6 +19,11 @@ from cluster.domain.power import RaspberryPiPowerIntegrity, unavailable_power_in
 
 from .executor import ScenarioExecutor
 from .metrics import add_cumulative_scaling, aggregate_records
+from .instrumentation import (
+    RunInstrumentation,
+    rpc_lifecycle_measurement,
+    summarize_measurements,
+)
 from .persistence import ProgressCallback, RunPersistence
 from .planner import build_strategy_scenarios, validate_strategy
 from .power import RunPowerIntegrityTracker
@@ -31,6 +36,7 @@ ValidatePlatform = Callable[[Sequence[Any], ExperimentConfig], None]
 ValidateUniform = Callable[[Sequence[Dict[str, Any]], ExperimentConfig], List[str]]
 PowerSnapshot = Callable[[Any], Optional[RaspberryPiPowerIntegrity]]
 DescribeNode = Callable[[Any], Dict[str, Any]]
+TelemetrySnapshot = Callable[[Any], Dict[str, Any]]
 
 
 def benchmark_parameters(config: ExperimentConfig) -> Dict[str, Any]:
@@ -64,6 +70,7 @@ class BenchmarkRunner:
         rpc_backend: RpcBackend,
         sample_power: Optional[PowerSnapshot] = None,
         describe_node: Optional[DescribeNode] = None,
+        sample_telemetry: Optional[TelemetrySnapshot] = None,
     ) -> None:
         self.load_model = load_model
         self.validate_uniform = validate_uniform
@@ -72,6 +79,7 @@ class BenchmarkRunner:
         self.rpc_backend = rpc_backend
         self.sample_power = sample_power
         self.describe_node = describe_node
+        self.sample_telemetry = sample_telemetry
 
     def _capture_participants(self, nodes: Sequence[Any]) -> List[Dict[str, Any]]:
         """Capture immutable, non-secret node metadata for result provenance."""
@@ -162,6 +170,11 @@ class BenchmarkRunner:
 
         run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
         persistence = RunPersistence(results_root, run_id, config, progress)
+        instrumentation = RunInstrumentation(
+            run_id,
+            persistence.append_measurement,
+            self.sample_telemetry,
+        )
         started_event = persistence.emit(
             "run_started",
             config=asdict(config),
@@ -175,6 +188,7 @@ class BenchmarkRunner:
         rpc_session: Optional[RpcSession] = None
         topology: Dict[str, Any] = {}
         power = RunPowerIntegrityTracker(persistence.emit)
+        records: List[Dict[str, Any]] = []
         postflight_recorded = False
         try:
             self._observe_power(power, nodes, "preflight")
@@ -259,6 +273,10 @@ class BenchmarkRunner:
 
             self._observe_power(power, nodes, "pre_measurement")
 
+            # Idle observation is outside the request wall timer and is never
+            # subtracted from measured energy. It is descriptive context only.
+            instrumentation.capture_idle(nodes)
+
             persistence.emit(
                 "phase", phase="measurement",
                 message="선택한 실험 전략으로 부하를 측정하는 중",
@@ -267,7 +285,6 @@ class BenchmarkRunner:
             # measurement observation without changing request scheduling or
             # including health polling latency in benchmark wall time.
             self._observe_power(power, nodes, "measurement")
-            records: List[Dict[str, Any]] = []
             scenario_summaries: List[Dict[str, Any]] = []
             wall_started = time.perf_counter()
             nodes_by_name = {node.name: node for node in nodes}
@@ -281,17 +298,22 @@ class BenchmarkRunner:
                     nodes=scenario.node_names,
                     physical_requests=len(scenario.tasks),
                 )
-                scenario_records, scenario_wall_s = self.executor.execute(
-                    scenario,
-                    nodes_by_name,
-                    config,
-                    persistence.emit,
-                    cancel_event,
-                    len(records),
-                    total_work_units,
-                    rpc_session.coordinator if rpc_session else None,
-                    rpc_session.url if rpc_session else "",
-                )
+                scenario_nodes = [nodes_by_name[name] for name in scenario.node_names]
+                instrumentation.start_scenario(scenario.scenario_id, scenario_nodes)
+                try:
+                    scenario_records, scenario_wall_s = self.executor.execute(
+                        scenario,
+                        nodes_by_name,
+                        config,
+                        persistence.emit,
+                        cancel_event,
+                        len(records),
+                        total_work_units,
+                        rpc_session.coordinator if rpc_session else None,
+                        rpc_session.url if rpc_session else "",
+                    )
+                finally:
+                    instrumentation.stop_scenario()
                 records.extend(scenario_records)
                 scenario_summary = aggregate_records(scenario_records, scenario_wall_s)
                 scenario_summary.update({
@@ -317,6 +339,9 @@ class BenchmarkRunner:
                 )
                 rpc_session.close()
                 rpc_session = None
+                persistence.append_measurement(
+                    rpc_lifecycle_measurement(run_id, topology)
+                )
 
             self._observe_power(power, nodes, "postflight")
             postflight_recorded = True
@@ -346,6 +371,11 @@ class BenchmarkRunner:
                 "scenario_summaries": scenario_summaries,
                 "topology": topology,
                 "result_dir": str(persistence.run_dir),
+                "measurement_instrumentation": summarize_measurements(
+                    instrumentation.samples,
+                    records,
+                    rpc_topology=topology,
+                ),
             })
             if power.has_observations:
                 power_summary = power.summarize()
@@ -363,6 +393,22 @@ class BenchmarkRunner:
             persistence.emit("run_finished", summary=summary)
             return summary
         except Exception as exc:
+            if rpc_session is not None:
+                # Cleanup is idempotent. Retry once before persisting the final
+                # failure so cleanup duration/status cannot arrive after the
+                # summary has already been frozen.
+                try:
+                    rpc_session.close()
+                except Exception as cleanup_exc:
+                    warnings.append(f"RPC cleanup failed: {cleanup_exc}")
+                    try:
+                        rpc_session.close()
+                    except Exception as retry_exc:
+                        warnings.append(f"RPC cleanup retry failed: {retry_exc}")
+                rpc_session = None
+                persistence.append_measurement(
+                    rpc_lifecycle_measurement(run_id, topology)
+                )
             if not postflight_recorded:
                 self._observe_power(power, nodes, "postflight")
                 postflight_recorded = True
@@ -399,6 +445,11 @@ class BenchmarkRunner:
                 "failure": structured_failure.to_dict(),
                 "failures": [structured_failure.to_dict()],
                 "result_dir": str(persistence.run_dir),
+                "measurement_instrumentation": summarize_measurements(
+                    instrumentation.samples,
+                    records,
+                    rpc_topology=topology,
+                ),
             }
             if power.has_observations:
                 power_summary = power.summarize()
@@ -437,6 +488,7 @@ class BenchmarkRunner:
             )
             raise
         finally:
+            instrumentation.stop_scenario()
             if rpc_session is not None:
                 persistence.emit(
                     "phase", phase="rpc_cleanup",

@@ -353,6 +353,7 @@ class PublicCompatibilityAndPackagingTests(unittest.TestCase):
                 ("POST", "/api/experiments/cancel"),
                 ("GET", "/api/runs/{run_id}"),
                 ("GET", "/api/runs/{run_id}/responses"),
+                ("GET", "/api/runs/{run_id}/measurements"),
                 ("DELETE", "/api/runs/{run_id}"),
             }.issubset(dashboard_routes)
         )

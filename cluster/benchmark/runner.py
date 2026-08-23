@@ -144,6 +144,11 @@ def _sample_power_integrity(node: Node) -> Optional[RaspberryPiPowerIntegrity]:
     )
 
 
+def _sample_telemetry(node: Node) -> Dict[str, Any]:
+    """Fetch one bounded Worker snapshot for the additive measurement journal."""
+    return request_json(f"{node.api_url}/cluster/health", timeout=4.0)
+
+
 def _validate_uniform(loaded: Sequence[Dict[str, Any]], config: ExperimentConfig) -> List[str]:
     warnings: List[str] = []
     for key in ("model_id", "n_ctx", "n_gpu_layers", "n_batch"):
@@ -266,6 +271,7 @@ def run_experiment(
         _rpc_backend(),
         _sample_power_integrity,
         _describe_node_environment,
+        _sample_telemetry,
     )
     return runner.run(config, nodes, results_root, progress, cancel_event)
 

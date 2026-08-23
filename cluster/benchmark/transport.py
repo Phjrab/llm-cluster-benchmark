@@ -19,6 +19,22 @@ from cluster.infrastructure.sse import parse_sse_events
 from .models import RequestTask
 
 
+class _CountingIterator:
+    """Count streamed HTTP body bytes without changing SSE parsing."""
+
+    def __init__(self, source: Any) -> None:
+        self._iterator = iter(source)
+        self.bytes_read = 0
+
+    def __iter__(self) -> "_CountingIterator":
+        return self
+
+    def __next__(self) -> bytes:
+        value = next(self._iterator)
+        self.bytes_read += len(value)
+        return value
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -34,14 +50,17 @@ def stream_worker_request(
         "top_p": config.top_p,
         "seed": config.seed,
     }
+    request_body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         f"{node.api_url}/cluster/chat/stream",
-        data=json.dumps(payload).encode("utf-8"),
+        data=request_body,
         headers={"Content-Type": "application/json", "Accept": "text/event-stream", **worker_auth_headers()},
         method="POST",
     )
     started_wall = utc_now()
     started = time.perf_counter()
+    connection_setup_s: Optional[float] = None
+    bytes_received = 0
     first_token_at: Optional[float] = None
     output_parts: List[str] = []
     server_metrics: Dict[str, Any] = {}
@@ -49,7 +68,9 @@ def stream_worker_request(
     ok = False
     try:
         with urllib.request.urlopen(request, timeout=config.request_timeout_s) as response:
-            for event in parse_sse_events(response):
+            connection_setup_s = time.perf_counter() - started
+            counted = _CountingIterator(response)
+            for event in parse_sse_events(counted):
                 event_type = event.get("type")
                 if event_type == "token":
                     if first_token_at is None:
@@ -60,6 +81,7 @@ def stream_worker_request(
                     ok = True
                 elif event_type == "error":
                     error = str(event.get("message", "worker error"))
+            bytes_received = counted.bytes_read
     except (OSError, ValueError, urllib.error.URLError) as exc:
         error = str(exc)
     finished = time.perf_counter()
@@ -68,6 +90,11 @@ def stream_worker_request(
     generated_tokens = int(server_metrics.get("generated_tokens") or 0)
     generation_s = float(server_metrics.get("generation_s") or 0.0)
     output = "".join(output_parts)
+    input_tokens = server_metrics.get("input_tokens")
+    total_tokens = server_metrics.get("total_tokens")
+    bandwidth = (
+        (len(request_body) + bytes_received) / e2e_s if e2e_s > 0 else None
+    )
     failure = failure_from_message(error, stage="inference", node=node.name, model_id=config.model_id) if error else None
     return {
         "request_id": task.request_id,
@@ -92,6 +119,24 @@ def stream_worker_request(
         "error_code": failure.code.value if failure else "",
         "failure": failure.to_dict() if failure else None,
         "warmup": warmup,
+        "monotonic_started_s": round(started, 9),
+        "monotonic_finished_s": round(finished, 9),
+        "input_tokens": input_tokens,
+        "input_token_source": server_metrics.get("input_token_source"),
+        "input_tokens_exact": server_metrics.get("input_tokens_exact") is True,
+        "prefill_time_s": server_metrics.get("prefill_time_s"),
+        "prefill_time_source": server_metrics.get("prefill_time_source"),
+        "prefill_tokens_per_s": server_metrics.get("prefill_tokens_per_s"),
+        "decode_time_s": server_metrics.get("decode_time_s"),
+        "decode_time_source": server_metrics.get("decode_time_source"),
+        "decode_tokens_per_s": server_metrics.get("decode_tokens_per_s"),
+        "total_tokens": total_tokens,
+        "connection_setup_s": round(connection_setup_s, 9) if connection_setup_s is not None else None,
+        "rtt_s": None,
+        "bytes_sent": len(request_body),
+        "bytes_received": bytes_received,
+        "effective_bandwidth_bytes_s": round(bandwidth, 6) if bandwidth is not None else None,
+        "coordinator_wait_s": None,
     }
 
 
@@ -107,23 +152,29 @@ def stream_rpc_request(
         "stream": True,
         "stream_options": {"include_usage": True},
     }
+    request_body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         f"{coordinator_url}/v1/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
+        data=request_body,
         headers={"Content-Type": "application/json", "Accept": "text/event-stream"},
         method="POST",
     )
     started_wall = utc_now()
     started = time.perf_counter()
+    connection_setup_s: Optional[float] = None
+    bytes_received = 0
     first_token_at: Optional[float] = None
     output_parts: List[str] = []
     generated_tokens = 0
+    input_tokens: Optional[int] = None
     error = ""
     error_code = ""
     ok = False
     try:
         with urllib.request.urlopen(request, timeout=config.request_timeout_s) as response:
+            connection_setup_s = time.perf_counter() - started
             for raw_line in response:
+                bytes_received += len(raw_line)
                 line = raw_line.decode("utf-8", errors="replace").strip()
                 if not line.startswith("data: "):
                     continue
@@ -133,6 +184,8 @@ def stream_rpc_request(
                     continue
                 event = json.loads(raw_event)
                 usage = event.get("usage") or {}
+                if usage.get("prompt_tokens") is not None:
+                    input_tokens = int(usage["prompt_tokens"])
                 if usage.get("completion_tokens") is not None:
                     generated_tokens = int(usage["completion_tokens"])
                 choices = event.get("choices") or []
@@ -153,6 +206,13 @@ def stream_rpc_request(
     if ok and generated_tokens <= 0:
         generated_tokens = len(output_parts)
     generation_s = finished - (first_token_at or started)
+    ttft_s = (first_token_at - started) if first_token_at else None
+    total_tokens = input_tokens + generated_tokens if input_tokens is not None else None
+    decode_tokens = max(generated_tokens - (1 if first_token_at else 0), 0)
+    e2e_s = finished - started
+    bandwidth = (
+        (len(request_body) + bytes_received) / e2e_s if e2e_s > 0 else None
+    )
     failure = failure_from_message(error, stage="rpc_inference", node=coordinator.name, model_id=config.model_id, fallback=ErrorCode.RPC_CONNECTION_FAILED) if error else None
     return {
         "request_id": task.request_id,
@@ -164,8 +224,8 @@ def stream_rpc_request(
         "node_host": coordinator.host,
         "started_at": started_wall,
         "ok": ok,
-        "ttft_s": round(first_token_at - started, 6) if first_token_at else None,
-        "e2e_s": round(finished - started, 6),
+        "ttft_s": round(ttft_s, 6) if ttft_s is not None else None,
+        "e2e_s": round(e2e_s, 6),
         "server_ttft_s": None,
         "server_generation_s": round(generation_s, 6),
         "generated_tokens": generated_tokens,
@@ -178,6 +238,29 @@ def stream_rpc_request(
         "failure": failure.to_dict() if failure else None,
         "warmup": False,
         "token_count_source": "server_usage" if generated_tokens and generated_tokens != len(output_parts) else "stream_chunk_estimate",
+        "monotonic_started_s": round(started, 9),
+        "monotonic_finished_s": round(finished, 9),
+        "input_tokens": input_tokens,
+        "input_token_source": "llama_server_usage" if input_tokens is not None else "server_not_reported",
+        "input_tokens_exact": input_tokens is not None,
+        "prefill_time_s": round(ttft_s, 6) if ttft_s is not None else None,
+        "prefill_time_source": "controller_client_ttft_proxy",
+        "prefill_tokens_per_s": (
+            round(input_tokens / ttft_s, 6)
+            if input_tokens is not None and ttft_s and ttft_s > 0 else None
+        ),
+        "decode_time_s": round(generation_s, 6),
+        "decode_time_source": "controller_stream_after_first_token",
+        "decode_tokens_per_s": (
+            round(decode_tokens / generation_s, 6) if generation_s > 0 else None
+        ),
+        "total_tokens": total_tokens,
+        "connection_setup_s": round(connection_setup_s, 9) if connection_setup_s is not None else None,
+        "rtt_s": None,
+        "bytes_sent": len(request_body),
+        "bytes_received": bytes_received,
+        "effective_bandwidth_bytes_s": round(bandwidth, 6) if bandwidth is not None else None,
+        "coordinator_wait_s": None,
     }
 
 

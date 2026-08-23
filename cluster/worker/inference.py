@@ -59,6 +59,10 @@ class InferenceBackend(Protocol):
 
     def tokenize(self, text: str) -> int: ...
 
+    def count_input_tokens(
+        self, message: str, history: Sequence[Dict[str, str]]
+    ) -> Dict[str, object]: ...
+
     def set_seed(self, seed: int) -> None: ...
 
     def readiness(self) -> Dict[str, object]: ...
@@ -523,6 +527,25 @@ class LlamaCppInferenceBackend:
             return len(tokenizer(text.encode("utf-8"), add_bos=False))
         except Exception:
             return 0
+
+    def count_input_tokens(
+        self, message: str, history: Sequence[Dict[str, str]]
+    ) -> Dict[str, object]:
+        """Count the deterministic fallback prompt and disclose its precision.
+
+        llama-cpp-python does not expose the exact applied chat-template token
+        sequence consistently across the pinned backends.  The formal artifact
+        therefore records a tokenizer-backed proxy instead of claiming an
+        exact template count.
+        """
+        messages = self._sanitize_history(history)
+        messages.append({"role": "user", "content": message.strip()})
+        count = self.tokenize(self._fallback_prompt(messages))
+        return {
+            "input_tokens": count if count > 0 else None,
+            "source": "fallback_prompt_tokenizer",
+            "exact": False,
+        }
 
     @staticmethod
     def _sanitize_history(history: Sequence[Dict[str, str]]) -> List[Dict[str, str]]:

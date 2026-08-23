@@ -12,6 +12,7 @@ from cluster.domain.events import EventChannel
 from cluster.infrastructure.storage import FilesystemRunRepository
 
 from .transport import utc_now
+from .instrumentation import request_measurement
 
 ProgressCallback = Callable[[Dict[str, Any]], None]
 
@@ -41,6 +42,10 @@ class RunPersistence:
             self.repository.append_response(
                 self.run_id,
                 self._response_record(payload["result"]),
+            )
+            self.repository.append_measurement(
+                self.run_id,
+                request_measurement(self.run_id, payload["result"]),
             )
         event = {
             "type": event_type,
@@ -93,6 +98,9 @@ class RunPersistence:
     def recover_records(self) -> list[Dict[str, Any]]:
         """Expose already-durable request results for crash recovery tooling."""
         return self.repository.read_responses(self.run_id)
+
+    def append_measurement(self, measurement: Mapping[str, Any]) -> None:
+        self.repository.append_measurement(self.run_id, measurement)
 
     def complete(
         self, records: Sequence[Mapping[str, Any]], summary: Mapping[str, Any]

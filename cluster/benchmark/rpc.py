@@ -45,8 +45,29 @@ class RpcSession:
     def close(self) -> None:
         if self._closed:
             return
-        errors = self._closer()
+        cleanup_started = time.perf_counter()
+        try:
+            errors = self._closer()
+        except Exception as exc:
+            errors = [f"{type(exc).__name__}: {exc}"]
+        finally:
+            self.topology["cleanup_s"] = round(time.perf_counter() - cleanup_started, 6)
+        duration = self.topology["cleanup_s"]
+        attempts = self.topology.setdefault("cleanup_attempts", [])
+        attempts.append({
+            "attempt": len(attempts) + 1,
+            "duration_s": duration,
+            "ok": not errors,
+            "errors": list(errors),
+        })
+        self.topology["cleanup_s"] = round(
+            sum(float(item.get("duration_s") or 0.0) for item in attempts), 6
+        )
+        self.topology["cleanup_status"] = (
+            "failed" if errors else ("completed_after_retry" if len(attempts) > 1 else "completed")
+        )
         if errors:
+            self.topology["cleanup_errors"] = list(errors)
             raise RpcBackendError(
                 "RPC cleanup failed: " + "; ".join(errors),
                 code=ErrorCode.RPC_CLEANUP_FAILED,
@@ -149,6 +170,7 @@ class WorkerRpcBackend:
         endpoints: List[str] = []
         started_devices: List[Any] = []
         rpc_device_nodes: List[Any] = []
+        device_start_s: Dict[str, float] = {}
         try:
             for device in remote_devices:
                 emit("rpc_started", node=device.name, role="device", port=RPC_SERVER_PORT)
@@ -157,9 +179,11 @@ class WorkerRpcBackend:
                 # so cleanup must issue an idempotent stop even without a
                 # successful response.
                 started_devices.append(device)
+                device_started = time.perf_counter()
                 started = self.runtime_command(
                     device, "start-worker", str(RPC_SERVER_PORT), timeout=60
                 )
+                device_start_s[device.name] = round(time.perf_counter() - device_started, 6)
                 if not started["ok"]:
                     raise RpcBackendError(
                         f"RPC device failed on {device.name}: {started['stderr'] or started['stdout']}",
@@ -176,8 +200,12 @@ class WorkerRpcBackend:
                     port=RPC_SERVER_PORT,
                 )
                 started_devices.append(coordinator)
+                device_started = time.perf_counter()
                 started = self.runtime_command(
                     coordinator, "start-worker", str(RPC_SERVER_PORT), "127.0.0.1", timeout=60
+                )
+                device_start_s[coordinator.name] = round(
+                    time.perf_counter() - device_started, 6
                 )
                 if not started["ok"]:
                     raise RpcBackendError(
@@ -274,6 +302,10 @@ class WorkerRpcBackend:
                 "resolved_device_order": [node.name for node in resolved_device_nodes],
                 "requested_gpu_layers": "all",
                 "model_load_s": round(load_s, 6),
+                "model_load_distribution_s": {
+                    "rpc_device_start_s": device_start_s,
+                    "coordinator_model_load_s": round(load_s, 6),
+                },
                 "transport": "TCP LAN",
                 "rpc_security": "unauthenticated_ephemeral_private_lan",
                 "coordinator_slots": 1,

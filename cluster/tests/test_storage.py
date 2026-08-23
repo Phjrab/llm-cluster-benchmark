@@ -91,6 +91,10 @@ class FilesystemStorageTests(unittest.TestCase):
             repository = FilesystemRunRepository(Path(directory) / "results")
             run_dir = repository.create("20260820_123456_ab12", {"node_names": ["jetson-01"]})
             repository.append_event("20260820_123456_ab12", {"type": "run_started"})
+            repository.append_measurement(
+                "20260820_123456_ab12",
+                {"schema_version": 1, "record_type": "telemetry_sample"},
+            )
             repository.write_requests(
                 "20260820_123456_ab12",
                 [{"request_id": 1, "node": "jetson-01", "ok": True}],
@@ -100,6 +104,7 @@ class FilesystemStorageTests(unittest.TestCase):
             self.assertEqual((run_dir / "events.jsonl").read_text().count("run_started"), 1)
             self.assertIn("request_id", (run_dir / "requests.csv").read_text())
             self.assertEqual(repository.read_summary("20260820_123456_ab12")["run_id"], "20260820_123456_ab12")
+            self.assertEqual(repository.read_measurements("20260820_123456_ab12")[0]["schema_version"], 1)
             self.assertEqual(repository.list_summaries()[0]["run_id"], "20260820_123456_ab12")
 
     def test_runtime_layout_is_rooted_once_and_overrides_remain_compatible(self) -> None:

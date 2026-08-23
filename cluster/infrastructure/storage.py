@@ -73,6 +73,10 @@ class RunRepository(Protocol):
 
     def read_responses(self, run_id: str) -> List[JsonObject]: ...
 
+    def append_measurement(self, run_id: str, measurement: Mapping[str, Any]) -> None: ...
+
+    def read_measurements(self, run_id: str) -> List[JsonObject]: ...
+
     def write_summary(self, run_id: str, summary: Mapping[str, Any]) -> None: ...
 
     def read_summary(self, run_id: str) -> JsonObject: ...
@@ -444,6 +448,34 @@ class FilesystemRunRepository:
             if isinstance(value, dict):
                 recovered.append(value)
         return recovered
+
+    def append_measurement(self, run_id: str, measurement: Mapping[str, Any]) -> None:
+        """Append one versioned instrumentation record to a private journal."""
+        path = self._run_dir(run_id) / "measurements.jsonl"
+        with self._event_lock:
+            descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(dict(measurement), ensure_ascii=False) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+
+    def read_measurements(self, run_id: str) -> List[JsonObject]:
+        """Read valid measurement rows while tolerating a truncated final row."""
+        path = self._run_dir(run_id) / "measurements.jsonl"
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            return []
+        measurements: List[JsonObject] = []
+        for line in lines:
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                measurements.append(value)
+        return measurements
 
     def write_requests(self, run_id: str, records: Sequence[Mapping[str, Any]]) -> None:
         if not records:

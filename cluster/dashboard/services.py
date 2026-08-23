@@ -2348,6 +2348,23 @@ class DashboardFacade:
             raise DashboardServiceError(500, "Run summary is corrupted") from exc
         return {"run_id": run_id, "responses": _run_repository().read_responses(run_id)}
 
+    def measurements(self, run_id: str) -> Dict[str, Any]:
+        """Expose additive telemetry/request measurements for analysis readers."""
+        if not run_id.replace("_", "").isalnum():
+            raise DashboardServiceError(400, "Invalid run id")
+        repository = _run_repository()
+        try:
+            repository.read_summary(run_id)
+        except FileNotFoundError as exc:
+            raise DashboardServiceError(404, "Run not found") from exc
+        except StorageCorruptionError as exc:
+            raise DashboardServiceError(500, "Run summary is corrupted") from exc
+        return {
+            "run_id": run_id,
+            "schema_version": 1,
+            "measurements": repository.read_measurements(run_id),
+        }
+
     def delete_run(self, run_id: str) -> Dict[str, Any]:
         """Soft-delete one terminal run and reconcile its optional suite artifact."""
         if not run_id.replace("_", "").isalnum():

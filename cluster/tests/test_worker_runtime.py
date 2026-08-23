@@ -82,6 +82,9 @@ class FakeInferenceBackend:
     def tokenize(self, text: str) -> int:
         return 2 if text else 0
 
+    def count_input_tokens(self, message: str, history: object) -> Dict[str, object]:
+        return {"input_tokens": 3, "source": "fake_exact", "exact": True}
+
     def set_seed(self, seed: int) -> None:
         self.seed = seed
 
@@ -150,6 +153,9 @@ class WorkerRouteContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('"type": "token"', response.text)
         self.assertIn('"generated_tokens": 2', response.text)
+        self.assertIn('"input_tokens": 3', response.text)
+        self.assertIn('"total_tokens": 5', response.text)
+        self.assertIn('"decode_tokens_per_s"', response.text)
         self.assertEqual(backend.seed, 123)
         unloaded = client.post("/api/unload-model")
         self.assertEqual(unloaded.status_code, 200)

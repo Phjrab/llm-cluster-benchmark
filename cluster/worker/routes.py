@@ -99,6 +99,19 @@ def mount_worker_routes(
             pieces: list[str] = []
             chunks = 0
             try:
+                input_counter = getattr(backend, "count_input_tokens", None)
+                try:
+                    input_measurement = (
+                        input_counter(message, payload.history)
+                        if callable(input_counter)
+                        else {"input_tokens": None, "source": "backend_not_supported", "exact": False}
+                    )
+                except Exception:
+                    input_measurement = {
+                        "input_tokens": None,
+                        "source": "tokenizer_failed",
+                        "exact": False,
+                    }
                 for token in backend.stream_chat(
                     message=message,
                     history=payload.history,
@@ -117,14 +130,38 @@ def mount_worker_routes(
                 token_count = backend.tokenize(text) if text else 0
                 token_count = token_count or chunks
                 ttft_s = (first_token_at - started) if first_token_at else finished - started
+                decode_time_s = max(finished - (first_token_at or finished), 0.0)
+                decode_tokens = max(token_count - (1 if first_token_at else 0), 0)
+                input_tokens = input_measurement.get("input_tokens")
+                total_tokens = (
+                    int(input_tokens) + token_count
+                    if isinstance(input_tokens, int) and not isinstance(input_tokens, bool)
+                    else None
+                )
                 yield as_sse(
                     "done",
                     {
                         "metrics": {
                             "ttft_s": round(ttft_s, 6),
-                            "generation_s": round(max(finished - (first_token_at or finished), 0.0), 6),
+                            "generation_s": round(decode_time_s, 6),
                             "e2e_s": round(finished - started, 6),
                             "generated_tokens": token_count,
+                            "input_tokens": input_tokens,
+                            "input_token_source": input_measurement.get("source"),
+                            "input_tokens_exact": input_measurement.get("exact") is True,
+                            "prefill_time_s": round(ttft_s, 6),
+                            "prefill_time_source": "worker_server_ttft_proxy",
+                            "prefill_tokens_per_s": (
+                                round(int(input_tokens) / ttft_s, 6)
+                                if isinstance(input_tokens, int) and ttft_s > 0 else None
+                            ),
+                            "decode_time_s": round(decode_time_s, 6),
+                            "decode_time_source": "worker_stream_after_first_token",
+                            "decode_tokens_per_s": (
+                                round(decode_tokens / decode_time_s, 6)
+                                if decode_time_s > 0 else None
+                            ),
+                            "total_tokens": total_tokens,
                             "stream_chunks": chunks,
                             "output_chars": len(text),
                         }
