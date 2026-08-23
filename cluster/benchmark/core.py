@@ -5,7 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import hashlib
 import threading
-import time
+import time  # Compatibility patch seam retained for legacy timing tests.
 import uuid
 from dataclasses import asdict, replace
 from datetime import datetime
@@ -286,7 +286,7 @@ class BenchmarkRunner:
             # including health polling latency in benchmark wall time.
             self._observe_power(power, nodes, "measurement")
             scenario_summaries: List[Dict[str, Any]] = []
-            wall_started = time.perf_counter()
+            measurement_wall_s = 0.0
             nodes_by_name = {node.name: node for node in nodes}
             for scenario in scenarios:
                 if cancel_event.is_set():
@@ -314,6 +314,7 @@ class BenchmarkRunner:
                     )
                 finally:
                     instrumentation.stop_scenario()
+                measurement_wall_s += scenario_wall_s
                 records.extend(scenario_records)
                 scenario_summary = aggregate_records(scenario_records, scenario_wall_s)
                 scenario_summary.update({
@@ -326,7 +327,10 @@ class BenchmarkRunner:
                     "scenario_finished", scenario_id=scenario.scenario_id,
                     summary=scenario_summary,
                 )
-            wall_s = time.perf_counter() - wall_started
+            # ScenarioExecutor owns the request timing boundary. Telemetry
+            # probes, event persistence, and cooldown gaps must not dilute the
+            # existing request throughput metrics.
+            wall_s = measurement_wall_s
             records.sort(key=lambda item: item["request_id"])
             summary = aggregate_records(records, wall_s)
             if strategy.cumulative_scaling and str(config.sweep_mode) == "cumulative":

@@ -25,6 +25,9 @@ valid and readable.
   `worker_collection_overhead_s` and `collection_overhead_s`.
 - Model loading, warmup, the pre-measurement idle snapshot, and telemetry probe
   completion are outside legacy request wall-time metrics.
+- Run-level measured wall time is the sum of `ScenarioExecutor` request
+  intervals. Event persistence, sampler start/stop, and node-sweep cooldown
+  gaps do not dilute request throughput.
 - Telemetry is sampled once per second, plus a scenario boundary sample. Energy
   is integrated within each scenario and then summed; unsampled cooldown time
   between node-sweep scenarios is never bridged.
