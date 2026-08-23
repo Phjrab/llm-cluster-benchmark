@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "matrix_version": 1,
+  "matrix_id": "formal-study-v1-matrix-v1",
+  "status": "planned_pending_phase_05_instrumentation_and_phase_09_pilot",
+  "created_at": "2026-08-23T00:00:00Z",
+  "lock_ref": {
+    "lock_id": "formal-study-v1",
+    "lock_sha256": "3d5c7f2429c42d02db60ab635a263db6edd86fb4527078eb8d5ff80fc30744a5",
+    "model_lock_version": 3,
+    "prompt_set_version": 1,
+    "runtime_lock_version": 3,
+    "condition_lock_version": 3
+  },
+  "controller_participant_policy": "forbidden",
+  "formal_model_lock_keys": [
+    "qwen2.5-1.5b-instruct-q4-k-m-official",
+    "granite-3.3-2b-instruct-q4-k-m-official"
+  ],
+  "prompt_ids": [
+    "general-ko-001",
+    "general-en-001",
+    "reasoning-en-001",
+    "coding-en-001"
+  ],
+  "repeat_axis": {
+    "unit": "independent_run",
+    "repeat_index_origin": 1,
+    "minimum": 10,
+    "maximum": 30,
+    "final_count_source": "phase-09-pilot",
+    "freeze_required_before_formal_execution": true
+  },
+  "workload": {
+    "requests_per_run": 20,
+    "logical_concurrency": 4,
+    "warmup_requests_per_node": 1,
+    "max_tokens": 128,
+    "request_timeout_s": 600.0,
+    "model_cooldown_s": 3
+  },
+  "parameter_profiles": {
+    "formal-jetson-cuda-v1": {
+      "inference_profile": "deterministic-throughput-v1",
+      "benchmark_profile": "formal-load-v1",
+      "platform_profile": "jetson-cuda-v1"
+    },
+    "formal-pi5-openblas-v1": {
+      "inference_profile": "deterministic-throughput-v1",
+      "benchmark_profile": "formal-load-v1",
+      "platform_profile": "pi5-openblas-v1"
+    }
+  },
+  "measurement_quality_policies": {
+    "jetson-primary-clean-v1": {
+      "primary_include": ["clean"],
+      "sensitivity_include": ["clean", "warning"],
+      "exclude": ["degraded", "unknown"]
+    },
+    "pi-history-warning-nonblocking-v1": {
+      "primary_include": ["clean", "warning"],
+      "sensitivity_include": ["clean"],
+      "exclude": ["degraded", "unknown"]
+    }
+  },
+  "cell_templates": [
+    {
+      "template_id": "jetson-r3647-maxn-single",
+      "research_questions": ["platform-single-node", "same-platform-node-variance"],
+      "experiment_type": "formal",
+      "platform_cohort": "jetson-orin-r3647-maxn-super-cuda",
+      "strategy": "single_node",
+      "node_sets": [
+        {"node_set_id": "jetson-01", "nodes": ["jetson-worker-01"], "node_count": 1}
+      ],
+      "model_lock_keys": [
+        "qwen2.5-1.5b-instruct-q4-k-m-official",
+        "granite-3.3-2b-instruct-q4-k-m-official"
+      ],
+      "prompt_set_version": 1,
+      "prompt_ids": ["general-ko-001", "general-en-001", "reasoning-en-001", "coding-en-001"],
+      "parameter_profile": "formal-jetson-cuda-v1",
+      "order_block": "jetson-single-node",
+      "measurement_quality_policy": "jetson-primary-clean-v1"
+    },
+    {
+      "template_id": "jetson-r3650-maxn-single",
+      "research_questions": ["platform-single-node", "same-platform-node-variance", "jetson-power-runtime-descriptive"],
+      "experiment_type": "formal",
+      "platform_cohort": "jetson-orin-r3650-maxn-super-cuda",
+      "strategy": "single_node",
+      "node_sets": [
+        {"node_set_id": "jetson-02", "nodes": ["jetson-worker-02"], "node_count": 1}
+      ],
+      "model_lock_keys": [
+        "qwen2.5-1.5b-instruct-q4-k-m-official",
+        "granite-3.3-2b-instruct-q4-k-m-official"
+      ],
+      "prompt_set_version": 1,
+      "prompt_ids": ["general-ko-001", "general-en-001", "reasoning-en-001", "coding-en-001"],
+      "parameter_profile": "formal-jetson-cuda-v1",
+      "order_block": "jetson-single-node",
+      "measurement_quality_policy": "jetson-primary-clean-v1"
+    },
+    {
+      "template_id": "jetson-r3650-15w-single",
+      "research_questions": ["platform-single-node", "same-platform-node-variance", "jetson-power-runtime-descriptive"],
+      "experiment_type": "formal",
+      "platform_cohort": "jetson-orin-r3650-15w-cuda",
+      "strategy": "single_node",
+      "node_sets": [
+        {"node_set_id": "jetson-03", "nodes": ["jetson-worker-03"], "node_count": 1}
+      ],
+      "model_lock_keys": [
+        "qwen2.5-1.5b-instruct-q4-k-m-official",
+        "granite-3.3-2b-instruct-q4-k-m-official"
+      ],
+      "prompt_set_version": 1,
+      "prompt_ids": ["general-ko-001", "general-en-001", "reasoning-en-001", "coding-en-001"],
+      "parameter_profile": "formal-jetson-cuda-v1",
+      "order_block": "jetson-single-node",
+      "measurement_quality_policy": "jetson-primary-clean-v1"
+    },
+    {
+      "template_id": "pi5-single-node",
+      "research_questions": ["platform-single-node", "same-platform-node-variance"],
+      "experiment_type": "formal",
+      "platform_cohort": "pi5-ubuntu2404-kernel1061-openblas",
+      "strategy": "single_node",
+      "node_sets": [
+        {"node_set_id": "pi-02", "nodes": ["pi-worker-02"], "node_count": 1},
+        {"node_set_id": "pi-03", "nodes": ["pi-worker-03"], "node_count": 1},
+        {"node_set_id": "pi-04", "nodes": ["pi-worker-04"], "node_count": 1}
+      ],
+      "model_lock_keys": [
+        "qwen2.5-1.5b-instruct-q4-k-m-official",
+        "granite-3.3-2b-instruct-q4-k-m-official"
+      ],
+      "prompt_set_version": 1,
+      "prompt_ids": ["general-ko-001", "general-en-001", "reasoning-en-001", "coding-en-001"],
+      "parameter_profile": "formal-pi5-openblas-v1",
+      "order_block": "pi-single-node",
+      "measurement_quality_policy": "pi-history-warning-nonblocking-v1"
+    },
+    {
+      "template_id": "pi5-round-robin-scaling",
+      "research_questions": ["round-robin-node-count-scaling"],
+      "experiment_type": "formal",
+      "platform_cohort": "pi5-ubuntu2404-kernel1061-openblas",
+      "strategy": "replicated_round_robin",
+      "node_sets": [
+        {"node_set_id": "pi-02-03", "nodes": ["pi-worker-02", "pi-worker-03"], "node_count": 2},
+        {"node_set_id": "pi-02-03-04", "nodes": ["pi-worker-02", "pi-worker-03", "pi-worker-04"], "node_count": 3}
+      ],
+      "model_lock_keys": [
+        "qwen2.5-1.5b-instruct-q4-k-m-official",
+        "granite-3.3-2b-instruct-q4-k-m-official"
+      ],
+      "prompt_set_version": 1,
+      "prompt_ids": ["general-ko-001", "general-en-001", "reasoning-en-001", "coding-en-001"],
+      "parameter_profile": "formal-pi5-openblas-v1",
+      "order_block": "pi-round-robin-scaling",
+      "measurement_quality_policy": "pi-history-warning-nonblocking-v1"
+    },
+    {
+      "template_id": "pi5-broadcast-agreement",
+      "research_questions": ["broadcast-response-agreement"],
+      "experiment_type": "formal",
+      "platform_cohort": "pi5-ubuntu2404-kernel1061-openblas",
+      "strategy": "broadcast_compare",
+      "node_sets": [
+        {"node_set_id": "pi-02-03-04", "nodes": ["pi-worker-02", "pi-worker-03", "pi-worker-04"], "node_count": 3}
+      ],
+      "model_lock_keys": [
+        "qwen2.5-1.5b-instruct-q4-k-m-official",
+        "granite-3.3-2b-instruct-q4-k-m-official"
+      ],
+      "prompt_set_version": 1,
+      "prompt_ids": ["general-ko-001", "general-en-001", "reasoning-en-001", "coding-en-001"],
+      "parameter_profile": "formal-pi5-openblas-v1",
+      "order_block": "pi-broadcast-agreement",
+      "measurement_quality_policy": "pi-history-warning-nonblocking-v1"
+    }
+  ],
+  "deferred_questions": [
+    {
+      "question": "homogeneous-vs-heterogeneous-cluster",
+      "status": "exploratory_only",
+      "reason": "runtime_lock_v3 forbids cross-cohort formal pooling",
+      "unlock_condition": "a separately locked heterogeneous exploratory matrix and non-causal reporting"
+    },
+    {
+      "question": "model-size-by-platform-interaction",
+      "status": "blocked",
+      "reason": "the two approved models differ in both family and parameter count",
+      "unlock_condition": "approve at least two sizes from the same model family"
+    },
+    {
+      "question": "rpc-feasibility-performance-network-cost",
+      "status": "blocked",
+      "reason": "the RPC profile requires an explicit Jetson coordinator and at least two Workers, while every current Jetson formal cohort has capacity one",
+      "unlock_condition": "create a homogeneous multi-Jetson runtime cohort or version a different approved RPC coordinator policy"
+    },
+    {
+      "question": "power-and-thermal-causal-effect",
+      "status": "descriptive_only",
+      "reason": "MAXN_SUPER and 15W are currently observed on different physical Workers",
+      "unlock_condition": "run a separately randomized within-Worker power-mode crossover protocol after approval"
+    }
+  ],
+  "planning_assumptions": {
+    "nominal_successful_run_s": 300,
+    "nominal_runtime_source": "provisional planning value; Phase 09 pilot replaces it",
+    "timeout_envelope_formula": "(ceil(requests_per_run/logical_concurrency)+warmup_requests_per_node)*request_timeout_s+model_cooldown_s",
+    "bytes_per_physical_request": 16384,
+    "bytes_per_run_metadata": 65536,
+    "storage_estimate_scope": "raw response allowance plus run metadata; telemetry and exports require separate reserve",
+    "recommended_controller_free_space_bytes": 5368709120
+  },
+  "expected_volume": {
+    "base_cells": 72,
+    "runs_per_matrix_repeat": 72,
+    "runs_minimum": 720,
+    "runs_maximum": 2160,
+    "logical_requests_per_matrix_repeat": 1440,
+    "logical_requests_minimum": 14400,
+    "logical_requests_maximum": 43200,
+    "physical_requests_per_matrix_repeat": 1760,
+    "physical_requests_minimum": 17600,
+    "physical_requests_maximum": 52800,
+    "warmup_requests_per_matrix_repeat": 112,
+    "warmup_requests_minimum": 1120,
+    "warmup_requests_maximum": 3360,
+    "model_loads_per_matrix_repeat": 72,
+    "model_unloads_per_matrix_repeat": 72,
+    "nominal_runtime_seconds_per_matrix_repeat": 21600,
+    "nominal_runtime_seconds_minimum": 216000,
+    "nominal_runtime_seconds_maximum": 648000,
+    "timeout_envelope_seconds_per_run": 3603,
+    "timeout_envelope_seconds_minimum": 2594160,
+    "timeout_envelope_seconds_maximum": 7782480,
+    "estimated_storage_bytes_per_matrix_repeat": 33554432,
+    "estimated_storage_bytes_minimum": 335544320,
+    "estimated_storage_bytes_maximum": 1006632960
+  },
+  "execution_gate": {
+    "formal_execution_allowed": false,
+    "blocking_phases": [5, 9],
+    "reason": "instrumentation and pilot-derived repeat/cooldown policy are not frozen"
+  }
+}

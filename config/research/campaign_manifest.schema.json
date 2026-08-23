@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Phjrab/llm-cluster-benchmark/schemas/campaign-manifest-v1.json",
+  "title": "LLM Cluster Formal Campaign Manifest",
+  "description": "Concrete, ordered Phase 06 campaign expansion of the frozen Phase 04 matrix.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "campaign_version",
+    "campaign_id",
+    "matrix_id",
+    "matrix_version",
+    "lock_ref",
+    "experiment_type",
+    "status",
+    "order_seed",
+    "repeat_count",
+    "controller_participant_policy",
+    "cells"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "campaign_version": {"type": "integer", "minimum": 1},
+    "campaign_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$"},
+    "matrix_id": {"const": "formal-study-v1-matrix-v1"},
+    "matrix_version": {"const": 1},
+    "lock_ref": {"$ref": "#/$defs/lockRef"},
+    "experiment_type": {"const": "formal"},
+    "status": {
+      "enum": ["planned", "ready", "running", "paused", "completed", "failed", "cancelled"]
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "order_seed": {"const": 20260823},
+    "repeat_count": {"type": "integer", "minimum": 10, "maximum": 30},
+    "repeat_count_decision_evidence": {"type": "string", "minLength": 1},
+    "controller_participant_policy": {"const": "forbidden"},
+    "coverage": {"$ref": "#/$defs/coverage"},
+    "cells": {
+      "type": "array",
+      "minItems": 720,
+      "maxItems": 2160,
+      "items": {"$ref": "#/$defs/campaignCell"}
+    }
+  },
+  "$defs": {
+    "lockRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lock_id", "lock_sha256", "model_lock_version", "prompt_set_version", "runtime_lock_version", "condition_lock_version"],
+      "properties": {
+        "lock_id": {"const": "formal-study-v1"},
+        "lock_sha256": {"const": "3d5c7f2429c42d02db60ab635a263db6edd86fb4527078eb8d5ff80fc30744a5"},
+        "model_lock_version": {"const": 3},
+        "prompt_set_version": {"const": 1},
+        "runtime_lock_version": {"const": 3},
+        "condition_lock_version": {"const": 3}
+      }
+    },
+    "campaignCell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "campaign_cell_id",
+        "cell_id",
+        "experiment_type",
+        "platform_cohort",
+        "strategy",
+        "node_set_id",
+        "node_set",
+        "node_count",
+        "model_lock_key",
+        "prompt_set_version",
+        "prompt_id",
+        "parameter_profile",
+        "repeat_index",
+        "order_block",
+        "order_index",
+        "measurement_quality_policy",
+        "status"
+      ],
+      "properties": {
+        "campaign_cell_id": {"type": "string", "minLength": 1, "maxLength": 512},
+        "cell_id": {"type": "string", "minLength": 1, "maxLength": 480},
+        "experiment_type": {"const": "formal"},
+        "platform_cohort": {"type": "string", "minLength": 1},
+        "strategy": {"enum": ["single_node", "replicated_round_robin", "broadcast_compare"]},
+        "node_set_id": {"type": "string", "minLength": 1},
+        "node_set": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^(jetson|pi)-worker-[0-9]+$"}
+        },
+        "node_count": {"type": "integer", "minimum": 1, "maximum": 3},
+        "model_lock_key": {
+          "enum": [
+            "qwen2.5-1.5b-instruct-q4-k-m-official",
+            "granite-3.3-2b-instruct-q4-k-m-official"
+          ]
+        },
+        "prompt_set_version": {"const": 1},
+        "prompt_id": {"enum": ["general-ko-001", "general-en-001", "reasoning-en-001", "coding-en-001"]},
+        "parameter_profile": {"enum": ["formal-jetson-cuda-v1", "formal-pi5-openblas-v1"]},
+        "repeat_index": {"type": "integer", "minimum": 1, "maximum": 30},
+        "order_block": {"type": "string", "minLength": 1},
+        "order_index": {"type": "integer", "minimum": 1},
+        "measurement_quality_policy": {"enum": ["jetson-primary-clean-v1", "pi-history-warning-nonblocking-v1"]},
+        "status": {"enum": ["pending", "running", "completed", "failed", "cancelled", "excluded"]},
+        "attempt_id": {"type": ["string", "null"]},
+        "run_id": {"type": ["string", "null"]},
+        "failure_code": {"type": ["string", "null"]},
+        "measurement_quality": {"enum": ["clean", "warning", "degraded", "unknown", null]}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planned", "completed", "failed", "cancelled", "excluded"],
+      "properties": {
+        "planned": {"type": "integer", "minimum": 0},
+        "completed": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0},
+        "cancelled": {"type": "integer", "minimum": 0},
+        "excluded": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

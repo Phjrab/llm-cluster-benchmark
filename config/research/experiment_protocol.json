@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "protocol_version": 1,
+  "protocol_id": "formal-study-v1-protocol-v1",
+  "matrix_id": "formal-study-v1-matrix-v1",
+  "status": "planned_pending_pilot",
+  "experiment_type_separation": {
+    "types": ["smoke", "pilot", "formal"],
+    "mixing_allowed": false,
+    "campaign_id_and_result_directory_must_be_distinct": true,
+    "pilot_data_may_select_repeat_count_but_may_not_enter_formal_estimates": true
+  },
+  "repeat_policy": {
+    "independent_unit": "run",
+    "request_is_nested_within_run": true,
+    "minimum": 10,
+    "maximum": 30,
+    "final_count_source": "phase-09-pilot",
+    "decision_rule": "choose the smallest count meeting the predeclared primary-metric CI half-width target, capped at 30; if unmet at 30 report precision limitation without optional stopping",
+    "result_peeking_for_early_significance": false
+  },
+  "execution_order": {
+    "algorithm": "seeded_randomized_blocks",
+    "seed": 20260823,
+    "block_keys": ["repeat_index", "platform_cohort", "order_block"],
+    "shuffle_keys": ["cell_id"],
+    "preserve_node_set_order": true,
+    "formal_runs_serialized": true,
+    "order_manifest_required_before_first_formal_run": true
+  },
+  "parallel_formal_runs": false,
+  "timing_boundary": {
+    "model_download": "excluded",
+    "model_checksum_verification": "excluded",
+    "model_load": "excluded",
+    "warmup": "excluded",
+    "measurement": "included",
+    "model_unload": "excluded",
+    "cooldown": "excluded",
+    "clock": "monotonic"
+  },
+  "run_lifecycle": [
+    "fresh formal eligibility and drift check",
+    "model identity verification",
+    "model load on all selected Workers",
+    "actual parameter equality verification",
+    "one warmup request per selected Worker",
+    "pre-measurement quality and thermal gate",
+    "timed request execution",
+    "post-measurement quality snapshot",
+    "model unload from every selected Worker",
+    "cooldown and stabilization gate"
+  ],
+  "model_execution": {
+    "one_model_per_formal_run": true,
+    "multi_model_suite_used_for_formal_timing": false,
+    "unload_after_every_run": true,
+    "download_during_benchmark": false
+  },
+  "prompt_execution": {
+    "one_locked_prompt_per_cell": true,
+    "prompt_text_loaded_by_prompt_id": true,
+    "conversation_history": [],
+    "same_prompt_repeated_with_fixed_seed_within_run": true
+  },
+  "quality_gate": {
+    "preflight_required": [
+      "model sha256",
+      "source deployment fingerprint",
+      "runtime lock and cohort",
+      "backend verification",
+      "prompt set version",
+      "condition profile",
+      "NTP synchronized",
+      "sufficient storage"
+    ],
+    "jetson": {
+      "exact_locked_nvpmodel_required": true,
+      "jetson_clocks_required": "OFF",
+      "mode_drift_action": "block_run"
+    },
+    "raspberry_pi": {
+      "history_warning_action": "record_warning_and_continue",
+      "active_undervoltage_or_throttling_action": "complete_raw_capture_and_mark_degraded"
+    },
+    "unknown_quality_action": "exclude_from_primary_and_sensitivity_analysis"
+  },
+  "failure_policy": {
+    "preserve_every_attempt": true,
+    "automatic_retry_in_formal_campaign": false,
+    "retry_requires_new_attempt_id_and_reason": true,
+    "failed_requests_count_toward_failure_rate": true,
+    "failed_request_latency_excluded_from_success_latency_distribution": true,
+    "cleanup_failure_marks_run_non_clean": true,
+    "no_selective_deletion": true
+  },
+  "thermal_policy": {
+    "minimum_cooldown_s": 3,
+    "final_stabilization_rule_source": "phase-09-pilot",
+    "formal_start_blocked_until_frozen": true,
+    "temperature_and_throttling_state_recorded_at_boundaries": true
+  },
+  "stop_conditions": [
+    "lock or deployment drift",
+    "model identity mismatch",
+    "active power integrity fault at preflight",
+    "Jetson nvpmodel or jetson_clocks drift",
+    "instrumentation failure affecting a primary outcome",
+    "cleanup failure leaving model or RPC processes active",
+    "critical product defect requiring a code change"
+  ]
+}
