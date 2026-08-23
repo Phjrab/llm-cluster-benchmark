@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
-  "lock_version": 1,
+  "lock_version": 2,
   "lock_id": "formal-study-v1",
-  "created_at": "2026-08-21T11:59:46Z",
-  "source_commit": "e70f63e797b9952ad1073ce16f556f0ff874b43b",
-  "lock_sha256": "4a03235dd7ae27a0a915e918c583df99aad2011e99f0baf1a9f61a3dcb5c3ab4",
+  "created_at": "2026-08-23T06:32:12Z",
+  "source_commit": "2a46dc8edcb43e2995209b0b77382325105ce0e8",
+  "lock_sha256": "a4ea4400841b849b87cfe7813ebd963e4d76532783a08167768fe08636469f20",
   "controller": {
     "role": "controller_only_not_a_participant",
-    "git_branch": "codex/mac-control-plane",
-    "git_commit": "e70f63e797b9952ad1073ce16f556f0ff874b43b",
+    "git_branch": "codex/roadmap-phase-02",
+    "git_commit": "2a46dc8edcb43e2995209b0b77382325105ce0e8",
     "working_tree_clean_at_lock_start": true,
     "operating_system": "macOS 26.3 (Build 25D125)",
     "kernel": "Darwin 25.3.0 RELEASE_ARM64_T8103",
@@ -44,7 +44,7 @@
       "operating_system": "Ubuntu 22.04.5 LTS",
       "kernel": "5.15.148-tegra",
       "python": "3.10.12",
-      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "deployment": {"git_commit": "2a46dc8edcb43e2995209b0b77382325105ce0e8", "working_tree_clean": true, "source_tree_sha256": "483a33e0d5f3f1348667f8d2663387d63cd6bc27e7691e9af66cc1127845fa78", "deployment_manifest_sha256": "0ac680555f77dc11c5dd0be85d2a4b02ea891ea9e9285fb9c51dcacecc1909e7", "source_tree_verified": true, "source_file_count": 157},
       "runtime": {"backend": "cuda", "backend_verified": true, "gpu_offload": true, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "05e2c27b3bf0eff2", "cuda": "12.6 compiler build 35059454_0", "l4t": "R36.4.7", "jetson_stats": "7.2.1", "psutil": "7.2.2", "inference_threads": 6},
       "power": {"mode": "MAXN_SUPER", "mode_verified": true, "jetson_clocks": "OFF", "power_integrity_status": "clean", "power_warning_blocking": false},
       "observed_at": "2026-08-21T11:57:19Z"
@@ -59,7 +59,7 @@
       "operating_system": "Ubuntu 22.04.5 LTS",
       "kernel": "5.15.185-tegra",
       "python": "3.10.12",
-      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "deployment": {"git_commit": "2a46dc8edcb43e2995209b0b77382325105ce0e8", "working_tree_clean": true, "source_tree_sha256": "483a33e0d5f3f1348667f8d2663387d63cd6bc27e7691e9af66cc1127845fa78", "deployment_manifest_sha256": "93b92681c4b05a6dfbceec083cd5e749ae318d12e3419c26108599cc250b4dc6", "source_tree_verified": true, "source_file_count": 157},
       "runtime": {"backend": "cuda", "backend_verified": true, "gpu_offload": true, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "05e2c27b3bf0eff2", "cuda": "12.6 compiler build 34714021_0", "l4t": "R36.5.0", "jetson_stats": "7.2.1", "psutil": "7.2.2", "inference_threads": 6},
       "power": {"mode": "MAXN_SUPER", "mode_verified": true, "jetson_clocks": "OFF", "power_integrity_status": "clean", "power_warning_blocking": false},
       "observed_at": "2026-08-21T11:57:19Z"
@@ -74,7 +74,7 @@
       "operating_system": "Ubuntu 22.04.5 LTS",
       "kernel": "5.15.185-tegra",
       "python": "3.10.12",
-      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "deployment": {"git_commit": "2a46dc8edcb43e2995209b0b77382325105ce0e8", "working_tree_clean": true, "source_tree_sha256": "483a33e0d5f3f1348667f8d2663387d63cd6bc27e7691e9af66cc1127845fa78", "deployment_manifest_sha256": "365b52b6d9e88f57ec3e56a07bf216176748f803588ef445fcd87f2cf4f449c1", "source_tree_verified": true, "source_file_count": 157},
       "runtime": {"backend": "cuda", "backend_verified": true, "gpu_offload": true, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "05e2c27b3bf0eff2", "cuda": "12.6 compiler build 34714021_0", "l4t": "R36.5.0", "jetson_stats": "7.2.1", "psutil": "7.2.2", "inference_threads": 6},
       "power": {"mode": "15W", "mode_verified": true, "jetson_clocks": "OFF", "power_integrity_status": "clean", "power_warning_blocking": false},
       "observed_at": "2026-08-21T11:57:21Z"
@@ -89,7 +89,7 @@
       "operating_system": "Ubuntu 24.04.4 LTS",
       "kernel": "6.8.0-1060-raspi",
       "python": "3.12.3",
-      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "deployment": {"git_commit": "2a46dc8edcb43e2995209b0b77382325105ce0e8", "working_tree_clean": true, "source_tree_sha256": "483a33e0d5f3f1348667f8d2663387d63cd6bc27e7691e9af66cc1127845fa78", "deployment_manifest_sha256": "fa04c8ff854318febea9191584c62a74b90c9ac55eacb46d191ca35a51c78801", "source_tree_verified": true, "source_file_count": 157},
       "runtime": {"backend": "openblas", "backend_verified": true, "gpu_offload": false, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "b4387053e655722a", "openblas": "verified by worker_setup backend probe", "psutil": "7.2.2", "inference_threads": 4},
       "power": {"mode": "not_applicable", "mode_verified": true, "firmware_raw": "0x50000", "current_fault_bits": [], "history_bits": ["undervoltage", "throttling"], "power_integrity_status": "warning", "power_warning_blocking": false},
       "observed_at": "2026-08-21T11:57:17Z"
@@ -104,7 +104,7 @@
       "operating_system": "Ubuntu 24.04.4 LTS",
       "kernel": "6.8.0-1060-raspi",
       "python": "3.12.3",
-      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "deployment": {"git_commit": "2a46dc8edcb43e2995209b0b77382325105ce0e8", "working_tree_clean": true, "source_tree_sha256": "483a33e0d5f3f1348667f8d2663387d63cd6bc27e7691e9af66cc1127845fa78", "deployment_manifest_sha256": "8310738f13e2785e1a6b39dfa86348ce8e96e6a34280eac2135007ae43424be5", "source_tree_verified": true, "source_file_count": 157},
       "runtime": {"backend": "openblas", "backend_verified": true, "gpu_offload": false, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "b4387053e655722a", "openblas": "verified by worker_setup backend probe", "psutil": "7.2.2", "inference_threads": 4},
       "power": {"mode": "not_applicable", "mode_verified": true, "firmware_raw": "0x50000", "current_fault_bits": [], "history_bits": ["undervoltage", "throttling"], "power_integrity_status": "warning", "power_warning_blocking": false},
       "observed_at": "2026-08-21T11:57:17Z"
@@ -119,7 +119,7 @@
       "operating_system": "Ubuntu 24.04.4 LTS",
       "kernel": "6.8.0-1060-raspi",
       "python": "3.12.3",
-      "deployment": {"git_commit": "unverified", "working_tree_clean": "unverified", "reason": "deployed Worker directory exposes no .git metadata"},
+      "deployment": {"git_commit": "2a46dc8edcb43e2995209b0b77382325105ce0e8", "working_tree_clean": true, "source_tree_sha256": "483a33e0d5f3f1348667f8d2663387d63cd6bc27e7691e9af66cc1127845fa78", "deployment_manifest_sha256": "2a927562670e41bf60bcbce656ae69f8c004e287918562a071bfc44596d69e66", "source_tree_verified": true, "source_file_count": 157},
       "runtime": {"backend": "openblas", "backend_verified": true, "gpu_offload": false, "llama_cpp_python": "0.3.20", "runtime_fingerprint": "b4387053e655722a", "openblas": "verified by worker_setup backend probe", "psutil": "7.2.2", "inference_threads": 4},
       "power": {"mode": "not_applicable", "mode_verified": true, "firmware_raw": "0x0", "current_fault_bits": [], "history_bits": [], "power_integrity_status": "clean", "power_warning_blocking": false},
       "observed_at": "2026-08-21T11:57:17Z"
@@ -128,7 +128,6 @@
   "formal_readiness": {
     "eligible": false,
     "blocking_issues": [
-      {"code": "WORKER_DEPLOYMENT_COMMIT_UNVERIFIED", "nodes": ["jetson-worker-01", "jetson-worker-02", "jetson-worker-03", "pi-worker-02", "pi-worker-03", "pi-worker-04"]},
       {"code": "JETSON_POWER_MODE_MISMATCH", "modes": {"jetson-worker-01": "MAXN_SUPER", "jetson-worker-02": "MAXN_SUPER", "jetson-worker-03": "15W"}},
       {"code": "JETSON_RUNTIME_VERSION_MISMATCH", "detail": "jetson-worker-01 runs L4T R36.4.7 while workers 02/03 run R36.5.0"}
     ],

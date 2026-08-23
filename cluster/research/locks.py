@@ -73,8 +73,16 @@ def _require_nonempty(value: Any, label: str) -> str:
 
 
 def _validate_common_header(lock: Mapping[str, Any], label: str) -> None:
-    if lock.get("schema_version") != 1 or lock.get("lock_version") != 1:
-        raise LockValidationError(f"{label} schema_version and lock_version must be 1")
+    lock_version = lock.get("lock_version")
+    if (
+        lock.get("schema_version") != 1
+        or isinstance(lock_version, bool)
+        or not isinstance(lock_version, int)
+        or lock_version < 1
+    ):
+        raise LockValidationError(
+            f"{label} schema_version must be 1 and lock_version must be a positive integer"
+        )
     _require_nonempty(lock.get("lock_id"), f"{label}.lock_id")
     source_commit = _require_nonempty(lock.get("source_commit"), f"{label}.source_commit")
     if not HEX_40.fullmatch(source_commit):

@@ -84,13 +84,13 @@ class ShippedResearchLockTests(unittest.TestCase):
         fingerprint = lock_set_sha256(locks)
         self.assertEqual(
             fingerprint,
-            "4a03235dd7ae27a0a915e918c583df99aad2011e99f0baf1a9f61a3dcb5c3ab4",
+            "a4ea4400841b849b87cfe7813ebd963e4d76532783a08167768fe08636469f20",
         )
         self.assertEqual({item["lock_sha256"] for item in locks.values()}, {fingerprint})
 
-    def test_no_shipped_model_is_prematurely_approved(self) -> None:
+    def test_only_live_cross_platform_models_are_approved(self) -> None:
         statuses = [model["verification"]["status"] for model in read_lock("model_lock.json")["models"]]
-        self.assertEqual(statuses, ["source_locked"] * 4)
+        self.assertEqual(statuses, ["approved", "source_locked", "approved", "source_locked"])
 
 
 class FingerprintTests(unittest.TestCase):
@@ -259,13 +259,14 @@ class RuntimeAndEligibilityTests(unittest.TestCase):
         self.assertIn("MODEL_SHA_MISMATCH", {item["code"] for item in result["blocking_issues"]})
 
     def test_unapproved_shipped_model_is_blocked(self) -> None:
+        model_key = "granite-3.3-8b-instruct-q4-k-m-official"
         result = assess_formal_eligibility(
-            experiment_config=formal_config("granite-3.3-2b-instruct-q4-k-m-official"),
+            experiment_config=formal_config(model_key),
             experiment_conditions=read_lock("experiment_conditions.json"),
             model_lock=read_lock("model_lock.json"),
             prompt_lock=read_lock("prompt_set.json"),
             runtime_lock=verified_runtime_lock(),
-            model_key="granite-3.3-2b-instruct-q4-k-m-official",
+            model_key=model_key,
             prompt_ids=["general-ko-001"],
             selected_workers=["pi-worker-04"],
         )

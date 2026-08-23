@@ -1,19 +1,20 @@
 {
   "schema_version": 1,
-  "lock_version": 1,
+  "lock_version": 2,
   "lock_id": "formal-study-v1",
-  "created_at": "2026-08-21T11:59:46Z",
-  "source_commit": "e70f63e797b9952ad1073ce16f556f0ff874b43b",
-  "lock_sha256": "4a03235dd7ae27a0a915e918c583df99aad2011e99f0baf1a9f61a3dcb5c3ab4",
+  "created_at": "2026-08-23T06:32:12Z",
+  "source_commit": "2a46dc8edcb43e2995209b0b77382325105ce0e8",
+  "lock_sha256": "a4ea4400841b849b87cfe7813ebd963e4d76532783a08167768fe08636469f20",
   "campaign_policy": {
     "formal_matrix_requires_status": "approved",
-    "automatic_download_in_this_phase": false,
+    "automatic_download_in_this_phase": true,
+    "benchmark_time_download": false,
     "selection_basis": "minimal cohorts for cross-platform, family scaling, Jetson medium, RPC upper-bound, and cross-family comparison"
   },
   "models": [
     {
       "model_key": "qwen2.5-1.5b-instruct-q4-k-m-official",
-      "catalog_id": "qwen2.5-1.5b/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+      "catalog_id": "qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf",
       "display_name": "Qwen2.5 1.5B Instruct Q4_K_M",
       "campaign_roles": ["cross_platform_small", "qwen_size_scaling"],
       "vendor": "Alibaba Cloud / Qwen",
@@ -33,13 +34,14 @@
         "size_bytes": 1117320736,
         "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
         "quantization": "Q4_K_M",
-        "gguf_architecture": "unverified",
+        "gguf_architecture": "qwen2",
         "converter": "provider-managed official GGUF",
         "converter_revision": "unpublished_by_provider"
       },
       "runtime_contract": {
-        "chat_template_hash": "unverified",
-        "tokenizer_metadata_hash": "unverified",
+        "metadata_contract": "gguf-metadata-v1",
+        "chat_template_hash": "24f79a69401549da90b4da8477caf9cab6fc0a58929b81767003df310a513e33",
+        "tokenizer_metadata_hash": "db18a59f5f900ded3a1973ad90dabce36a3ef6df8b833779b0fa3bc74f0a5547",
         "default_reasoning_mode": "not_applicable",
         "modalities": ["text"]
       },
@@ -50,16 +52,26 @@
         "accepted_for_this_project": true
       },
       "verification": {
-        "status": "source_locked",
-        "verified_workers": [],
+        "status": "approved",
+        "verified_workers": ["jetson-worker-01", "jetson-worker-02", "jetson-worker-03", "pi-worker-02", "pi-worker-03", "pi-worker-04"],
         "observed_worker_checksums": {
-          "jetson-worker-02": "1adf0b11065d8ad2e8123ea110d1ec956dab4ab038eab665614adba04b6c3370"
+          "jetson-worker-01": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+          "jetson-worker-02": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+          "jetson-worker-03": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+          "pi-worker-02": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+          "pi-worker-03": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+          "pi-worker-04": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"
         },
-        "observed_worker_sizes": {"jetson-worker-02": 986048768},
-        "observed_identity_matches_expected": false,
+        "observed_worker_sizes": {"jetson-worker-01": 1117320736, "jetson-worker-02": 1117320736, "jetson-worker-03": 1117320736, "pi-worker-02": 1117320736, "pi-worker-03": 1117320736, "pi-worker-04": 1117320736},
+        "observed_identity_matches_expected": true,
         "verified_llama_cpp_commits": [],
-        "verified_at": null,
-        "blockers": ["installed Worker binary size and SHA-256 do not match the official locked binary", "chat template and tokenizer metadata hashes are unverified"]
+        "verified_llama_cpp_python_versions": ["0.3.20"],
+        "verified_runtime_fingerprints": ["05e2c27b3bf0eff2", "b4387053e655722a"],
+        "verified_platforms": ["jetson", "raspberry-pi"],
+        "smoke_contract": {"n_ctx": 4096, "jetson_n_gpu_layers": 30, "raspberry_pi_n_gpu_layers": 0, "minimum_generated_tokens": 1, "unload_required": true},
+        "status_history": ["source_locked", "worker_verified", "approved"],
+        "verified_at": "2026-08-23T06:32:12Z",
+        "blockers": []
       }
     },
     {
@@ -133,13 +145,14 @@
         "size_bytes": 1545303328,
         "sha256": "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852",
         "quantization": "Q4_K_M",
-        "gguf_architecture": "unverified",
+        "gguf_architecture": "granite",
         "converter": "provider-managed official GGUF",
         "converter_revision": "unpublished_by_provider"
       },
       "runtime_contract": {
-        "chat_template_hash": "unverified",
-        "tokenizer_metadata_hash": "unverified",
+        "metadata_contract": "gguf-metadata-v1",
+        "chat_template_hash": "e1ef5217871cc6891e09ea2a9f01466ce6b1cd6cdcb1d22bfe91fe303cea4e01",
+        "tokenizer_metadata_hash": "27ef0bcce8cf124bb2a434acc68297a8f1f38748efc94f3ef64ba5c48b99d074",
         "default_reasoning_mode": "not_applicable",
         "modalities": ["text"]
       },
@@ -150,14 +163,19 @@
         "accepted_for_this_project": true
       },
       "verification": {
-        "status": "source_locked",
-        "verified_workers": [],
-        "observed_worker_checksums": {},
-        "observed_worker_sizes": {},
-        "observed_identity_matches_expected": false,
+        "status": "approved",
+        "verified_workers": ["jetson-worker-01", "jetson-worker-02", "jetson-worker-03", "pi-worker-02", "pi-worker-03", "pi-worker-04"],
+        "observed_worker_checksums": {"jetson-worker-01": "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852", "jetson-worker-02": "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852", "jetson-worker-03": "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852", "pi-worker-02": "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852", "pi-worker-03": "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852", "pi-worker-04": "ac71e9e32c0bea919b409c5918f69ca74339854b0319c5065e4e9fb6d95c4852"},
+        "observed_worker_sizes": {"jetson-worker-01": 1545303328, "jetson-worker-02": 1545303328, "jetson-worker-03": 1545303328, "pi-worker-02": 1545303328, "pi-worker-03": 1545303328, "pi-worker-04": 1545303328},
+        "observed_identity_matches_expected": true,
         "verified_llama_cpp_commits": [],
-        "verified_at": null,
-        "blockers": ["binary is not installed and verified on the campaign Workers", "chat template and tokenizer metadata hashes are unverified"]
+        "verified_llama_cpp_python_versions": ["0.3.20"],
+        "verified_runtime_fingerprints": ["05e2c27b3bf0eff2", "b4387053e655722a"],
+        "verified_platforms": ["jetson", "raspberry-pi"],
+        "smoke_contract": {"n_ctx": 4096, "jetson_n_gpu_layers": 30, "raspberry_pi_n_gpu_layers": 0, "minimum_generated_tokens": 1, "unload_required": true},
+        "status_history": ["source_locked", "worker_verified", "approved"],
+        "verified_at": "2026-08-23T06:32:12Z",
+        "blockers": []
       }
     },
     {
