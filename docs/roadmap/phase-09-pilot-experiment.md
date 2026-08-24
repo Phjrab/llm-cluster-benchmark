@@ -2,14 +2,16 @@
 
 ## 1. Outcome
 
-Phase 09 is **stopped incomplete by user request** on branch
-`codex/roadmap-phase-09`.
+Phase 09 was resumed on 2026-08-24 on branch
+`codex/roadmap-phase-09-resume`, but remains **incomplete**. The earlier v3
+stop boundary and artifacts remain preserved; resumed observations are written
+only to the new v4 pilot identity.
 
 The pilot did not freeze the formal repeat count, run duration, cooldown, or
 campaign matrix. Phase 10 formal execution remains blocked. No pilot request
 or failed attempt was admitted to a formal result pool.
 
-The durable v3 pilot contains 7 of 28 declared attempts:
+The historical durable v3 pilot contains 7 of 28 declared attempts:
 
 - 6 completed runs with 100% request success;
 - 1 user-interrupted Raspberry Pi run, preserved as
@@ -18,7 +20,9 @@ The durable v3 pilot contains 7 of 28 declared attempts:
 - `freeze_ready=false`.
 
 The running Pi model was unloaded successfully after cancellation. No Worker
-or RPC process was left by the stopped run.
+or RPC process was left by the stopped run. The current v4 pilot contains 5 of
+28 completed observations, 23 pending observations, and no failures. All five
+completed runs also unloaded their model successfully.
 
 ## 2. Preregistered design
 
@@ -189,9 +193,11 @@ validation at user request and is not represented as passed. The pushed commit's
 hosted CI result is the authoritative full-regression checkpoint. Live hardware
 evidence is described above and is not represented as a completed 28-run pilot.
 
-## 9. Stop boundary and resumption
+## 9. Historical stop boundary and resumption
 
-Phase 09 stops here by explicit user request.
+Phase 09 originally stopped here by explicit user request. It resumed under a
+new pilot identity after addressing the instrumentation blocker described
+below. The v3 manifest and its interruption remain unchanged.
 
 The following remain blocked:
 
@@ -202,8 +208,70 @@ The following remain blocked:
 - matrix/protocol/analysis-plan freeze;
 - Phase 10 formal campaign execution.
 
-The v3 manifest is resumable and preserves all remaining declared runs. Before
-resumption, the Pi instrumentation blocker should be resolved under a new
-source commit and the pilot version/provenance policy applied consistently.
 Starting Phase 10 implementation preparation is possible, but collecting
 formal results is not scientifically valid until `freeze_ready=true`.
+
+## 10. v4 resumption checkpoint
+
+### 10.1 Instrumentation remediation
+
+The v4 pilot, `formal-study-v1-phase09-pilot-v4`, supersedes v3 for the
+declared reason `TELEMETRY_INTRUSION`. It retains the same 28-run matrix,
+approved model, prompt, workload, and statistical policy. It changes only the
+preregistered Worker telemetry collection interval:
+
+- Jetson Workers: 1 second;
+- Raspberry Pi Workers: 10 seconds.
+
+Repeated Controller reads of one cached Worker sample are deduplicated by the
+Worker `sampled_at` value. The analyzer verifies the observed interval against
+the platform policy and fails closed on a mismatch. v4 writes to its own
+result root and cannot be pooled with v1-v3 or a formal campaign.
+
+### 10.2 Live v4 evidence
+
+Five calibration observations have completed:
+
+| Order | Cohort | Cooldown | Wall time | TPS | TTFT p50 | Start / peak temp | Interval | Worker overhead |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | Jetson 02 | baseline | 163.690 s | 15.639 | 16.748 s | 39.41 / 46.84 °C | 1 s | 3.29% |
+| 2 | Jetson 02 | 3 s | 161.862 s | 15.816 | 16.475 s | 41.50 / 48.31 °C | 1 s | 3.75% |
+| 3 | Jetson 02 | 15 s | 165.689 s | 15.451 | 17.665 s | 46.69 / 50.00 °C | 1 s | 3.70% |
+| 4 | Jetson 02 | 30 s | 169.527 s | 15.101 | 16.924 s | 47.09 / 50.25 °C | 1 s | 3.77% |
+| 5 | Pi 02 | baseline | 984.328 s | 2.601 | 96.200 s | 55.65 / 61.15 °C | 10 s | 2.94% |
+
+Every run completed 20/20 requests. Pi 02 reported no current undervoltage,
+frequency cap, throttling, or thermal limit before, during, or after the run.
+Its historical undervoltage/throttling bits remain recorded as a non-blocking
+measurement-quality warning, per the frozen power-integrity policy.
+
+The instrumentation remediation passes the 5% perturbation cap on both
+platforms: the maximum v4 value so far is 3.77% on Jetson, while the Pi baseline
+is 2.94%. This removes the v3 Pi instrumentation blocker.
+
+### 10.3 Remaining blockers
+
+The v4 analyzer still reports `freeze_ready=false`:
+
+- only 5 of 28 observations are complete;
+- Pi 3, 15, and 30-second cooldown candidates are not yet measured;
+- none of the four variance cells has the required five independent runs;
+- Jetson 3, 15, and 30-second candidates did not recover to the v4 baseline
+  start-temperature condition, so no global cooldown is currently selectable;
+- repeat count and formal wall-time budget therefore remain provisional.
+
+The provisional 30 repeats emitted with incomplete variance cells is an
+explicit sentinel, not a frozen formal recommendation. Phase 10 execution
+remains blocked until all declared v4 observations complete and the analyzer
+returns `freeze_ready=true`.
+
+### 10.4 Resume checkpoints
+
+| Checkpoint | Commit |
+|---|---|
+| Preregister platform-specific low-intrusion telemetry | `7aeb9fe` |
+| Add bounded, resumable Phase 09 execution batches | `1c9a323` |
+
+All six registered Workers were source-verified at `1c9a323…` before live
+execution. Only source synchronization and Worker restart were performed; no
+Python environment, model, or RPC runtime was reinstalled.
