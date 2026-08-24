@@ -169,6 +169,20 @@ class PublicationBundleTests(unittest.TestCase):
                     locked_inputs=self.locked_inputs(root / "locks"),
                 )
 
+    def test_formal_bundle_requires_completed_campaign_authorization(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            results = root / "results"
+            create_run(results, "run1", experiment_type="formal")
+            with self.assertRaisesRegex(PublicationError, "completed authorized campaign"):
+                write_publication_bundle(
+                    results_root=results,
+                    output_dir=root / "bundle",
+                    experiment_type="formal",
+                    analysis_plan=self.plan(),
+                    locked_inputs=self.locked_inputs(root / "locks"),
+                )
+
     def test_bundle_is_deterministic_private_and_omits_prompt_and_response_text(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -236,6 +250,74 @@ class PublicationBundleTests(unittest.TestCase):
                     locked_inputs=self.locked_inputs(root / "locks"),
                     acknowledge_non_formal=True,
                 )
+
+    def test_optional_scaling_node_rpc_and_telemetry_outputs_are_data_driven(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            results = root / "results"
+            create_run(results, "run1", value=10)
+            create_run(results, "run2", value=18)
+            config_path = results / "run2" / "config.json"
+            summary_path = results / "run2" / "summary.json"
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config["node_names"] = ["pi-worker-02", "pi-worker-03"]
+            write_json(config_path, config)
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            summary["nodes"] = ["pi-worker-02", "pi-worker-03"]
+            summary["per_node"] = {
+                "pi-worker-02": {"successful": 5, "failed": 0, "tokens": 80, "effective_tokens_per_s": 9.0},
+                "pi-worker-03": {"successful": 4, "failed": 1, "tokens": 64, "effective_tokens_per_s": 7.2},
+            }
+            summary["measurement_instrumentation"]["rpc"] = {
+                "model_load_distribution_s": 2.5,
+                "coordinator_wait_s": None,
+                "cleanup_s": 0.75,
+            }
+            write_json(summary_path, summary)
+            measurements = [
+                {
+                    "record_type": "telemetry_sample",
+                    "sample_kind": "measurement",
+                    "node": "pi-worker-02",
+                    "monotonic_elapsed_s": 1.0,
+                    "power_w": 8.5,
+                    "temperatures_c": {"system": 48.0},
+                },
+                {
+                    "record_type": "telemetry_sample",
+                    "sample_kind": "measurement",
+                    "node": "pi-worker-02",
+                    "monotonic_elapsed_s": 2.0,
+                    "power_w": 9.0,
+                    "temperatures_c": {"cpu": 49.0, "invalid": -256.0},
+                },
+            ]
+            (results / "run2" / "measurements.jsonl").write_text(
+                "".join(json.dumps(item, sort_keys=True) + "\n" for item in measurements), encoding="utf-8"
+            )
+            write_publication_bundle(
+                results_root=results,
+                output_dir=root / "bundle",
+                experiment_type="pilot",
+                analysis_plan=self.plan(),
+                locked_inputs=self.locked_inputs(root / "locks"),
+                acknowledge_non_formal=True,
+            )
+            figure_names = {path.name for path in (root / "bundle" / "figures").iterdir()}
+            self.assertTrue(
+                {
+                    "scaling.svg",
+                    "node-contribution.svg",
+                    "power-timeseries-raspberry-pi.svg",
+                    "temperature-timeseries-raspberry-pi.svg",
+                    "rpc-stages.svg",
+                }.issubset(figure_names)
+            )
+            self.assertIn("pi-worker-03", (root / "bundle" / "tables" / "node-contributions.csv").read_text(encoding="utf-8"))
+            self.assertIn("model_load_distribution_s", (root / "bundle" / "tables" / "rpc-stages.csv").read_text(encoding="utf-8"))
+            telemetry = (root / "bundle" / "tables" / "telemetry-samples.csv").read_text(encoding="utf-8")
+            self.assertIn("8.5", telemetry)
+            self.assertIn("49.0", telemetry)
 
 
 if __name__ == "__main__":

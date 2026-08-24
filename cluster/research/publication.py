@@ -219,6 +219,9 @@ class PublicationDataset:
     experiment_type: str
     runs: tuple[dict[str, Any], ...]
     requests: tuple[dict[str, Any], ...]
+    telemetry: tuple[dict[str, Any], ...]
+    node_contributions: tuple[dict[str, Any], ...]
+    rpc_stages: tuple[dict[str, Any], ...]
     exclusions: tuple[dict[str, Any], ...]
     inputs: tuple[dict[str, Any], ...]
 
@@ -227,11 +230,16 @@ def load_result_dataset(results_root: Path, *, experiment_type: str) -> Publicat
     """Load one separated result root and reject type or identity mixing."""
     if experiment_type not in SUPPORTED_EXPERIMENT_TYPES:
         raise PublicationError("experiment_type must be formal or pilot")
+    if results_root.is_symlink():
+        raise PublicationError("result root must not be a symbolic link")
     root = results_root.resolve()
     if not root.is_dir():
         raise PublicationError(f"result root does not exist: {root}")
     run_rows: list[dict[str, Any]] = []
     request_rows: list[dict[str, Any]] = []
+    telemetry_rows: list[dict[str, Any]] = []
+    node_contribution_rows: list[dict[str, Any]] = []
+    rpc_stage_rows: list[dict[str, Any]] = []
     exclusions: list[dict[str, Any]] = []
     inputs: list[dict[str, Any]] = []
     for run_dir in sorted(path for path in root.iterdir() if path.is_dir() and not path.is_symlink()):
@@ -287,6 +295,32 @@ def load_result_dataset(results_root: Path, *, experiment_type: str) -> Publicat
             "finished_at": str(summary.get("finished_at") or ""),
         }
         run_rows.append(row)
+        per_node = summary.get("per_node")
+        if isinstance(per_node, Mapping):
+            for node, contribution in sorted(per_node.items()):
+                if not isinstance(contribution, Mapping):
+                    continue
+                node_contribution_rows.append(
+                    {
+                        "run_id": row["run_id"],
+                        "cell_id": row["cell_id"],
+                        "node": str(node),
+                        "node_count": row["node_count"],
+                        "successful_requests": contribution.get("successful"),
+                        "failed_requests": contribution.get("failed"),
+                        "generated_tokens": contribution.get("tokens"),
+                        "effective_tokens_per_s": _number(contribution.get("effective_tokens_per_s")),
+                    }
+                )
+        instrumentation = summary.get("measurement_instrumentation")
+        rpc = instrumentation.get("rpc") if isinstance(instrumentation, Mapping) else None
+        if isinstance(rpc, Mapping):
+            for stage in ("model_load_distribution_s", "coordinator_wait_s", "cleanup_s"):
+                duration = _number(rpc.get(stage))
+                if duration is not None:
+                    rpc_stage_rows.append(
+                        {"run_id": row["run_id"], "cell_id": row["cell_id"], "stage": stage, "duration_s": duration}
+                    )
         response_path = run_dir / "responses.jsonl"
         if response_path.exists():
             inputs.append(_input_entry(response_path, root))
@@ -306,6 +340,32 @@ def load_result_dataset(results_root: Path, *, experiment_type: str) -> Publicat
                     "error_code": str(response.get("error_code") or ""),
                 }
             )
+        measurements_path = run_dir / "measurements.jsonl"
+        if measurements_path.exists():
+            inputs.append(_input_entry(measurements_path, root))
+        for sample in _read_jsonl(measurements_path):
+            if sample.get("record_type") != "telemetry_sample" or sample.get("sample_kind") != "measurement":
+                continue
+            temperatures = sample.get("temperatures_c")
+            temperature = None
+            if isinstance(temperatures, Mapping):
+                temperature = _number(temperatures.get("system"))
+                if temperature is None:
+                    candidates = [
+                        value for value in (_number(item) for item in temperatures.values()) if value is not None and value >= 0
+                    ]
+                    temperature = max(candidates) if candidates else None
+            telemetry_rows.append(
+                {
+                    "run_id": row["run_id"],
+                    "cell_id": row["cell_id"],
+                    "node": str(sample.get("node") or ""),
+                    "platform": row["platform"],
+                    "elapsed_s": _number(sample.get("monotonic_elapsed_s")),
+                    "power_w": _number(sample.get("power_w")),
+                    "temperature_c": temperature,
+                }
+            )
         if row["status"] != "completed":
             exclusions.append({"run_id": row["run_id"], "reason_code": "NON_COMPLETED_RUN", "detail": row["status"]})
     if not run_rows:
@@ -314,6 +374,9 @@ def load_result_dataset(results_root: Path, *, experiment_type: str) -> Publicat
         experiment_type=experiment_type,
         runs=tuple(run_rows),
         requests=tuple(request_rows),
+        telemetry=tuple(telemetry_rows),
+        node_contributions=tuple(node_contribution_rows),
+        rpc_stages=tuple(rpc_stage_rows),
         exclusions=tuple(exclusions),
         inputs=tuple(sorted(inputs, key=lambda item: item["path"])),
     )
@@ -345,6 +408,7 @@ def analyze_dataset(
     *,
     seed: int = 20260823,
     bootstrap_resamples: int = 10_000,
+    formal_claim_allowed: bool = False,
 ) -> dict[str, Any]:
     """Calculate run-level estimates and explicit quality sensitivity subsets."""
     if isinstance(seed, bool) or not isinstance(seed, int):
@@ -396,16 +460,21 @@ def analyze_dataset(
                 }
             )
         output_subsets[subset_name] = values
+    missing_summary_count = sum(item.get("reason_code") == "MISSING_SUMMARY" for item in dataset.exclusions)
+    noncompleted_count = sum(item["status"] != "completed" for item in dataset.runs) + missing_summary_count
+    attempt_count = len(dataset.runs) + missing_summary_count
     return {
         "schema_version": 1,
         "analysis_engine": ANALYSIS_ENGINE,
         "experiment_type": dataset.experiment_type,
-        "formal_claim_allowed": dataset.experiment_type == "formal",
+        "formal_claim_allowed": dataset.experiment_type == "formal" and formal_claim_allowed,
         "independent_unit": "run",
         "request_level_role": "nested_descriptive_only",
         "seed": seed,
         "bootstrap_resamples": bootstrap_resamples,
-        "attempt_count": len(dataset.runs) + sum(item.get("reason_code") == "MISSING_SUMMARY" for item in dataset.exclusions),
+        "attempt_count": attempt_count,
+        "noncompleted_attempt_count": noncompleted_count,
+        "attempt_failure_rate": noncompleted_count / attempt_count if attempt_count else None,
         "run_count": len(dataset.runs),
         "completed_run_count": len(completed),
         "request_count": len(dataset.requests),
@@ -583,6 +652,144 @@ def failure_svg(dataset: PublicationDataset) -> str:
     return _svg_document(title, "Every attempt is retained; no selective deletion or imputation", "".join(parts))
 
 
+def scaling_svg(dataset: PublicationDataset) -> str | None:
+    """Plot run-level throughput against node count for comparable identities only."""
+    eligible = [
+        item for item in dataset.runs
+        if item["status"] == "completed" and item["cluster_tokens_per_s"] is not None and item["node_count"] > 0
+    ]
+    signatures: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for run in eligible:
+        key = (str(run["model_id"]), str(run["prompt_id"] or run["prompt_sha256"]), str(run["platform"]))
+        signatures.setdefault(key, []).append(run)
+    series = [
+        (key, values) for key, values in sorted(signatures.items())
+        if len({int(item["node_count"]) for item in values}) >= 2
+    ]
+    if not series:
+        return None
+    title = f"{dataset.experiment_type.title()} cluster scaling"
+    subtitle = "Same model, prompt, and platform only; points are independent runs, lines join node-count means"
+    all_values = [float(item["cluster_tokens_per_s"]) for _, values in series for item in values]
+    maximum_y = max(all_values) * 1.1 or 1.0
+    maximum_x = max(int(item["node_count"]) for _, values in series for item in values)
+    left, right, top, bottom = 170, 1345, 120, 720
+    parts = [f'<rect class="f" x="{left}" y="{top}" width="{right-left}" height="{bottom-top}"/>']
+    for tick in range(6):
+        value = maximum_y * tick / 5
+        y = _scale(value, 0, maximum_y, bottom, top)
+        parts.append(f'<line class="g" x1="{left}" y1="{y:.2f}" x2="{right}" y2="{y:.2f}"/><text class="a" x="{left-14}" y="{y+5:.2f}" text-anchor="end">{value:.1f}</text>')
+    for count in range(1, maximum_x + 1):
+        x = _scale(count, 1, max(2, maximum_x), left, right)
+        parts.append(f'<line class="g" x1="{x:.2f}" y1="{top}" x2="{x:.2f}" y2="{bottom}"/><text class="a" x="{x:.2f}" y="{bottom+28}" text-anchor="middle">{count}</text>')
+    for index, (signature, runs) in enumerate(series):
+        color = OKABE_ITO[index % len(OKABE_ITO)]
+        by_count: dict[int, list[float]] = {}
+        for run in runs:
+            by_count.setdefault(int(run["node_count"]), []).append(float(run["cluster_tokens_per_s"]))
+        mean_points = []
+        for count, values in sorted(by_count.items()):
+            x = _scale(count, 1, max(2, maximum_x), left, right)
+            for offset, value in enumerate(values):
+                y = _scale(value, 0, maximum_y, bottom, top)
+                jitter = (offset - (len(values) - 1) / 2) * 8
+                parts.append(f'<circle cx="{x+jitter:.2f}" cy="{y:.2f}" r="5" fill="{color}" fill-opacity="0.55"/>')
+            mean_y = _scale(statistics.fmean(values), 0, maximum_y, bottom, top)
+            mean_points.append(f"{x:.2f},{mean_y:.2f}")
+        parts.append(f'<polyline points="{" ".join(mean_points)}" fill="none" stroke="{color}" stroke-width="4"/>')
+        label = f"{Path(signature[0]).name[:20]} · {signature[2][:18]}"
+        parts.append(f'<line x1="{190+index*290}" y1="98" x2="{222+index*290}" y2="98" stroke="{color}" stroke-width="5"/><text class="a" x="{230+index*290}" y="103">{escape(label)}</text>')
+    parts.append(f'<text class="a" x="26" y="{(top+bottom)/2}" transform="rotate(-90 26 {(top+bottom)/2})" text-anchor="middle">Generated tokens/s</text>')
+    parts.append(f'<text class="a" x="{(left+right)/2}" y="810" text-anchor="middle">Participating nodes</text>')
+    return _svg_document(title, subtitle, "".join(parts))
+
+
+def node_contribution_svg(dataset: PublicationDataset) -> str | None:
+    rows = [item for item in dataset.node_contributions if int(item["node_count"] or 0) > 1 and item["generated_tokens"] is not None]
+    if not rows:
+        return None
+    totals: dict[str, float] = {}
+    for row in rows:
+        totals[str(row["node"])] = totals.get(str(row["node"]), 0.0) + float(row["generated_tokens"])
+    if not totals:
+        return None
+    total = sum(totals.values()) or 1.0
+    title = f"{dataset.experiment_type.title()} multi-node token contribution"
+    subtitle = "Successful generated tokens from multi-node runs; contribution is not causal speedup"
+    left, right, top, bottom = 220, 1320, 135, 720
+    parts = [f'<rect class="f" x="{left}" y="{top}" width="{right-left}" height="{bottom-top}"/>']
+    slot = (bottom - top) / len(totals)
+    for index, (node, value) in enumerate(sorted(totals.items())):
+        y = top + index * slot + slot * 0.2
+        height = slot * 0.6
+        width = (right-left) * value / max(totals.values())
+        parts.append(f'<text class="a" x="{left-14}" y="{y+height/2+5:.2f}" text-anchor="end">{escape(node[:28])}</text>')
+        parts.append(f'<rect x="{left}" y="{y:.2f}" width="{width:.2f}" height="{height:.2f}" fill="{OKABE_ITO[index % len(OKABE_ITO)]}"/>')
+        parts.append(f'<text class="a" x="{left+width+10:.2f}" y="{y+height/2+5:.2f}">{value:.0f} · {100*value/total:.1f}%</text>')
+    parts.append(f'<text class="a" x="{(left+right)/2}" y="810" text-anchor="middle">Generated tokens</text>')
+    return _svg_document(title, subtitle, "".join(parts))
+
+
+def telemetry_svg(dataset: PublicationDataset, metric: str, title: str, unit: str, *, platform: str) -> str | None:
+    rows = [
+        item for item in dataset.telemetry
+        if item.get("platform") == platform and item.get("elapsed_s") is not None and item.get(metric) is not None
+    ]
+    if not rows:
+        return None
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault((str(row["run_id"]), str(row["node"])), []).append(row)
+    maximum_x = max(float(item["elapsed_s"]) for item in rows) or 1.0
+    values = [float(item[metric]) for item in rows]
+    low, high = min(values), max(values)
+    padding = max((high-low) * 0.08, abs(high) * 0.03, 1.0)
+    low, high = max(0.0, low-padding), high+padding
+    left, right, top, bottom = 170, 1345, 120, 720
+    parts = [f'<rect class="f" x="{left}" y="{top}" width="{right-left}" height="{bottom-top}"/>']
+    for tick in range(6):
+        value = low + (high-low) * tick / 5
+        y = _scale(value, low, high, bottom, top)
+        x_value = maximum_x * tick / 5
+        x = _scale(x_value, 0, maximum_x, left, right)
+        parts.append(f'<line class="g" x1="{left}" y1="{y:.2f}" x2="{right}" y2="{y:.2f}"/><text class="a" x="{left-14}" y="{y+5:.2f}" text-anchor="end">{value:.1f}</text>')
+        parts.append(f'<text class="a" x="{x:.2f}" y="{bottom+28}" text-anchor="middle">{x_value:.0f}</text>')
+    for index, ((run_id, node), samples) in enumerate(sorted(grouped.items())):
+        ordered = sorted(samples, key=lambda item: float(item["elapsed_s"]))
+        points = " ".join(
+            f'{_scale(float(item["elapsed_s"]),0,maximum_x,left,right):.2f},{_scale(float(item[metric]),low,high,bottom,top):.2f}'
+            for item in ordered
+        )
+        color = OKABE_ITO[index % len(OKABE_ITO)]
+        parts.append(f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="2.5" stroke-opacity="0.8"/>')
+        if index < 4:
+            label = f"{run_id[-6:]} · {node[:18]}"
+            parts.append(f'<line x1="{190+index*285}" y1="98" x2="{222+index*285}" y2="98" stroke="{color}" stroke-width="4"/><text class="a" x="{230+index*285}" y="103">{escape(label)}</text>')
+    parts.append(f'<text class="a" x="26" y="{(top+bottom)/2}" transform="rotate(-90 26 {(top+bottom)/2})" text-anchor="middle">{escape(unit)}</text>')
+    parts.append(f'<text class="a" x="{(left+right)/2}" y="810" text-anchor="middle">Monotonic elapsed time (s)</text>')
+    return _svg_document(title, "Measurement-window samples; unavailable values are omitted", "".join(parts))
+
+
+def rpc_stages_svg(dataset: PublicationDataset) -> str | None:
+    if not dataset.rpc_stages:
+        return None
+    rows = list(dataset.rpc_stages)
+    maximum = max(float(item["duration_s"]) for item in rows) or 1.0
+    left, right, top, bottom = 220, 1320, 135, 720
+    slot = (bottom-top) / len(rows)
+    parts = [f'<rect class="f" x="{left}" y="{top}" width="{right-left}" height="{bottom-top}"/>']
+    labels = {"model_load_distribution_s": "Model load/distribution", "coordinator_wait_s": "Coordinator wait", "cleanup_s": "Cleanup"}
+    for index, row in enumerate(rows):
+        y = top + index * slot + slot * 0.2
+        height = slot * 0.6
+        value = float(row["duration_s"])
+        width = (right-left) * value / maximum
+        label = f'{str(row["run_id"])[-6:]} · {labels.get(str(row["stage"]), str(row["stage"]))}'
+        parts.append(f'<text class="a" x="{left-14}" y="{y+height/2+5:.2f}" text-anchor="end">{escape(label[:36])}</text>')
+        parts.append(f'<rect x="{left}" y="{y:.2f}" width="{width:.2f}" height="{height:.2f}" fill="{OKABE_ITO[index % len(OKABE_ITO)]}"/><text class="a" x="{left+width+10:.2f}" y="{y+height/2+5:.2f}">{value:.3f}s</text>')
+    return _svg_document(f"{dataset.experiment_type.title()} RPC stage durations", "Only runtime-exposed stages are plotted; unavailable stages remain absent", "".join(parts))
+
+
 def render_figures(dataset: PublicationDataset, analysis: Mapping[str, Any]) -> dict[str, str]:
     figures = {
         "throughput.svg": throughput_svg(dataset, analysis),
@@ -596,6 +803,25 @@ def render_figures(dataset: PublicationDataset, analysis: Mapping[str, Any]) -> 
         figures["energy-efficiency.svg"] = energy
     if thermal is not None:
         figures["peak-temperature.svg"] = thermal
+    optional = {
+        "scaling.svg": scaling_svg(dataset),
+        "node-contribution.svg": node_contribution_svg(dataset),
+        "rpc-stages.svg": rpc_stages_svg(dataset),
+    }
+    figures.update({name: svg for name, svg in optional.items() if svg is not None})
+    platforms = sorted({str(item.get("platform") or "unknown") for item in dataset.telemetry})
+    for platform in platforms:
+        slug = re.sub(r"[^a-z0-9]+", "-", platform.lower()).strip("-") or "unknown"
+        power = telemetry_svg(
+            dataset, "power_w", f"{dataset.experiment_type.title()} {platform} power time series", "Power (W)", platform=platform
+        )
+        temperature = telemetry_svg(
+            dataset, "temperature_c", f"{dataset.experiment_type.title()} {platform} temperature time series", "Temperature (°C)", platform=platform
+        )
+        if power is not None:
+            figures[f"power-timeseries-{slug}.svg"] = power
+        if temperature is not None:
+            figures[f"temperature-timeseries-{slug}.svg"] = temperature
     return figures
 
 
@@ -705,19 +931,30 @@ def write_publication_bundle(
     locked_inputs: Mapping[str, Path],
     acknowledge_non_formal: bool = False,
     png_renderer: Callable[[Path], Mapping[str, Any]] | None = None,
+    formal_authorized: bool = False,
 ) -> dict[str, Any]:
     """Atomically create a deterministic directory and matching zip archive."""
     if experiment_type == "pilot" and acknowledge_non_formal is not True:
         raise PublicationError("pilot export requires explicit acknowledgement that it is non-formal")
+    if experiment_type == "formal" and formal_authorized is not True:
+        raise PublicationError("formal export requires a completed authorized campaign manifest")
     if output_dir.exists() or output_dir.is_symlink():
         raise PublicationError(f"output path already exists: {output_dir}")
+    archive = output_dir.with_suffix(".zip")
+    if archive.exists() or archive.is_symlink():
+        raise PublicationError(f"archive path already exists: {archive}")
     confidence = analysis_plan.get("confidence_intervals")
     if not isinstance(confidence, Mapping):
         raise PublicationError("analysis plan lacks confidence_intervals")
     seed = confidence.get("seed")
     resamples = confidence.get("bootstrap_resamples")
     dataset = load_result_dataset(results_root, experiment_type=experiment_type)
-    analysis = analyze_dataset(dataset, seed=seed, bootstrap_resamples=resamples)
+    analysis = analyze_dataset(
+        dataset,
+        seed=seed,
+        bootstrap_resamples=resamples,
+        formal_claim_allowed=formal_authorized,
+    )
     parent = output_dir.resolve().parent
     parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temp = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.", dir=parent))
@@ -728,6 +965,12 @@ def write_publication_bundle(
         _private_write(temp / "tables" / "runs.csv", _csv_bytes(dataset.runs, tuple(dataset.runs[0].keys())))
         request_fields = ("run_id", "cell_id", "request_id", "logical_request_id", "node", "ok", "ttft_s", "e2e_s", "generated_tokens", "tokens_per_s", "error_code")
         _private_write(temp / "tables" / "requests-nested.csv", _csv_bytes(dataset.requests, request_fields))
+        telemetry_fields = ("run_id", "cell_id", "node", "platform", "elapsed_s", "power_w", "temperature_c")
+        _private_write(temp / "tables" / "telemetry-samples.csv", _csv_bytes(dataset.telemetry, telemetry_fields))
+        contribution_fields = ("run_id", "cell_id", "node", "node_count", "successful_requests", "failed_requests", "generated_tokens", "effective_tokens_per_s")
+        _private_write(temp / "tables" / "node-contributions.csv", _csv_bytes(dataset.node_contributions, contribution_fields))
+        rpc_fields = ("run_id", "cell_id", "stage", "duration_s")
+        _private_write(temp / "tables" / "rpc-stages.csv", _csv_bytes(dataset.rpc_stages, rpc_fields))
         exclusion_fields = ("run_id", "reason_code", "detail")
         _private_write(temp / "tables" / "exclusions.csv", _csv_bytes(dataset.exclusions, exclusion_fields))
         cell_rows = _cell_table(analysis)
@@ -765,9 +1008,6 @@ def write_publication_bundle(
         }
         _private_write(temp / "bundle-manifest.json", canonical_json(manifest))
         os.replace(temp, output_dir)
-        archive = output_dir.with_suffix(".zip")
-        if archive.exists() or archive.is_symlink():
-            raise PublicationError(f"archive path already exists: {archive}")
         _deterministic_zip(output_dir, archive)
         return {**manifest, "output_dir": str(output_dir), "archive": str(archive), "archive_sha256": sha256_bytes(archive.read_bytes())}
     except Exception:

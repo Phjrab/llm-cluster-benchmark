@@ -90,6 +90,7 @@ def render_png(figures: Path) -> dict[str, Any]:
 
 
 def command_build(args: argparse.Namespace) -> int:
+    formal_authorized = False
     locked_inputs = {
         "analysis-engine.py": ROOT / "cluster" / "research" / "publication.py",
         "analysis-plan.json": args.analysis_plan,
@@ -121,6 +122,9 @@ def command_build(args: argparse.Namespace) -> int:
         campaign = read_object(locked_inputs["campaign-manifest.json"])
         if campaign.get("artifact_type") != "formal_campaign" or campaign.get("experiment_type") != "formal":
             raise PublicationError("campaign manifest must be a formal_campaign artifact")
+        if campaign.get("status") != "completed":
+            raise PublicationError("formal publication requires a completed campaign manifest")
+        formal_authorized = True
     result = write_publication_bundle(
         results_root=args.results_root,
         output_dir=args.output_dir,
@@ -129,6 +133,7 @@ def command_build(args: argparse.Namespace) -> int:
         locked_inputs=locked_inputs,
         acknowledge_non_formal=args.acknowledge_non_formal,
         png_renderer=None if args.svg_only else render_png,
+        formal_authorized=formal_authorized,
     )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True, indent=2))
     return 0
