@@ -87,12 +87,17 @@ class DeploymentManifestUnitTests(unittest.TestCase):
                 "module.exports = {};\n", encoding="utf-8"
             )
             (binary_dir / "playwright").symlink_to("../playwright.js")
+            artifact_dir = root / ".artifacts" / "playwright"
+            artifact_dir.mkdir(parents=True)
+            (artifact_dir / "dashboard.token").write_text("test-only\n", encoding="utf-8")
 
             manifest = build_fixture(root)
 
         paths = {item.path for item in manifest.source_files}
         self.assertFalse(any(path.startswith("node_modules/") for path in paths))
+        self.assertFalse(any(path.startswith(".artifacts/") for path in paths))
         self.assertIn("node_modules/", RSYNC_EXCLUDES)
+        self.assertIn(".artifacts/", RSYNC_EXCLUDES)
 
     def test_content_or_file_set_drift_fails_verification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
