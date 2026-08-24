@@ -274,35 +274,39 @@ class LlamaCppInferenceBackend:
 
     def verify_model(self, model_id: str, expected_sha256: Optional[str] = None) -> Dict[str, object]:
         with self.lock:
-            path = self._resolve_model_path(model_id)
-            digest = self._cached_sha256(path)
-            expected = expected_sha256.strip().lower() if expected_sha256 else ""
-            if expected and (not re.fullmatch(r"[0-9a-f]{64}", expected) or digest != expected):
-                raise ValueError(f"Model checksum mismatch: {model_id}")
-            records = self._read_model_metadata()
-            metadata = self._verified_model_metadata(path, None, records.get(model_id))
-            records[model_id] = metadata
-            self._write_model_metadata(records)
-            return {
-                "id": model_id,
-                "filename": path.name,
-                "size_bytes": path.stat().st_size,
-                "sha256": digest,
-                "quantization": self._quantization_from_filename(path.name),
-                "checksum_valid": True,
-                "source_revision": metadata.get("source_revision", ""),
-                "source_repo": metadata.get("source_repo", ""),
-                "provenance_status": metadata.get("provenance_status", ""),
-                "architecture": metadata.get("architecture", ""),
-                "chat_template_hash": metadata.get("chat_template_hash", ""),
-                "tokenizer_metadata_hash": metadata.get("tokenizer_metadata_hash", ""),
-                "metadata_contract": metadata.get("metadata_contract", ""),
-                "chat_template_keys": metadata.get("chat_template_keys", []),
-                "tokenizer_metadata_keys": metadata.get("tokenizer_metadata_keys", []),
-                "metadata_count": metadata.get("metadata_count", 0),
-                "license_accepted": metadata.get("license_accepted") is True,
-                "metadata_inspected": metadata.get("metadata_contract") == GGUF_METADATA_CONTRACT,
-            }
+            return self._verify_model_locked(model_id, expected_sha256)
+
+    def _verify_model_locked(self, model_id: str, expected_sha256: Optional[str] = None) -> Dict[str, object]:
+        """Verify a model while the caller already owns ``self.lock``."""
+        path = self._resolve_model_path(model_id)
+        digest = self._cached_sha256(path)
+        expected = expected_sha256.strip().lower() if expected_sha256 else ""
+        if expected and (not re.fullmatch(r"[0-9a-f]{64}", expected) or digest != expected):
+            raise ValueError(f"Model checksum mismatch: {model_id}")
+        records = self._read_model_metadata()
+        metadata = self._verified_model_metadata(path, None, records.get(model_id))
+        records[model_id] = metadata
+        self._write_model_metadata(records)
+        return {
+            "id": model_id,
+            "filename": path.name,
+            "size_bytes": path.stat().st_size,
+            "sha256": digest,
+            "quantization": self._quantization_from_filename(path.name),
+            "checksum_valid": True,
+            "source_revision": metadata.get("source_revision", ""),
+            "source_repo": metadata.get("source_repo", ""),
+            "provenance_status": metadata.get("provenance_status", ""),
+            "architecture": metadata.get("architecture", ""),
+            "chat_template_hash": metadata.get("chat_template_hash", ""),
+            "tokenizer_metadata_hash": metadata.get("tokenizer_metadata_hash", ""),
+            "metadata_contract": metadata.get("metadata_contract", ""),
+            "chat_template_keys": metadata.get("chat_template_keys", []),
+            "tokenizer_metadata_keys": metadata.get("tokenizer_metadata_keys", []),
+            "metadata_count": metadata.get("metadata_count", 0),
+            "license_accepted": metadata.get("license_accepted") is True,
+            "metadata_inspected": metadata.get("metadata_contract") == GGUF_METADATA_CONTRACT,
+        }
 
     def delete_model(self, model_id: str) -> Dict[str, object]:
         with self.lock:
@@ -343,7 +347,7 @@ class LlamaCppInferenceBackend:
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.is_file() and self._cached_sha256(target) == expected:
                 self._persist_verified_metadata(model_id, target, install_metadata)
-                return {**self.verify_model(model_id, expected), "downloaded_bytes": 0, "already_present": True}
+                return {**self._verify_model_locked(model_id, expected), "downloaded_bytes": 0, "already_present": True}
             temporary = target.with_name(target.name + ".part")
             temporary.unlink(missing_ok=True)
             downloaded = 0
@@ -368,7 +372,7 @@ class LlamaCppInferenceBackend:
                 records = self._read_model_metadata()
                 records[model_id] = verified_metadata
                 self._write_model_metadata(records)
-                return {**self.verify_model(model_id, expected), "downloaded_bytes": downloaded, "already_present": False}
+                return {**self._verify_model_locked(model_id, expected), "downloaded_bytes": downloaded, "already_present": False}
             except Exception:
                 temporary.unlink(missing_ok=True)
                 raise
