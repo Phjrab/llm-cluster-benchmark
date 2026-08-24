@@ -284,12 +284,28 @@ telemetry policies are byte-for-byte unchanged in meaning. v5 has its own
 manifest and result directory, and v1-v4 observations remain excluded from v5
 precision estimates and from the formal pool.
 
+The first v5 hardware batch completed all four Jetson 02 calibration runs with
+20/20 successful requests and successful model cleanup:
+
+| Cooldown | Start temperature | Peak temperature | Worker overhead | Jetson result |
+|---:|---:|---:|---:|---|
+| baseline | 42.84 °C | 50.50 °C | 3.35% | reference |
+| 60 s | 46.22 °C | 51.03 °C | 4.80% | fail |
+| 180 s | 43.97 °C | 50.88 °C | 3.20% | pass |
+| 300 s | 43.50 °C | 51.19 °C | 3.92% | pass |
+
+The smallest passing Jetson candidate is therefore 180 seconds. It is not yet
+the global selected cooldown because the Raspberry Pi calibration cohort is
+still unmeasured in v5. The v5 manifest is 4/28 complete, has zero failed
+attempts, and remains `freeze_ready=false`.
+
 ### 10.5 Resume checkpoints
 
 | Checkpoint | Commit |
 |---|---|
 | Preregister platform-specific low-intrusion telemetry | `7aeb9fe` |
 | Add bounded, resumable Phase 09 execution batches | `1c9a323` |
+| Preregister the expanded v5 thermal recovery range | `dfd0482` |
 
 All six registered Workers were source-verified at `1c9a323…` before live
 execution. Only source synchronization and Worker restart were performed; no
