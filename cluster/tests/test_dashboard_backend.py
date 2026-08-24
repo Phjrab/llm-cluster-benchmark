@@ -157,6 +157,30 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertEqual(len(trashed), 1)
             self.assertTrue((trashed[0] / "summary.json").is_file())
 
+    def test_result_trash_can_be_listed_and_restored_through_api(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self.load_dashboard(root)
+            run_id = "run_restore_contract"
+            run_dir = root / "results" / run_id
+            run_dir.mkdir(parents=True)
+            (run_dir / "summary.json").write_text(
+                json.dumps({"run_id": run_id, "status": "completed", "suite_id": ""}),
+                encoding="utf-8",
+            )
+            with TestClient(dashboard.app) as client:
+                self.assertEqual(client.delete(f"/api/runs/{run_id}").status_code, 200)
+                trash = client.get("/api/results/trash")
+                self.assertEqual(trash.status_code, 200)
+                entry = trash.json()["trash"][0]
+                restored = client.post(f"/api/results/trash/{entry['trash_id']}/restore")
+                active = client.get(f"/api/runs/{run_id}")
+            self.assertEqual(restored.status_code, 200)
+            self.assertEqual(restored.json()["run_id"], run_id)
+            self.assertEqual(active.status_code, 200)
+
     def test_deleting_one_suite_run_marks_remaining_suite_partial(self) -> None:
         from fastapi.testclient import TestClient
 

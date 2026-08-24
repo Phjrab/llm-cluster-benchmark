@@ -2382,6 +2382,19 @@ class DashboardFacade:
     def delete_run(self, run_id: str) -> Dict[str, Any]:
         return self._results.delete(run_id)
 
+    def result_trash(self) -> Dict[str, Any]:
+        return self._results.trash()
+
+    def restore_run(self, trash_id: str) -> Dict[str, Any]:
+        return self._results.restore(trash_id)
+
+    def purge_run(self, trash_id: str, *, confirmed: bool, archive_sha256: str) -> Dict[str, Any]:
+        return self._results.purge(
+            trash_id,
+            confirmed=confirmed,
+            archive_sha256=archive_sha256,
+        )
+
 
 COMPATIBILITY_EXPORTS = (
     "ActionManager", "ActionPayload", "DASHBOARD_TOKEN", "DEFAULTS_PATH", "ENVIRONMENT_DIR",

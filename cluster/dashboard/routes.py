@@ -26,6 +26,7 @@ from cluster.dashboard.schemas import (
     NodeDeletePayload,
     NodePayload,
     NodeRenamePayload,
+    TrashPurgePayload,
 )
 from cluster.dashboard.services import DashboardFacade
 
@@ -319,6 +320,39 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
     ) -> Dict[str, Any]:
         try:
             return dashboard.delete_run(run_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @results_router.get("/api/results/trash")
+    async def list_result_trash(
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.result_trash()
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @results_router.post("/api/results/trash/{trash_id}/restore")
+    async def restore_result(
+        trash_id: str, dashboard: DashboardFacade = Depends(get_dashboard_services)
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.restore_run(trash_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @results_router.delete("/api/results/trash/{trash_id}")
+    async def purge_result(
+        trash_id: str,
+        payload: TrashPurgePayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.purge_run(
+                trash_id,
+                confirmed=payload.confirmed,
+                archive_sha256=payload.archive_sha256,
+            )
         except ValueError as exc:
             return _error_response(exc)
 

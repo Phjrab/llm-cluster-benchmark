@@ -105,6 +105,42 @@ class ResultDurabilityTests(unittest.TestCase):
             self.assertEqual(destination.stat().st_mode & 0o777, 0o700)
             self.assertEqual(repository.list_summaries(), [])
 
+    def test_trash_lists_checksum_restores_and_requires_checksum_for_purge(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = FilesystemRunRepository(Path(directory))
+            run_id = "20260824_120000_ab12"
+            repository.create(run_id, {"model_id": "models/example.gguf"})
+            repository.write_summary(run_id, {"run_id": run_id, "status": "completed"})
+            destination = repository.delete(run_id)
+            entries = repository.list_trash()
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0]["trash_id"], destination.name)
+            self.assertEqual(entries[0]["run_id"], run_id)
+            self.assertEqual(len(entries[0]["archive_sha256"]), 64)
+            with self.assertRaisesRegex(ValueError, "checksum"):
+                repository.purge(destination.name, archive_sha256="0" * 64)
+            restored = repository.restore(destination.name)
+            self.assertEqual(restored.name, run_id)
+            self.assertEqual(repository.read_summary(run_id)["status"], "completed")
+            self.assertEqual(repository.list_trash(), [])
+
+    def test_formal_campaign_trash_is_retention_protected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = FilesystemRunRepository(Path(directory))
+            run_id = "20260824_120001_ab12"
+            repository.create(run_id, {"model_id": "models/example.gguf"})
+            repository.write_summary(run_id, {
+                "run_id": run_id,
+                "status": "completed",
+                "experiment_type": "formal",
+                "campaign_id": "formal-campaign-a",
+            })
+            destination = repository.delete(run_id)
+            entry = repository.list_trash()[0]
+            self.assertTrue(entry["protected"])
+            with self.assertRaisesRegex(PermissionError, "cannot be permanently deleted"):
+                repository.purge(destination.name, archive_sha256=entry["archive_sha256"])
+
 
 class StructuredFailureTests(unittest.TestCase):
     def test_failure_record_keeps_legacy_string_and_serializes_evidence(self) -> None:

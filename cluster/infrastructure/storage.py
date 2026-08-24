@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import csv
 import fcntl
+import hashlib
 import json
 import os
+import re
+import shutil
 import stat
 import threading
 import uuid
@@ -84,6 +87,12 @@ class RunRepository(Protocol):
     def list_summaries(self, limit: int = 100) -> List[JsonObject]: ...
 
     def delete(self, run_id: str) -> Path: ...
+
+    def list_trash(self) -> List[JsonObject]: ...
+
+    def restore(self, trash_id: str) -> Path: ...
+
+    def purge(self, trash_id: str, *, archive_sha256: str) -> None: ...
 
 
 class SuiteRepository(Protocol):
@@ -528,6 +537,92 @@ class FilesystemRunRepository:
         os.replace(source, destination)
         destination.chmod(0o700)
         return destination
+
+    @staticmethod
+    def _trash_id(value: str) -> str:
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_]+-[0-9a-f]{32}", value):
+            raise ValueError("Invalid trash id")
+        return value
+
+    def _trash_path(self, trash_id: str) -> Path:
+        trash = self.results_dir / "_trash"
+        path = trash / self._trash_id(trash_id)
+        if path.parent != trash or path.is_symlink():
+            raise StorageCorruptionError("Trash entry identity is unsafe")
+        return path
+
+    @staticmethod
+    def _tree_sha256(directory: Path) -> str:
+        digest = hashlib.sha256()
+        files = sorted(path for path in directory.rglob("*") if path.is_file())
+        for path in files:
+            if path.is_symlink():
+                raise StorageCorruptionError("Trash entry must not contain symbolic links")
+            relative = path.relative_to(directory).as_posix().encode("utf-8")
+            digest.update(len(relative).to_bytes(8, "big"))
+            digest.update(relative)
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def _protected_summary(summary: Mapping[str, Any]) -> bool:
+        research = summary.get("research_identity")
+        research_type = research.get("experiment_type") if isinstance(research, Mapping) else None
+        return bool(summary.get("campaign_id")) or summary.get("experiment_type") == "formal" or research_type == "formal"
+
+    def list_trash(self) -> List[JsonObject]:
+        trash = self.results_dir / "_trash"
+        if not trash.is_dir():
+            return []
+        entries: List[JsonObject] = []
+        for path in sorted(trash.iterdir(), key=lambda item: item.stat().st_mtime, reverse=True):
+            if path.is_symlink() or not path.is_dir():
+                continue
+            try:
+                trash_id = self._trash_id(path.name)
+                summary = read_json_object(path / "summary.json")
+                run_id = validate_run_id(str(summary.get("run_id") or ""))
+                archive_sha256 = self._tree_sha256(path)
+            except (OSError, ValueError, StorageCorruptionError):
+                continue
+            entries.append({
+                "trash_id": trash_id,
+                "run_id": run_id,
+                "deleted_at_epoch_s": path.stat().st_mtime,
+                "archive_sha256": archive_sha256,
+                "protected": self._protected_summary(summary),
+                "campaign_id": str(summary.get("campaign_id") or "") or None,
+                "suite_id": str(summary.get("suite_id") or "") or None,
+                "status": str(summary.get("status") or "unknown"),
+            })
+        return entries
+
+    def restore(self, trash_id: str) -> Path:
+        source = self._trash_path(trash_id)
+        if not source.is_dir():
+            raise FileNotFoundError(source)
+        summary = read_json_object(source / "summary.json")
+        run_id = validate_run_id(str(summary.get("run_id") or ""))
+        destination = self._run_dir(run_id)
+        if destination.exists():
+            raise FileExistsError(destination)
+        os.replace(source, destination)
+        destination.chmod(0o700)
+        return destination
+
+    def purge(self, trash_id: str, *, archive_sha256: str) -> None:
+        source = self._trash_path(trash_id)
+        if not source.is_dir():
+            raise FileNotFoundError(source)
+        summary = read_json_object(source / "summary.json")
+        if self._protected_summary(summary):
+            raise PermissionError("Formal campaign results cannot be permanently deleted")
+        expected = self._tree_sha256(source)
+        if not re.fullmatch(r"[0-9a-f]{64}", archive_sha256 or "") or archive_sha256 != expected:
+            raise ValueError("Archive checksum confirmation does not match the trash entry")
+        shutil.rmtree(source)
 
 
 __all__ = [

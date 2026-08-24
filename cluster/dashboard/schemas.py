@@ -104,6 +104,13 @@ class JetsonPowerModePayload(BaseModel):
     mode_id: int = Field(ge=0, le=99_999)
 
 
+class TrashPurgePayload(BaseModel):
+    """Explicit, checksum-bound approval for irreversible result deletion."""
+
+    confirmed: bool = False
+    archive_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
 class ActionPayload(BaseModel):
     action: str
     node_names: List[str] = Field(default_factory=list)
