@@ -737,6 +737,9 @@ function renderSettings() {
   $("#workerAuthInput").checked = workerEnabled;
   $("#dashboardAuthInput").checked = dashboardEnabled;
   $("#dashboardTokenInput").value = "";
+  $("#sshHostKeyPolicyInput").value = state.settings.ssh_host_key_policy === "pinned"
+    ? "pinned"
+    : "trusted_lan";
   const workerNotice = $("#workerAuthNotice");
   workerNotice.classList.toggle("enabled", workerEnabled);
   workerNotice.textContent = workerEnabled
@@ -1857,7 +1860,11 @@ async function bootstrap() {
     state.environment = [];
     setEnvironmentReports(data.environment || data.node_readiness || []);
     state.onboarding = data.onboarding || {};
-    state.settings = data.settings || { worker_api_auth: false, dashboard_token_auth: false };
+    state.settings = data.settings || {
+      worker_api_auth: false,
+      dashboard_token_auth: false,
+      ssh_host_key_policy: "trusted_lan",
+    };
     state.modelCatalog = data.model_catalog || [];
     state.modelRecommendations = data.model_recommendations || {};
     state.modelStarterPacks = data.model_starter_packs || [];
@@ -2317,6 +2324,7 @@ function bindEvents() {
         body: {
           worker_api_auth: $("#workerAuthInput").checked,
           dashboard_token_auth: dashboardAuth,
+          ssh_host_key_policy: $("#sshHostKeyPolicyInput").value,
           dashboard_token: dashboardToken,
         },
       });

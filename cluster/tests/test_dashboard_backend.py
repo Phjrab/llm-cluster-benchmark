@@ -181,6 +181,48 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertEqual(restored.json()["run_id"], run_id)
             self.assertEqual(active.status_code, 200)
 
+    def test_registered_worker_host_key_can_be_scanned_and_explicitly_pinned(self) -> None:
+        from fastapi.testclient import TestClient
+        from cluster.dashboard import services
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self.load_dashboard(root)
+            inventory = root / "nodes.csv"
+            inventory.write_text(
+                "name,role,host,user,ssh_port,api_port,project_dir,enabled,identity_file,platform\n"
+                "worker-01,worker,192.168.0.26,edge,22,8000,/home/edge/llm-cluster,True,,jetson\n",
+                encoding="utf-8",
+            )
+            candidate = {
+                "endpoint": "192.168.0.26",
+                "key_type": "ssh-ed25519",
+                "fingerprint": "SHA256:fixture1234567890+/",
+                "known_hosts_line": "192.168.0.26 ssh-ed25519 fixture",
+            }
+            pinned = {key: value for key, value in candidate.items() if key != "known_hosts_line"}
+            with TestClient(dashboard.app) as client, mock.patch.object(
+                services, "scan_host_keys", return_value=[candidate]
+            ), mock.patch.object(
+                services, "list_pinned_host_keys", return_value=[]
+            ), mock.patch.object(
+                services, "pin_host_key", return_value=pinned
+            ) as pin:
+                scanned = client.get("/api/nodes/worker-01/ssh-host-key")
+                rejected = client.post(
+                    "/api/nodes/worker-01/ssh-host-key",
+                    json={"fingerprint": pinned["fingerprint"], "confirmed": False},
+                )
+                accepted = client.post(
+                    "/api/nodes/worker-01/ssh-host-key",
+                    json={"fingerprint": pinned["fingerprint"], "confirmed": True},
+                )
+            self.assertEqual(scanned.status_code, 200)
+            self.assertNotIn("known_hosts_line", scanned.json()["candidates"][0])
+            self.assertEqual(rejected.status_code, 400)
+            self.assertEqual(accepted.status_code, 200)
+            pin.assert_called_once()
+
     def test_deleting_one_suite_run_marks_remaining_suite_partial(self) -> None:
         from fastapi.testclient import TestClient
 

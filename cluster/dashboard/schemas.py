@@ -111,6 +111,15 @@ class TrashPurgePayload(BaseModel):
     archive_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
 
 
+class SshHostKeyPinPayload(BaseModel):
+    fingerprint: str = Field(
+        min_length=8,
+        max_length=128,
+        pattern=r"^SHA256:[A-Za-z0-9+/]+={0,2}$",
+    )
+    confirmed: bool = False
+
+
 class ActionPayload(BaseModel):
     action: str
     node_names: List[str] = Field(default_factory=list)
@@ -156,4 +165,5 @@ class ExperimentPayload(BaseModel):
 class ClusterSettingsPayload(BaseModel):
     worker_api_auth: Optional[bool] = None
     dashboard_token_auth: Optional[bool] = None
+    ssh_host_key_policy: Optional[str] = Field(None, pattern=r"^(trusted_lan|pinned)$")
     dashboard_token: str = Field("", max_length=256)

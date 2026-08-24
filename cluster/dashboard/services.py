@@ -87,6 +87,11 @@ from cluster.infrastructure.storage import (
     FilesystemSuiteRepository,
     StorageCorruptionError,
 )
+from cluster.infrastructure.ssh_host_keys import (
+    list_pinned_host_keys,
+    pin_host_key,
+    scan_host_keys,
+)
 
 
 RUNTIME_PATHS = resolve_runtime_paths()
@@ -304,7 +309,7 @@ def ensure_runtime() -> None:
     TOKEN_PATH.chmod(0o600)
     if not SETTINGS_PATH.exists():
         FilesystemSettingsRepository(SETTINGS_PATH).write(
-            {"worker_api_auth": False, "dashboard_token_auth": False}
+            {"worker_api_auth": False, "dashboard_token_auth": False, "ssh_host_key_policy": "trusted_lan"}
         )
     SETTINGS_PATH.chmod(0o600)
     _tighten_existing_runtime_permissions()
@@ -410,9 +415,10 @@ def read_settings() -> Dict[str, Any]:
         except (OSError, StorageCorruptionError):
             # A damaged existing settings file must not silently disable a
             # dashboard protection that may previously have been enabled.
-            return {"worker_api_auth": True, "dashboard_token_auth": True}
+            return {"worker_api_auth": True, "dashboard_token_auth": True, "ssh_host_key_policy": "pinned"}
         worker_value = raw.get("worker_api_auth", False)
         dashboard_value = raw.get("dashboard_token_auth", False)
+        ssh_policy = raw.get("ssh_host_key_policy", "trusted_lan")
         return {
             "worker_api_auth": (
                 worker_value
@@ -423,6 +429,9 @@ def read_settings() -> Dict[str, Any]:
                 dashboard_value
                 if isinstance(dashboard_value, bool)
                 else "dashboard_token_auth" in raw
+            ),
+            "ssh_host_key_policy": (
+                ssh_policy if ssh_policy in {"trusted_lan", "pinned"} else "pinned"
             ),
         }
 
@@ -2076,6 +2085,61 @@ class DashboardFacade:
         except ValueError as exc:
             raise DashboardServiceError(409, str(exc)) from exc
         return {"ok": True, "action": record}
+
+    @staticmethod
+    def _registered_node(node_name: str) -> Node:
+        try:
+            validated = validate_node_id(node_name)
+        except ValueError as exc:
+            raise DashboardServiceError(400, "Invalid node name") from exc
+        node = next((item for item in read_all_nodes() if item.name == validated), None)
+        if node is None:
+            raise DashboardServiceError(404, "Node not found")
+        return node
+
+    def ssh_host_key(self, node_name: str) -> Dict[str, Any]:
+        node = self._registered_node(node_name)
+        try:
+            candidates = scan_host_keys(node.host, node.ssh_port)
+            pinned = list_pinned_host_keys(RUNTIME_PATHS.known_hosts_path)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            raise DashboardServiceError(502, "Worker SSH host key could not be scanned") from exc
+        endpoint = node.host if node.ssh_port == 22 else f"[{node.host}]:{node.ssh_port}"
+        return {
+            "node": node.name,
+            "host": node.host,
+            "port": node.ssh_port,
+            "policy": read_settings()["ssh_host_key_policy"],
+            "candidates": [
+                {key: value for key, value in item.items() if key != "known_hosts_line"}
+                for item in candidates
+            ],
+            "pinned": next((item for item in pinned if item["endpoint"] == endpoint), None),
+        }
+
+    def pin_ssh_host_key(self, node_name: str, fingerprint: str, *, confirmed: bool) -> Dict[str, Any]:
+        if confirmed is not True:
+            raise DashboardServiceError(400, "SSH host-key pinning requires explicit confirmation")
+        node = self._registered_node(node_name)
+        try:
+            pinned = pin_host_key(
+                RUNTIME_PATHS.known_hosts_path,
+                node.host,
+                node.ssh_port,
+                fingerprint,
+            )
+        except ValueError as exc:
+            raise DashboardServiceError(409, str(exc)) from exc
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            raise DashboardServiceError(502, "Worker SSH host key could not be pinned") from exc
+        events.publish(
+            "ssh_host_key_changed",
+            channel=EventChannel.SYSTEM,
+            operation="pinned",
+            node=node.name,
+            fingerprint=pinned["fingerprint"],
+        )
+        return {"ok": True, "node": node.name, **pinned}
 
     async def probe_candidate(self, payload: NodePayload) -> Dict[str, Any]:
         if payload.role != "worker":

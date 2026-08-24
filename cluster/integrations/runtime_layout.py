@@ -45,6 +45,10 @@ class RuntimePaths:
         return self.runtime_dir / "dashboard.token"
 
     @property
+    def known_hosts_path(self) -> Path:
+        return self.runtime_dir / "ssh_known_hosts"
+
+    @property
     def jobs_dir(self) -> Path:
         if self.runtime_dir == self.layout.runtime_dir:
             return self.layout.jobs_dir

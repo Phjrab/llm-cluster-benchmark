@@ -45,6 +45,8 @@ class SettingsService:
                 updated["worker_api_auth"] = payload.worker_api_auth
             if payload.dashboard_token_auth is not None:
                 updated["dashboard_token_auth"] = payload.dashboard_token_auth
+            if payload.ssh_host_key_policy is not None:
+                updated["ssh_host_key_policy"] = payload.ssh_host_key_policy
             if not previous["dashboard_token_auth"] and updated["dashboard_token_auth"]:
                 if not token_is_valid(supplied_token):
                     raise DashboardServiceError(

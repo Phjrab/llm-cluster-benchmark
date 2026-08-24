@@ -26,6 +26,7 @@ from cluster.dashboard.schemas import (
     NodeDeletePayload,
     NodePayload,
     NodeRenamePayload,
+    SshHostKeyPinPayload,
     TrashPurgePayload,
 )
 from cluster.dashboard.services import DashboardFacade
@@ -124,6 +125,30 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
         dashboard: DashboardFacade = Depends(get_dashboard_services),
     ) -> Dict[str, Any]:
         return dashboard.refresh_status()
+
+    @nodes_router.get("/api/nodes/{node_name}/ssh-host-key")
+    async def get_ssh_host_key(
+        node_name: str, dashboard: DashboardFacade = Depends(get_dashboard_services)
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.ssh_host_key(node_name)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @nodes_router.post("/api/nodes/{node_name}/ssh-host-key")
+    async def pin_ssh_host_key(
+        node_name: str,
+        payload: SshHostKeyPinPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.pin_ssh_host_key(
+                node_name,
+                payload.fingerprint,
+                confirmed=payload.confirmed,
+            )
+        except ValueError as exc:
+            return _error_response(exc)
 
     @nodes_router.post("/api/network/scan")
     async def scan_network(

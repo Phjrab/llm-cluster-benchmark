@@ -17,7 +17,7 @@ const state = {
   controller: { role: "controller", inference_enabled: false },
   activeExperiment: null,
   onboarding: {},
-  settings: { worker_api_auth: false, dashboard_token_auth: false },
+  settings: { worker_api_auth: false, dashboard_token_auth: false, ssh_host_key_policy: "trusted_lan" },
   environment: [],
   environmentBusy: false,
   environmentActionIds: new Set(),

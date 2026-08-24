@@ -34,6 +34,11 @@ from cluster.integrations.legacy_inventory_runtime import (
 )
 from cluster.infrastructure.remote import CommandResult, SshRemoteExecutor, build_ssh_command
 from cluster.infrastructure.platform import controller_capabilities
+from cluster.infrastructure.ssh_host_keys import (
+    list_pinned_host_keys,
+    pin_host_key,
+    scan_host_keys,
+)
 from cluster.infrastructure.deployment import (
     DEPLOYMENT_MANIFEST_RELATIVE_PATH,
     RSYNC_EXCLUDES,
@@ -176,7 +181,14 @@ def _identity_path(node: Node) -> Optional[Path]:
 
 
 def ssh_base(node: Node) -> List[str]:
-    return build_ssh_command(node, _identity_path(node))
+    pinned = ssh_host_key_policy() == "pinned"
+    known_hosts = resolve_runtime_paths().known_hosts_path if pinned else None
+    return build_ssh_command(
+        node,
+        _identity_path(node),
+        known_hosts_file=known_hosts,
+        require_pinned=pinned,
+    )
 
 
 def run_on_node(
@@ -189,7 +201,15 @@ def run_on_node(
         # Existing callers never request check=True; retain explicit behavior
         # instead of leaking subprocess.CompletedProcess into application code.
         raise ValueError("check=True is not supported by the remote executor boundary")
-    return SshRemoteExecutor().run(node, args, timeout=timeout, identity_file=_identity_path(node))
+    pinned = ssh_host_key_policy() == "pinned"
+    return SshRemoteExecutor().run(
+        node,
+        args,
+        timeout=timeout,
+        identity_file=_identity_path(node),
+        known_hosts_file=resolve_runtime_paths().known_hosts_path if pinned else None,
+        require_pinned=pinned,
+    )
 
 
 def discover_node(node: Node, timeout: int = 20) -> Dict[str, Any]:
@@ -835,21 +855,33 @@ def cluster_settings() -> Dict[str, Any]:
     defaults: Dict[str, Any] = {
         "worker_api_auth": False,
         "dashboard_token_auth": False,
+        "ssh_host_key_policy": "trusted_lan",
     }
     try:
         stored = json.loads(_settings_path().read_text(encoding="utf-8"))
     except FileNotFoundError:
         return defaults
     except (OSError, ValueError):
-        return {"worker_api_auth": True, "dashboard_token_auth": True}
+        return {"worker_api_auth": True, "dashboard_token_auth": True, "ssh_host_key_policy": "pinned"}
     if not isinstance(stored, dict):
-        return {"worker_api_auth": True, "dashboard_token_auth": True}
-    for key in defaults:
+        return {"worker_api_auth": True, "dashboard_token_auth": True, "ssh_host_key_policy": "pinned"}
+    for key in ("worker_api_auth", "dashboard_token_auth"):
         if key not in stored:
             continue
         value = stored[key]
         defaults[key] = value if isinstance(value, bool) else True
+    policy = stored.get("ssh_host_key_policy", "trusted_lan")
+    defaults["ssh_host_key_policy"] = policy if policy in {"trusted_lan", "pinned"} else "pinned"
     return defaults
+
+
+def ssh_host_key_policy() -> str:
+    override = os.getenv("CLUSTER_SSH_HOST_KEY_POLICY", "").strip().lower()
+    if override:
+        if override not in {"trusted_lan", "pinned"}:
+            raise ValueError("CLUSTER_SSH_HOST_KEY_POLICY must be trusted_lan or pinned")
+        return override
+    return str(cluster_settings().get("ssh_host_key_policy") or "trusted_lan")
 
 
 def worker_auth_enabled() -> bool:
@@ -1005,8 +1037,15 @@ def _rsync_ssh(node: Node) -> str:
         "-o",
         "BatchMode=yes",
         "-o",
-        "StrictHostKeyChecking=accept-new",
     ]
+    if ssh_host_key_policy() == "pinned":
+        parts.extend([
+            "-o", "StrictHostKeyChecking=yes",
+            "-o", f"UserKnownHostsFile={resolve_runtime_paths().known_hosts_path}",
+            "-o", "GlobalKnownHostsFile=/dev/null",
+        ])
+    else:
+        parts.extend(["-o", "StrictHostKeyChecking=accept-new"])
     identity = _identity_path(node)
     if identity is not None:
         parts.extend(["-i", str(identity), "-o", "IdentitiesOnly=yes"])
@@ -1854,6 +1893,62 @@ def command_select_model(nodes: Sequence[Node], args: argparse.Namespace) -> int
     return 0 if all(item["ok"] for item in results) else 1
 
 
+def command_host_key_scan(nodes: Sequence[Node], _args: argparse.Namespace) -> int:
+    records: List[Dict[str, Any]] = []
+    failed = False
+    for node in nodes:
+        try:
+            records.append({
+                "node": node.name,
+                "host": node.host,
+                "port": node.ssh_port,
+                "candidates": scan_host_keys(node.host, node.ssh_port),
+            })
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            failed = True
+            records.append({
+                "node": node.name,
+                "host": node.host,
+                "port": node.ssh_port,
+                "candidates": [],
+                "error": str(exc),
+            })
+    print(json.dumps(records, ensure_ascii=False, indent=2))
+    return 1 if failed else 0
+
+
+def command_host_key_pin(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    if not args.confirmed:
+        print("Host-key pinning requires --confirmed after out-of-band fingerprint verification.", file=sys.stderr)
+        return 2
+    if len(nodes) != 1:
+        print("Host-key pinning requires exactly one selected --node.", file=sys.stderr)
+        return 2
+    node = nodes[0]
+    try:
+        pinned = pin_host_key(
+            resolve_runtime_paths().known_hosts_path,
+            node.host,
+            node.ssh_port,
+            args.fingerprint,
+        )
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(json.dumps({"node": node.name, **pinned}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def command_host_key_list(_nodes: Sequence[Node], _args: argparse.Namespace) -> int:
+    try:
+        pins = list_pinned_host_keys(resolve_runtime_paths().known_hosts_path)
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(json.dumps({"policy": ssh_host_key_policy(), "host_keys": pins}, ensure_ascii=False, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -1882,6 +1977,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Confirm fixed package, virtualenv and native backend installation",
     )
     subparsers.add_parser("discover", help="Discover platform and bootstrap prerequisites")
+    subparsers.add_parser("host-key-scan", help="Read Worker SSH fingerprints without connecting")
+    host_key_pin_parser = subparsers.add_parser(
+        "host-key-pin", help="Pin one out-of-band verified Worker SSH fingerprint"
+    )
+    host_key_pin_parser.add_argument("--fingerprint", required=True)
+    host_key_pin_parser.add_argument("--confirmed", action="store_true")
+    subparsers.add_parser("host-key-list", help="List project-local pinned SSH fingerprints")
     subparsers.add_parser("setup", help="Install the worker Python/CUDA runtime")
 
     sync_code_parser = subparsers.add_parser("sync-code", help="Rsync code from head to workers")
@@ -1975,6 +2077,12 @@ def main() -> int:
         discovered = run_parallel(nodes, discover_node)
         print(json.dumps(discovered, ensure_ascii=False, indent=2))
         return 0 if all(item["ssh"] for item in discovered) else 1
+    if args.command == "host-key-scan":
+        return command_host_key_scan(nodes, args)
+    if args.command == "host-key-pin":
+        return command_host_key_pin(nodes, args)
+    if args.command == "host-key-list":
+        return command_host_key_list(nodes, args)
     if args.command == "setup":
         return command_setup(nodes, args)
     if args.command == "sync-code":
