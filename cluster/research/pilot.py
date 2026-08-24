@@ -96,9 +96,11 @@ def validate_pilot_plan(
             "DEPLOYMENT_SOURCE_DRIFT",
             "WORKER_LLAMA_CONTEXT_RACE",
             "TELEMETRY_INTRUSION",
+            "THERMAL_RECOVERY_RANGE",
         }:
             raise PilotValidationError("revised pilot reason_code is not an approved pilot remediation")
-        _text(supersedes.get("failed_run_id"), "supersedes.failed_run_id")
+        evidence_run_id = supersedes.get("evidence_run_id") or supersedes.get("failed_run_id")
+        _text(evidence_run_id, "supersedes.evidence_run_id")
         _text(supersedes.get("preregistered_parent_commit"), "supersedes.preregistered_parent_commit")
     separation = _mapping(plan.get("separation"), "separation")
     if separation.get("formal_pooling_allowed") is not False:

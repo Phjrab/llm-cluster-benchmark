@@ -262,10 +262,29 @@ The v4 analyzer still reports `freeze_ready=false`:
 
 The provisional 30 repeats emitted with incomplete variance cells is an
 explicit sentinel, not a frozen formal recommendation. Phase 10 execution
-remains blocked until all declared v4 observations complete and the analyzer
-returns `freeze_ready=true`.
+remains blocked until a superseding complete pilot returns
+`freeze_ready=true`.
 
-### 10.4 Resume checkpoints
+After this checkpoint, v4 was closed as insufficient for thermal-policy
+selection rather than spending the remaining 23 runs on a pilot that could no
+longer pass its freeze gate. The five completed observations remain immutable
+evidence; no pending observation was represented as attempted or deleted.
+
+### 10.4 v5 thermal-range remediation
+
+The next separated pilot identity is
+`formal-study-v1-phase09-pilot-v5`. It supersedes v4 for the declared reason
+`THERMAL_RECOVERY_RANGE` and expands only the cooldown candidates from
+3/15/30 seconds to 60/180/300 seconds. The conservative variance-stage
+fallback is 300 seconds until the completed calibration selects the smallest
+candidate that passes both platform cohorts.
+
+Model, prompt, workload, precision, failure, power-integrity, and low-intrusion
+telemetry policies are byte-for-byte unchanged in meaning. v5 has its own
+manifest and result directory, and v1-v4 observations remain excluded from v5
+precision estimates and from the formal pool.
+
+### 10.5 Resume checkpoints
 
 | Checkpoint | Commit |
 |---|---|

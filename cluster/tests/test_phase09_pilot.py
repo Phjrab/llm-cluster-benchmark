@@ -105,6 +105,17 @@ class PilotPlanTests(unittest.TestCase):
         self.assertFalse(self.plan["separation"]["selective_deletion_allowed"])
         self.assertEqual(revised["pilot_version"], 4)
         self.assertEqual(revised["supersedes"]["reason_code"], "TELEMETRY_INTRUSION")
+        thermal_revision = read_json("pilot_plan.v5.json")
+        validate(thermal_revision)
+        self.assertEqual(thermal_revision["supersedes"]["reason_code"], "THERMAL_RECOVERY_RANGE")
+        self.assertEqual(
+            thermal_revision["thermal_policy"]["calibration_cooldown_candidates_s"],
+            [60, 180, 300],
+        )
+        self.assertEqual(
+            thermal_revision["thermal_policy"]["variance_stage_fallback_cooldown_s"],
+            300,
+        )
         self.assertEqual(
             revised["telemetry_policy"]["worker_collection_interval_s_by_platform"],
             {"jetson": 1.0, "raspberry-pi": 10.0},
