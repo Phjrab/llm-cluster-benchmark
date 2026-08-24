@@ -230,6 +230,22 @@ class PilotAnalysisTests(unittest.TestCase):
         self.assertGreater(result["failure_rate"], 0)
         self.assertTrue(any("pilot incomplete" in item for item in result["blockers"]))
 
+    def test_unmeasured_cooldown_candidate_cannot_be_selected(self) -> None:
+        observations = [
+            item
+            for item in complete_observations(self.plan, self.matrix)
+            if not (
+                item["pilot_cell_id"] == "calibration-pi-02-single-qwen-ko"
+                and item["pilot_repeat_index"] > 1
+            )
+        ]
+        result = analyze_pilot(self.plan, observations)
+        self.assertIsNone(result["thermal_decision"]["selected_minimum_cooldown_s"])
+        self.assertEqual(
+            result["thermal_decision"]["candidate_pass"],
+            {"3.0": False, "15.0": False, "30.0": False},
+        )
+
     def test_high_variance_is_capped_and_reported_not_hidden(self) -> None:
         observations = complete_observations(self.plan, self.matrix)
         target = self.plan["variance_cells"][0]["pilot_cell_id"]

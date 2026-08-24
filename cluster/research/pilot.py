@@ -163,29 +163,36 @@ def validate_pilot_plan(
         raise PilotValidationError("active throttling must remain forbidden")
 
     telemetry = _mapping(plan.get("telemetry_policy"), "telemetry_policy")
-    overhead_limit = _number(
-        telemetry.get("maximum_worker_collection_overhead_fraction"),
-        "maximum_worker_collection_overhead_fraction",
-    )
+    if pilot_version == 1:
+        overhead_limit = _number(
+            telemetry.get("maximum_controller_overhead_fraction"),
+            "maximum_controller_overhead_fraction",
+        )
+    else:
+        overhead_limit = _number(
+            telemetry.get("maximum_worker_collection_overhead_fraction"),
+            "maximum_worker_collection_overhead_fraction",
+        )
     if not 0 < overhead_limit < 1:
-        raise PilotValidationError("worker collection overhead limit must be between 0 and 1")
-    failure_policy = _mapping(plan.get("failure_policy"), "failure_policy")
-    maximum_attempt_failure_rate = _number(
-        failure_policy.get("maximum_attempt_failure_rate"),
-        "maximum_attempt_failure_rate",
-    )
-    minimum_request_success_rate = _number(
-        failure_policy.get("minimum_request_success_rate_per_run"),
-        "minimum_request_success_rate_per_run",
-    )
-    if not 0 <= maximum_attempt_failure_rate < 1:
-        raise PilotValidationError("maximum attempt failure rate must be below 1")
-    if not 0 < minimum_request_success_rate <= 1:
-        raise PilotValidationError("minimum request success rate must be in (0, 1]")
-    if failure_policy.get("failed_attempts_and_requests_are_preserved") is not True:
-        raise PilotValidationError("pilot failures must be preserved")
-    if failure_policy.get("retry_is_a_distinct_attempt") is not True:
-        raise PilotValidationError("pilot retries must remain distinct attempts")
+        raise PilotValidationError("telemetry overhead limit must be between 0 and 1")
+    if pilot_version > 1:
+        failure_policy = _mapping(plan.get("failure_policy"), "failure_policy")
+        maximum_attempt_failure_rate = _number(
+            failure_policy.get("maximum_attempt_failure_rate"),
+            "maximum_attempt_failure_rate",
+        )
+        minimum_request_success_rate = _number(
+            failure_policy.get("minimum_request_success_rate_per_run"),
+            "minimum_request_success_rate_per_run",
+        )
+        if not 0 <= maximum_attempt_failure_rate < 1:
+            raise PilotValidationError("maximum attempt failure rate must be below 1")
+        if not 0 < minimum_request_success_rate <= 1:
+            raise PilotValidationError("minimum request success rate must be in (0, 1]")
+        if failure_policy.get("failed_attempts_and_requests_are_preserved") is not True:
+            raise PilotValidationError("pilot failures must be preserved")
+        if failure_policy.get("retry_is_a_distinct_attempt") is not True:
+            raise PilotValidationError("pilot retries must remain distinct attempts")
 
     approved = {
         str(item.get("model_key"))
@@ -404,13 +411,22 @@ def analyze_pilot(
         records = sorted(by_cell.get(cell_id, []), key=lambda item: int(item["pilot_repeat_index"]))
         first_summary = records[0].get("summary") if records else None
         first_nodes, _, first_errors = _instrumentation(first_summary or {})
+        baseline_completed = bool(
+            records
+            and records[0].get("status") == "completed"
+            and isinstance(first_summary, Mapping)
+            and first_summary.get("status") == "completed"
+        )
         baseline = max(
             (float(item["start_temperature_c"]) for item in first_nodes if isinstance(item.get("start_temperature_c"), (int, float))),
             default=None,
         )
         cell_evidence: list[dict[str, Any]] = []
-        if baseline is None or first_errors:
+        if not baseline_completed or baseline is None or first_errors:
             blockers.append(f"{cell_id}: thermal baseline unavailable")
+            for candidate in candidates:
+                candidate_pass[str(candidate)] = False
+        observed_candidates: set[str] = set()
         for record in records[1:]:
             summary = record.get("summary") if isinstance(record.get("summary"), Mapping) else {}
             nodes, _, errors = _instrumentation(summary)
@@ -429,6 +445,7 @@ def analyze_pilot(
                 and all(value in {0, None} for value in throttling)
             )
             if str(cooldown) in candidate_pass:
+                observed_candidates.add(str(cooldown))
                 candidate_pass[str(cooldown)] = candidate_pass[str(cooldown)] and passed
             cell_evidence.append({
                 "cooldown_s": cooldown,
@@ -437,6 +454,9 @@ def analyze_pilot(
                 "observed_peak_temperature_c": max(peaks) if peaks else None,
                 "passed": passed,
             })
+        for candidate in candidates:
+            if str(candidate) not in observed_candidates:
+                candidate_pass[str(candidate)] = False
         calibration_evidence[cell_id] = cell_evidence
     selected_cooldown = next((item for item in candidates if candidate_pass[str(item)]), None)
     if selected_cooldown is None:
