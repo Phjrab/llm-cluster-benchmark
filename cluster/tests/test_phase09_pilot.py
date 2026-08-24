@@ -16,6 +16,7 @@ from cluster.research.pilot import (
     expand_pilot_plan,
     validate_pilot_plan,
 )
+from scripts.research.phase09_pilot import parser as pilot_parser
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -121,6 +122,16 @@ class PilotPlanTests(unittest.TestCase):
             [item["cooldown_before_s"] for item in first[:4]],
             [0.0, 3.0, 15.0, 30.0],
         )
+
+    def test_bounded_resume_keeps_stage_and_positive_attempt_limit_explicit(self) -> None:
+        args = pilot_parser().parse_args(
+            ["execute", "--stage", "calibration", "--confirmed", "--max-new-runs", "1"]
+        )
+        self.assertEqual(args.stage, "calibration")
+        self.assertTrue(args.confirmed)
+        self.assertEqual(args.max_new_runs, 1)
+        with self.assertRaises(SystemExit):
+            pilot_parser().parse_args(["execute", "--max-new-runs", "0"])
 
     def test_unapproved_or_non_matrix_cell_is_rejected(self) -> None:
         plan = copy.deepcopy(self.plan)

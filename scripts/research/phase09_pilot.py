@@ -36,6 +36,13 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("value must be >= 1")
+    return parsed
+
+
 def read_research(name: str) -> dict[str, Any]:
     return read_json_object(RESEARCH_DIR / name)
 
@@ -208,6 +215,7 @@ def execute(args: argparse.Namespace) -> int:
     models = model_map(model_lock)
     prompts = prompt_map(prompt_lock)
     order = expand_pilot_plan(plan, matrix)
+    new_attempts = 0
     with exclusive_lock(directory):
         manifest = ensure_manifest(directory, plan, matrix)
         for run in manifest.get("runs") or []:
@@ -304,10 +312,13 @@ def execute(args: argparse.Namespace) -> int:
             })
             persist_manifest(directory, manifest)
             print(f"[pilot] {status} run={summary.get('run_id') or '-'}", flush=True)
+            new_attempts += 1
             if cleanup_errors and plan["execution"]["stop_after_cleanup_failure"]:
                 manifest.update({"status": "failed", "phase": "cleanup_failed"})
                 persist_manifest(directory, manifest)
                 return 1
+            if args.max_new_runs is not None and new_attempts >= args.max_new_runs:
+                break
         observations = observations_from_manifest(manifest)
         analysis = analyze_pilot(plan, observations)
         write_json_object(directory / "analysis.json", analysis, default_mode=0o600)
@@ -368,6 +379,11 @@ def parser() -> argparse.ArgumentParser:
     execute_parser = commands.add_parser("execute")
     execute_parser.add_argument("--stage", choices=("calibration", "variance", "all"), default="all")
     execute_parser.add_argument("--confirmed", action="store_true")
+    execute_parser.add_argument(
+        "--max-new-runs",
+        type=positive_int,
+        help="stop cleanly after this many newly attempted runs without changing predeclared order",
+    )
     commands.add_parser("analyze")
     return value
 
