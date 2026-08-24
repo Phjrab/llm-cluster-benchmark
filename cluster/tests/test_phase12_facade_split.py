@@ -90,6 +90,19 @@ class DashboardFacadeCharacterizationTests(unittest.TestCase):
         self.assertNotIn("class Node:", source)
         self.assertNotIn("csv.DictReader", source)
 
+    def test_extracted_service_modules_are_framework_and_process_free(self) -> None:
+        service_root = ROOT / "cluster" / "dashboard" / "service_layers"
+        for path in sorted(service_root.glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            imports = {
+                alias.name.split(".")[0]
+                for node in tree.body
+                if isinstance(node, (ast.Import, ast.ImportFrom))
+                for alias in node.names
+            }
+            with self.subTest(module=path.name):
+                self.assertFalse({"fastapi", "starlette", "subprocess"}.intersection(imports))
+
 
 class ExtractedServiceTests(unittest.TestCase):
     class Repository:
