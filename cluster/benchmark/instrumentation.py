@@ -194,6 +194,7 @@ def normalize_telemetry_sample(
         "run_id": run_id,
         "scenario_id": scenario_id,
         "node": str(getattr(node, "name", "") or ""),
+        "platform_kind": metrics.get("platform_kind"),
         # Use the probe midpoint as the best monotonic estimate of the remote
         # snapshot instant; retain full collection overhead separately.
         "monotonic_elapsed_s": round(
@@ -203,6 +204,10 @@ def normalize_telemetry_sample(
         "worker_collection_overhead_s": _number(
             metrics.get("telemetry_collection_overhead_s")
         ),
+        "worker_collection_interval_s": _number(
+            metrics.get("telemetry_collection_interval_s")
+        ),
+        "worker_collection_sequence": metrics.get("telemetry_collection_sequence"),
         "power_w": power_w,
         "temperatures_c": temperatures,
         "cpu_frequency_mhz": frequency,
@@ -329,7 +334,17 @@ def summarize_measurements(
     per_node: Dict[str, Any] = {}
     for node in nodes:
         node_samples = [item for item in samples if item.get("node") == node]
-        measured = [item for item in node_samples if item.get("sample_kind") == "measurement"]
+        raw_measured = [item for item in node_samples if item.get("sample_kind") == "measurement"]
+        measured: list[Mapping[str, Any]] = []
+        seen_worker_samples: set[tuple[str, str]] = set()
+        for index, item in enumerate(raw_measured):
+            sampled_at = str(item.get("sampled_at") or "").strip()
+            identity = sampled_at or f"record:{index}"
+            key = (str(item.get("scenario_id") or "unknown"), identity)
+            if key in seen_worker_samples:
+                continue
+            seen_worker_samples.add(key)
+            measured.append(item)
         idle = [item for item in node_samples if item.get("sample_kind") == "idle"]
         node_requests = [item for item in request_records if item.get("node") == node]
         powers = [_number(item.get("power_w")) for item in measured]
@@ -391,6 +406,18 @@ def summarize_measurements(
             if bytes_sent is not None and bytes_received is not None and network_duration
             else None
         )
+        collection_intervals = sorted({
+            value
+            for value in (
+                _number(item.get("worker_collection_interval_s")) for item in node_samples
+            )
+            if value is not None
+        })
+        platforms = sorted({
+            str(item.get("platform_kind"))
+            for item in node_samples
+            if isinstance(item.get("platform_kind"), str) and item.get("platform_kind")
+        })
         per_node[node] = {
             "sample_count": len(measured),
             "idle_power_w": round(mean(idle_powers), 6) if idle_powers else None,
@@ -422,6 +449,10 @@ def summarize_measurements(
             "controller_collection_overhead_s": round(
                 sum(float(item.get("collection_overhead_s") or 0.0) for item in node_samples), 9
             ),
+            "worker_collection_interval_s": (
+                collection_intervals[0] if len(collection_intervals) == 1 else None
+            ),
+            "platform_kind": platforms[0] if len(platforms) == 1 else None,
             "worker_collection_overhead_samples_s": [
                 {
                     "sampled_at": sampled_at,

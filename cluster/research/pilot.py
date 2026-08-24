@@ -92,7 +92,11 @@ def validate_pilot_plan(
         reason_code = _text(supersedes.get("reason_code"), "supersedes.reason_code")
         if previous_id == pilot_id:
             raise PilotValidationError("a revised pilot cannot supersede itself")
-        if reason_code not in {"DEPLOYMENT_SOURCE_DRIFT", "WORKER_LLAMA_CONTEXT_RACE"}:
+        if reason_code not in {
+            "DEPLOYMENT_SOURCE_DRIFT",
+            "WORKER_LLAMA_CONTEXT_RACE",
+            "TELEMETRY_INTRUSION",
+        }:
             raise PilotValidationError("revised pilot reason_code is not an approved pilot remediation")
         _text(supersedes.get("failed_run_id"), "supersedes.failed_run_id")
         _text(supersedes.get("preregistered_parent_commit"), "supersedes.preregistered_parent_commit")
@@ -193,6 +197,17 @@ def validate_pilot_plan(
             raise PilotValidationError("pilot failures must be preserved")
         if failure_policy.get("retry_is_a_distinct_attempt") is not True:
             raise PilotValidationError("pilot retries must remain distinct attempts")
+    if pilot_version >= 4:
+        intervals = _mapping(
+            telemetry.get("worker_collection_interval_s_by_platform"),
+            "worker_collection_interval_s_by_platform",
+        )
+        if set(intervals) != {"jetson", "raspberry-pi"}:
+            raise PilotValidationError("telemetry intervals must cover Jetson and Raspberry Pi")
+        for platform, interval in intervals.items():
+            _number(interval, f"worker_collection_interval_s_by_platform.{platform}", minimum=1.0)
+        if telemetry.get("duplicate_controller_cache_reads_count_as_new_worker_samples") is not False:
+            raise PilotValidationError("duplicate Worker cache reads must not count as new samples")
 
     approved = {
         str(item.get("model_key"))
@@ -369,6 +384,21 @@ def analyze_pilot(
                 blockers.append(f"{cell_id}/{repeat_index}: request success rate below policy")
         records, overhead, errors = _instrumentation(summary)
         blockers.extend(f"{cell_id}/{repeat_index}: {error}" for error in errors)
+        if int(plan.get("pilot_version") or 0) >= 4:
+            intervals = telemetry["worker_collection_interval_s_by_platform"]
+            for record in records:
+                platform = record.get("platform_kind")
+                observed_interval = record.get("worker_collection_interval_s")
+                expected_interval = intervals.get(platform) if isinstance(platform, str) else None
+                if (
+                    expected_interval is None
+                    or isinstance(observed_interval, bool)
+                    or not isinstance(observed_interval, (int, float))
+                    or not math.isclose(float(observed_interval), float(expected_interval))
+                ):
+                    blockers.append(
+                        f"{cell_id}/{repeat_index}: Worker telemetry collection interval mismatch"
+                    )
         wall_s = float(summary.get("wall_s") or 0.0)
         if wall_s > 0:
             overhead_fractions.append(overhead / wall_s)

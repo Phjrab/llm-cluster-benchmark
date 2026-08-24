@@ -278,11 +278,16 @@ class WorkerTelemetryTests(unittest.TestCase):
 
     def test_provider_selection_and_pi_unavailable_metrics_are_none(self) -> None:
         root = Path(tempfile.gettempdir())
-        self.assertIsInstance(TelemetryService.for_platform("generic-linux", root).provider, GenericPsutilTelemetry)
-        self.assertIsInstance(TelemetryService.for_platform("jetson", root).provider, JetsonTelemetry)
-        pi = TelemetryService.for_platform("raspberry-pi", root).provider
-        self.assertIsInstance(pi, RaspberryPiTelemetry)
-        snapshot = pi.snapshot()
+        generic = TelemetryService.for_platform("generic-linux", root)
+        jetson = TelemetryService.for_platform("jetson", root)
+        pi_service = TelemetryService.for_platform("raspberry-pi", root)
+        self.assertIsInstance(generic.provider, GenericPsutilTelemetry)
+        self.assertIsInstance(jetson.provider, JetsonTelemetry)
+        self.assertIsInstance(pi_service.provider, RaspberryPiTelemetry)
+        self.assertEqual(generic.collection_interval_s, 1.0)
+        self.assertEqual(jetson.collection_interval_s, 1.0)
+        self.assertEqual(pi_service.collection_interval_s, 10.0)
+        snapshot = pi_service.provider.snapshot()
         self.assertIsNone(snapshot["gpu_pct"])
         self.assertIsNone(snapshot["power_w"])
 

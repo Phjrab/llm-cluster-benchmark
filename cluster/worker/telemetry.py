@@ -372,14 +372,16 @@ class JetsonTelemetry(GenericPsutilTelemetry):
 class TelemetryService:
     """Select exactly one provider; telemetry state is independent of inference."""
 
-    def __init__(self, provider: TelemetryProvider) -> None:
+    def __init__(self, provider: TelemetryProvider, *, collection_interval_s: float = 1.0) -> None:
         self.provider = provider
+        self.collection_interval_s = max(float(collection_interval_s), 1.0)
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._snapshot_cache: Optional[Dict[str, Any]] = None
         self._power_cache: Optional[Dict[str, Any]] = None
         self._power_observed = False
+        self._collection_sequence = 0
 
     @classmethod
     def for_platform(cls, platform_kind: str, project_root: Path) -> "TelemetryService":
@@ -389,7 +391,10 @@ class TelemetryService:
             provider = RaspberryPiTelemetry(project_root)
         else:
             provider = GenericPsutilTelemetry(project_root, platform_kind)
-        return cls(provider)
+        return cls(
+            provider,
+            collection_interval_s=10.0 if platform_kind == "raspberry-pi" else 1.0,
+        )
 
     def start(self) -> None:
         self.provider.start()
@@ -412,16 +417,19 @@ class TelemetryService:
                     power_observed = False
                 collection_overhead_s = time.perf_counter() - collection_started
                 if snapshot is not None:
+                    self._collection_sequence += 1
                     snapshot["telemetry_collection_overhead_s"] = round(
                         collection_overhead_s, 9
                     )
+                    snapshot["telemetry_collection_interval_s"] = self.collection_interval_s
+                    snapshot["telemetry_collection_sequence"] = self._collection_sequence
                 with self._lock:
                     if snapshot is not None:
                         self._snapshot_cache = copy.deepcopy(snapshot)
                     if power_observed:
                         self._power_cache = copy.deepcopy(power)
                         self._power_observed = True
-                self._stop.wait(1.0)
+                self._stop.wait(self.collection_interval_s)
 
         self._thread = threading.Thread(
             target=refresh,
@@ -442,7 +450,9 @@ class TelemetryService:
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
             cached = copy.deepcopy(self._snapshot_cache)
-        return cached if cached is not None else self.provider.snapshot()
+        snapshot = cached if cached is not None else self.provider.snapshot()
+        snapshot.setdefault("telemetry_collection_interval_s", self.collection_interval_s)
+        return snapshot
 
     def status(self) -> Dict[str, Any]:
         return self.provider.status()

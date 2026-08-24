@@ -93,6 +93,8 @@ class PilotPlanTests(unittest.TestCase):
         validate(self.plan)
         validate(read_json("pilot_plan.json"))
         validate(read_json("pilot_plan.v2.json"))
+        revised = read_json("pilot_plan.v4.json")
+        validate(revised)
         self.assertEqual(self.plan["status"], "predeclared")
         self.assertEqual(self.plan["pilot_version"], 3)
         self.assertEqual(
@@ -100,6 +102,12 @@ class PilotPlanTests(unittest.TestCase):
         )
         self.assertFalse(self.plan["separation"]["formal_pooling_allowed"])
         self.assertFalse(self.plan["separation"]["selective_deletion_allowed"])
+        self.assertEqual(revised["pilot_version"], 4)
+        self.assertEqual(revised["supersedes"]["reason_code"], "TELEMETRY_INTRUSION")
+        self.assertEqual(
+            revised["telemetry_policy"]["worker_collection_interval_s_by_platform"],
+            {"jetson": 1.0, "raspberry-pi": 10.0},
+        )
 
     def test_order_has_eight_calibration_and_twenty_variance_runs(self) -> None:
         first = expand_pilot_plan(self.plan, self.matrix)
@@ -211,6 +219,28 @@ class PilotAnalysisTests(unittest.TestCase):
         result = analyze_pilot(self.plan, observations)
         self.assertFalse(result["freeze_ready"])
         self.assertTrue(any("worker telemetry" in item for item in result["blockers"]))
+
+    def test_v4_requires_the_predeclared_platform_collection_interval(self) -> None:
+        plan = read_json("pilot_plan.v4.json")
+        observations = complete_observations(plan, self.matrix)
+        for observation in observations:
+            platform = "raspberry-pi" if "pi-" in observation["pilot_cell_id"] else "jetson"
+            node = observation["summary"]["measurement_instrumentation"]["nodes"]["worker"]
+            node["platform_kind"] = platform
+            node["worker_collection_interval_s"] = (
+                plan["telemetry_policy"]["worker_collection_interval_s_by_platform"][platform]
+            )
+        self.assertTrue(analyze_pilot(plan, observations)["freeze_ready"])
+
+        pi_observation = next(
+            item for item in observations if "pi-" in item["pilot_cell_id"]
+        )
+        pi_observation["summary"]["measurement_instrumentation"]["nodes"]["worker"][
+            "worker_collection_interval_s"
+        ] = 1.0
+        result = analyze_pilot(plan, observations)
+        self.assertFalse(result["freeze_ready"])
+        self.assertTrue(any("collection interval mismatch" in item for item in result["blockers"]))
 
     def test_request_and_attempt_failures_are_preserved_and_gated(self) -> None:
         observations = complete_observations(self.plan, self.matrix)

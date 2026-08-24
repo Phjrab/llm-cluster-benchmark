@@ -81,12 +81,39 @@ class MeasurementNormalizationTests(unittest.TestCase):
         self.assertEqual(sample["monotonic_elapsed_s"], 1.0125)
         self.assertEqual(sample["collection_overhead_s"], 0.025)
         self.assertEqual(sample["worker_collection_overhead_s"], 0.004)
+        self.assertEqual(sample["platform_kind"], None)
         self.assertEqual(sample["power_w"], 12.5)
         self.assertFalse(sample["throttled"])
         self.assertTrue(sample["throttling_supported"])
 
 
 class MeasurementSummaryTests(unittest.TestCase):
+    def test_repeated_controller_reads_count_one_worker_cache_sample(self) -> None:
+        samples = [
+            {
+                "node": "pi-02",
+                "scenario_id": "single",
+                "sample_kind": "measurement",
+                "sampled_at": sampled_at,
+                "monotonic_elapsed_s": elapsed,
+                "temperatures_c": {"soc": temperature},
+                "worker_collection_overhead_s": 0.2,
+                "worker_collection_interval_s": 10.0,
+                "platform_kind": "raspberry-pi",
+            }
+            for sampled_at, elapsed, temperature in (
+                ("2026-08-24T00:00:00+00:00", 0.0, 50.0),
+                ("2026-08-24T00:00:00+00:00", 1.0, 50.0),
+                ("2026-08-24T00:00:10+00:00", 10.0, 51.0),
+            )
+        ]
+        node = summarize_measurements(samples, [])["nodes"]["pi-02"]
+        self.assertEqual(node["sample_count"], 2)
+        self.assertEqual(node["mean_temperature_c"], 50.5)
+        self.assertEqual(len(node["worker_collection_overhead_samples_s"]), 2)
+        self.assertEqual(node["worker_collection_interval_s"], 10.0)
+        self.assertEqual(node["platform_kind"], "raspberry-pi")
+
     def test_energy_thermal_frequency_network_and_zero_throttle_summary(self) -> None:
         samples = [
             {
