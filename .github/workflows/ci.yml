@@ -30,7 +30,7 @@ jobs:
           cache: pip
       - name: Install test runtimes
         run: |
-          python -m pip install --upgrade pip build
+          python -m pip install --upgrade pip build setuptools wheel
           python -m pip install -r requirements-controller.txt -r cluster/requirements-runtime.txt
       - name: Run Python regression suite
         run: |
