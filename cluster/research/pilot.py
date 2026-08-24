@@ -78,13 +78,24 @@ def validate_pilot_plan(
     prompt_lock: Mapping[str, Any],
 ) -> None:
     """Validate that every pilot cell is a separated subset of the matrix."""
-    if plan.get("schema_version") != 1 or plan.get("pilot_version") != 1:
-        raise PilotValidationError("pilot schema_version and pilot_version must be 1")
+    if plan.get("schema_version") != 1:
+        raise PilotValidationError("pilot schema_version must be 1")
+    pilot_version = _integer(plan.get("pilot_version"), "pilot_version")
     if plan.get("experiment_type") != "pilot":
         raise PilotValidationError("pilot experiment_type must be pilot")
     pilot_id = _text(plan.get("pilot_id"), "pilot_id")
     if len(pilot_id) > 96 or "/" in pilot_id or "\\" in pilot_id:
         raise PilotValidationError("pilot_id is unsafe")
+    if pilot_version > 1:
+        supersedes = _mapping(plan.get("supersedes"), "supersedes")
+        previous_id = _text(supersedes.get("pilot_id"), "supersedes.pilot_id")
+        reason_code = _text(supersedes.get("reason_code"), "supersedes.reason_code")
+        if previous_id == pilot_id:
+            raise PilotValidationError("a revised pilot cannot supersede itself")
+        if reason_code != "DEPLOYMENT_SOURCE_DRIFT":
+            raise PilotValidationError("revised pilot reason_code must identify deployment source drift")
+        _text(supersedes.get("failed_run_id"), "supersedes.failed_run_id")
+        _text(supersedes.get("preregistered_parent_commit"), "supersedes.preregistered_parent_commit")
     separation = _mapping(plan.get("separation"), "separation")
     if separation.get("formal_pooling_allowed") is not False:
         raise PilotValidationError("pilot observations may not enter formal estimates")

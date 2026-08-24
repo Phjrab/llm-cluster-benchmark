@@ -81,12 +81,17 @@ def complete_observations(plan: dict, matrix: dict) -> list[dict]:
 
 class PilotPlanTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.plan = read_json("pilot_plan.json")
+        self.plan = read_json("pilot_plan.v2.json")
         self.matrix = read_json("formal_experiment_matrix.json")
 
     def test_shipped_plan_is_predeclared_separated_and_exact_matrix_subset(self) -> None:
         validate(self.plan)
+        validate(read_json("pilot_plan.json"))
         self.assertEqual(self.plan["status"], "predeclared")
+        self.assertEqual(self.plan["pilot_version"], 2)
+        self.assertEqual(
+            self.plan["supersedes"]["reason_code"], "DEPLOYMENT_SOURCE_DRIFT"
+        )
         self.assertFalse(self.plan["separation"]["formal_pooling_allowed"])
         self.assertFalse(self.plan["separation"]["selective_deletion_allowed"])
 
@@ -170,7 +175,7 @@ class PilotIdentityTests(unittest.TestCase):
 
 class PilotAnalysisTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.plan = read_json("pilot_plan.json")
+        self.plan = read_json("pilot_plan.v2.json")
         self.matrix = read_json("formal_experiment_matrix.json")
 
     def test_complete_low_variance_pilot_freezes_minimum_repeats_and_cooldown(self) -> None:

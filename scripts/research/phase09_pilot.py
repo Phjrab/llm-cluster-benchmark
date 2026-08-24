@@ -29,7 +29,7 @@ from cluster.research.pilot import analyze_pilot, expand_pilot_plan, validate_pi
 
 ROOT = repository_root()
 RESEARCH_DIR = ROOT / "config" / "research"
-DEFAULT_PLAN = RESEARCH_DIR / "pilot_plan.json"
+DEFAULT_PLAN = RESEARCH_DIR / "pilot_plan.v2.json"
 
 
 def utc_now() -> str:
