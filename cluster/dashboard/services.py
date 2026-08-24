@@ -31,7 +31,12 @@ from typing import Any, Dict, Generator, List, Optional, Sequence
 import psutil
 
 from cluster.dashboard.schemas import ActionPayload, ExperimentPayload, NodePayload
-from cluster.dashboard.service_layers import DashboardServiceError, ResearchService, ResultService
+from cluster.dashboard.service_layers import (
+    DashboardServiceError,
+    ResearchService,
+    ResultService,
+    SettingsService,
+)
 
 from cluster.application.jobs import JobService, NONTERMINAL_JOB_STATES
 from cluster.application.model_service import (
@@ -1920,6 +1925,14 @@ class DashboardFacade:
             publish_event=events.publish,
             utc_now=utc_now,
         )
+        self._settings = SettingsService(
+            lock=settings_lock,
+            read_settings=read_settings,
+            write_settings=write_settings,
+            read_enabled_node_names=lambda: [node.name for node in read_enabled_nodes()],
+            start_action=lambda payload: actions.start(payload),
+            publish_event=events.publish,
+        )
 
     def startup(self) -> None:
         active = experiments.active()
@@ -1984,42 +1997,14 @@ class DashboardFacade:
         return ensure_controller_ssh_identity()
 
     def settings(self) -> Dict[str, Any]:
-        return {"settings": read_settings()}
+        return self._settings.get()
 
     def update_settings(
         self, payload: Any, *, supplied_token: str, token_is_valid: Any
     ) -> Dict[str, Any]:
-        action: Optional[Dict[str, Any]] = None
-        with settings_lock:
-            previous = read_settings()
-            if previous["dashboard_token_auth"] and not token_is_valid(supplied_token):
-                raise DashboardServiceError(401, "Dashboard access token is missing or invalid")
-            updated = dict(previous)
-            if payload.worker_api_auth is not None:
-                updated["worker_api_auth"] = payload.worker_api_auth
-            if payload.dashboard_token_auth is not None:
-                updated["dashboard_token_auth"] = payload.dashboard_token_auth
-            if not previous["dashboard_token_auth"] and updated["dashboard_token_auth"]:
-                if not token_is_valid(supplied_token):
-                    raise DashboardServiceError(
-                        403,
-                        "Enabling dashboard token auth requires the current dashboard token",
-                    )
-            write_settings(updated)
-            if previous["worker_api_auth"] != updated["worker_api_auth"]:
-                try:
-                    action = actions.start(
-                        ActionPayload(
-                            action="restart",
-                            node_names=[node.name for node in read_enabled_nodes()],
-                            options={},
-                        )
-                    )
-                except ValueError as exc:
-                    write_settings(previous)
-                    raise DashboardServiceError(409, str(exc)) from exc
-        events.publish("settings_changed", channel=EventChannel.SYSTEM, settings=updated, action=action)
-        return {"ok": True, "settings": updated, "action": action}
+        return self._settings.update(
+            payload, supplied_token=supplied_token, token_is_valid=token_is_valid
+        )
 
     def status(self) -> Dict[str, Any]:
         return {"nodes": status_monitor.snapshot(), "at": utc_now()}

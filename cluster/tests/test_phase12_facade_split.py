@@ -6,7 +6,13 @@ import ast
 from pathlib import Path
 import unittest
 
-from cluster.dashboard.service_layers import DashboardServiceError, ResearchService, ResultService
+from cluster.dashboard.service_layers import (
+    DashboardServiceError,
+    ResearchService,
+    ResultService,
+    SettingsService,
+)
+from cluster.dashboard.schemas import ClusterSettingsPayload
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -139,6 +145,34 @@ class ExtractedServiceTests(unittest.TestCase):
         self.assertEqual(requested, [{"limit": 10_000}])
         readiness = service.readiness()
         self.assertEqual(readiness["controller_source"]["observed_commit"], "a" * 40)
+
+    def test_settings_service_rolls_back_failed_worker_restart(self) -> None:
+        import threading
+
+        state = {"worker_api_auth": False, "dashboard_token_auth": False}
+        writes = []
+
+        def write(value):
+            state.clear()
+            state.update(value)
+            writes.append(dict(value))
+
+        service = SettingsService(
+            lock=threading.RLock(),
+            read_settings=lambda: dict(state),
+            write_settings=write,
+            read_enabled_node_names=lambda: ["worker-01"],
+            start_action=lambda _payload: (_ for _ in ()).throw(ValueError("busy")),
+            publish_event=lambda *_args, **_kwargs: None,
+        )
+        with self.assertRaisesRegex(DashboardServiceError, "busy"):
+            service.update(
+                ClusterSettingsPayload(worker_api_auth=True),
+                supplied_token="",
+                token_is_valid=lambda _token: False,
+            )
+        self.assertEqual(state, {"worker_api_auth": False, "dashboard_token_auth": False})
+        self.assertEqual(len(writes), 2)
 
 
 if __name__ == "__main__":
