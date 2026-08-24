@@ -6,6 +6,8 @@ import ast
 from pathlib import Path
 import unittest
 
+from cluster.dashboard.service_layers import DashboardServiceError, ResearchService, ResultService
+
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICES = ROOT / "cluster" / "dashboard" / "services.py"
@@ -70,6 +72,73 @@ class DashboardFacadeCharacterizationTests(unittest.TestCase):
                 # The facade itself is imported directly rather than through app.py's export loop.
                 continue
             self.assertIn(name, source)
+
+
+class ExtractedServiceTests(unittest.TestCase):
+    class Repository:
+        def __init__(self) -> None:
+            self.summary = {"run_id": "run_1", "status": "completed", "suite_id": ""}
+            self.deleted = []
+
+        def read_summary(self, run_id: str):
+            if run_id != "run_1":
+                raise FileNotFoundError(run_id)
+            return dict(self.summary)
+
+        def read_responses(self, _run_id: str):
+            return [{"request_id": 1, "response": "ok"}]
+
+        def read_measurements(self, _run_id: str):
+            return [{"record_type": "telemetry_sample"}]
+
+        def delete(self, run_id: str):
+            self.deleted.append(run_id)
+
+    def test_result_service_is_unit_testable_without_dashboard_globals(self) -> None:
+        repository = self.Repository()
+        published = []
+        service = ResultService(
+            run_repository=lambda: repository,
+            suite_repository=lambda: None,
+            read_suites=lambda **_kwargs: [],
+            with_suite_metadata=lambda summary, _suites: summary,
+            active_experiment=lambda: None,
+            publish_event=lambda event, **payload: published.append((event, payload)),
+            utc_now=lambda: "2026-08-24T00:00:00+00:00",
+        )
+        self.assertEqual(service.run("run_1")["status"], "completed")
+        self.assertEqual(service.responses("run_1")["responses"][0]["response"], "ok")
+        self.assertEqual(service.measurements("run_1")["schema_version"], 1)
+        self.assertTrue(service.delete("run_1")["recoverable"])
+        self.assertEqual(repository.deleted, ["run_1"])
+        self.assertEqual(published[0][0], "results_changed")
+        with self.assertRaisesRegex(DashboardServiceError, "Invalid run id"):
+            service.run("../escape")
+
+    def test_research_service_uses_injected_readers(self) -> None:
+        class Campaigns:
+            def __init__(self, _path):
+                pass
+
+            def list(self):
+                return []
+
+        requested = []
+        service = ResearchService(
+            campaigns_dir=Path("/tmp/campaigns"),
+            read_runs=lambda **kwargs: requested.append(kwargs) or [],
+            read_research_document=lambda name: {"name": name},
+            status_snapshot=lambda: [],
+            read_environment=lambda: [],
+            controller_commit=lambda: "a" * 40,
+            repository_factory=Campaigns,
+        )
+        self.assertEqual(service.campaigns(), {"schema_version": 1, "campaigns": []})
+        comparison = service.compare_runs()
+        self.assertEqual(comparison["runs"], [])
+        self.assertEqual(requested, [{"limit": 10_000}])
+        readiness = service.readiness()
+        self.assertEqual(readiness["controller_source"]["observed_commit"], "a" * 40)
 
 
 if __name__ == "__main__":

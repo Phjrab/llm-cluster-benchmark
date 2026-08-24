@@ -31,12 +31,7 @@ from typing import Any, Dict, Generator, List, Optional, Sequence
 import psutil
 
 from cluster.dashboard.schemas import ActionPayload, ExperimentPayload, NodePayload
-from cluster.dashboard.research_views import (
-    campaign_detail as build_campaign_detail,
-    campaign_overview,
-    compare_payload,
-    research_readiness as build_research_readiness,
-)
+from cluster.dashboard.service_layers import DashboardServiceError, ResearchService, ResultService
 
 from cluster.application.jobs import JobService, NONTERMINAL_JOB_STATES
 from cluster.application.model_service import (
@@ -87,7 +82,6 @@ from cluster.infrastructure.storage import (
     FilesystemSuiteRepository,
     StorageCorruptionError,
 )
-from cluster.research.campaign import CampaignRepository, CampaignStateError
 
 
 RUNTIME_PATHS = resolve_runtime_paths()
@@ -1899,21 +1893,33 @@ reconcile_interrupted_suites(
 )
 
 
-class DashboardServiceError(ValueError):
-    """Transport-neutral error returned by the dashboard application service."""
-
-    def __init__(self, status_code: int, detail: Any) -> None:
-        super().__init__(str(detail))
-        self.status_code = status_code
-        self.detail = detail
-
-
 class DashboardFacade:
     """Application service facade consumed by route adapters.
 
     The facade returns plain dictionaries and raises ``DashboardServiceError``.
     It knows neither FastAPI requests nor response objects.
     """
+
+    def __init__(self) -> None:
+        self._research = ResearchService(
+            campaigns_dir=CAMPAIGNS_DIR,
+            read_runs=read_run_summaries,
+            read_research_document=_read_research_document,
+            status_snapshot=status_monitor.snapshot,
+            read_environment=read_environment_reports,
+            controller_commit=_controller_git_commit,
+        )
+        self._results = ResultService(
+            run_repository=_run_repository,
+            suite_repository=_suite_repository,
+            read_suites=read_suite_summaries,
+            with_suite_metadata=_with_suite_metadata,
+            # Resolve at call time so existing monkeypatch/integration seams and
+            # durable-manager replacement remain compatible.
+            active_experiment=lambda: experiments.active(),
+            publish_event=events.publish,
+            utc_now=utc_now,
+        )
 
     def startup(self) -> None:
         active = experiments.active()
@@ -2358,39 +2364,16 @@ class DashboardFacade:
         }
 
     def campaigns(self) -> Dict[str, Any]:
-        """List durable campaign progress without mutating campaign lifecycle."""
-        repository = CampaignRepository(CAMPAIGNS_DIR)
-        manifests = repository.list()
-        return {
-            "schema_version": 1,
-            "campaigns": [campaign_overview(manifest) for manifest in manifests],
-        }
+        return self._research.campaigns()
 
     def campaign(self, campaign_id: str) -> Dict[str, Any]:
-        repository = CampaignRepository(CAMPAIGNS_DIR)
-        try:
-            manifest = repository.read(campaign_id)
-            events = repository.read_events(campaign_id)
-        except (CampaignStateError, ValueError) as exc:
-            raise DashboardServiceError(404, "Campaign not found") from exc
-        return build_campaign_detail(manifest, events)
+        return self._research.campaign(campaign_id)
 
     def compare_runs(self) -> Dict[str, Any]:
-        """Return one additive cross-run dataset with legacy fallbacks."""
-        # Cross-run research comparison intentionally reaches beyond the
-        # existing 100-row result page while retaining a bounded read.
-        return compare_payload(read_run_summaries(limit=10_000))
+        return self._research.compare_runs()
 
     def research_readiness(self) -> Dict[str, Any]:
-        """Combine frozen research locks with current non-invasive status."""
-        return build_research_readiness(
-            model_lock=_read_research_document("model_lock.json"),
-            runtime_lock=_read_research_document("runtime_lock.json"),
-            matrix=_read_research_document("formal_experiment_matrix.json"),
-            live_status=status_monitor.snapshot(),
-            environment=read_environment_reports(),
-            controller_commit=_controller_git_commit(),
-        )
+        return self._research.readiness()
 
     def experiment_groups(self) -> Dict[str, Any]:
         return {"experiment_groups": read_experiment_groups()}
@@ -2403,124 +2386,16 @@ class DashboardFacade:
         return {"ok": True, "experiment": active}
 
     def run(self, run_id: str) -> Dict[str, Any]:
-        if not run_id.replace("_", "").isalnum():
-            raise DashboardServiceError(400, "Invalid run id")
-        try:
-            summary = _run_repository().read_summary(run_id)
-        except FileNotFoundError as exc:
-            raise DashboardServiceError(404, "Run not found") from exc
-        except StorageCorruptionError as exc:
-            raise DashboardServiceError(500, "Run summary is corrupted") from exc
-        suites_by_id = {str(suite["suite_id"]): suite for suite in read_suite_summaries(limit=0)}
-        return _with_suite_metadata(summary, suites_by_id)
+        return self._results.run(run_id)
 
     def responses(self, run_id: str) -> Dict[str, Any]:
-        """Expose persisted raw responses without changing result CSV semantics."""
-        if not run_id.replace("_", "").isalnum():
-            raise DashboardServiceError(400, "Invalid run id")
-        try:
-            _run_repository().read_summary(run_id)
-        except FileNotFoundError as exc:
-            raise DashboardServiceError(404, "Run not found") from exc
-        except StorageCorruptionError as exc:
-            raise DashboardServiceError(500, "Run summary is corrupted") from exc
-        return {"run_id": run_id, "responses": _run_repository().read_responses(run_id)}
+        return self._results.responses(run_id)
 
     def measurements(self, run_id: str) -> Dict[str, Any]:
-        """Expose additive telemetry/request measurements for analysis readers."""
-        if not run_id.replace("_", "").isalnum():
-            raise DashboardServiceError(400, "Invalid run id")
-        repository = _run_repository()
-        try:
-            repository.read_summary(run_id)
-        except FileNotFoundError as exc:
-            raise DashboardServiceError(404, "Run not found") from exc
-        except StorageCorruptionError as exc:
-            raise DashboardServiceError(500, "Run summary is corrupted") from exc
-        return {
-            "run_id": run_id,
-            "schema_version": 1,
-            "measurements": repository.read_measurements(run_id),
-        }
+        return self._results.measurements(run_id)
 
     def delete_run(self, run_id: str) -> Dict[str, Any]:
-        """Soft-delete one terminal run and reconcile its optional suite artifact."""
-        if not run_id.replace("_", "").isalnum():
-            raise DashboardServiceError(400, "Invalid run id")
-        repository = _run_repository()
-        try:
-            summary = repository.read_summary(run_id)
-        except FileNotFoundError as exc:
-            raise DashboardServiceError(404, "Run not found") from exc
-        except StorageCorruptionError as exc:
-            raise DashboardServiceError(500, "Run summary is corrupted") from exc
-
-        active = experiments.active()
-        suite_id = str(summary.get("suite_id") or "")
-        if active and active.get("status") in NONTERMINAL_JOB_STATES:
-            if suite_id and suite_id == str(active.get("suite_id") or ""):
-                raise DashboardServiceError(409, "A run in the active model suite cannot be deleted")
-            latest = active.get("latest") or {}
-            if run_id == str(latest.get("run_id") or ""):
-                raise DashboardServiceError(409, "The active run cannot be deleted")
-
-        try:
-            repository.delete(run_id)
-        except FileNotFoundError as exc:
-            raise DashboardServiceError(404, "Run not found") from exc
-        except StorageCorruptionError as exc:
-            raise DashboardServiceError(409, "Run storage identity is unsafe") from exc
-        except OSError as exc:
-            raise DashboardServiceError(500, "Run could not be moved to private trash") from exc
-
-        suite_removed = False
-        if suite_id:
-            suite_repository = _suite_repository()
-            try:
-                suite = suite_repository.read(suite_id)
-            except (FileNotFoundError, StorageCorruptionError):
-                suite = None
-            if suite is not None:
-                remaining = [
-                    item for item in (suite.get("summaries") or [])
-                    if str(item.get("run_id") or "") != run_id
-                ]
-                if not remaining:
-                    suite_repository.delete(suite_id)
-                    suite_removed = True
-                else:
-                    deleted_model_index = int(summary.get("model_index") or 0)
-                    models = []
-                    for model in suite.get("models") or []:
-                        record = dict(model)
-                        if int(record.get("model_index") or 0) == deleted_model_index:
-                            record["status"] = "deleted"
-                            record["run_id"] = None
-                        models.append(record)
-                    deleted_ids = list(suite.get("deleted_run_ids") or [])
-                    if run_id not in deleted_ids:
-                        deleted_ids.append(run_id)
-                    suite.update({
-                        "status": "partial",
-                        "summaries": remaining,
-                        "models": models,
-                        "completed_models": sum(item.get("status") == "completed" for item in remaining),
-                        "deleted_run_ids": deleted_ids,
-                        "updated_at": utc_now(),
-                    })
-                    suite_repository.write(suite_id, suite)
-
-        events.publish(
-            "results_changed", channel=EventChannel.EXPERIMENT,
-            operation="deleted", run_id=run_id, suite_id=suite_id or None,
-        )
-        return {
-            "ok": True,
-            "run_id": run_id,
-            "suite_id": suite_id or None,
-            "suite_removed": suite_removed,
-            "recoverable": True,
-        }
+        return self._results.delete(run_id)
 
 
 COMPATIBILITY_EXPORTS = (

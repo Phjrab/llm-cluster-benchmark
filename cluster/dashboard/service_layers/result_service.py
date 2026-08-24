@@ -1,0 +1,163 @@
+"""Durable run reading and recoverable deletion service."""
+
+from __future__ import annotations
+
+from typing import Any, Callable, Mapping
+
+from cluster.application.jobs import NONTERMINAL_JOB_STATES
+from cluster.dashboard.service_layers.errors import DashboardServiceError
+from cluster.domain.events import EventChannel
+from cluster.infrastructure.storage import StorageCorruptionError
+
+
+def _valid_run_id(run_id: str) -> bool:
+    return bool(run_id) and run_id.replace("_", "").isalnum()
+
+
+class ResultService:
+    """Read and soft-delete run artifacts through injected repositories."""
+
+    def __init__(
+        self,
+        *,
+        run_repository: Callable[[], Any],
+        suite_repository: Callable[[], Any],
+        read_suites: Callable[..., list[dict[str, Any]]],
+        with_suite_metadata: Callable[[dict[str, Any], Mapping[str, dict[str, Any]]], dict[str, Any]],
+        active_experiment: Callable[[], dict[str, Any] | None],
+        publish_event: Callable[..., None],
+        utc_now: Callable[[], str],
+    ) -> None:
+        self._run_repository = run_repository
+        self._suite_repository = suite_repository
+        self._read_suites = read_suites
+        self._with_suite_metadata = with_suite_metadata
+        self._active_experiment = active_experiment
+        self._publish_event = publish_event
+        self._utc_now = utc_now
+
+    @staticmethod
+    def _check_id(run_id: str) -> None:
+        if not _valid_run_id(run_id):
+            raise DashboardServiceError(400, "Invalid run id")
+
+    def run(self, run_id: str) -> dict[str, Any]:
+        self._check_id(run_id)
+        try:
+            summary = self._run_repository().read_summary(run_id)
+        except FileNotFoundError as exc:
+            raise DashboardServiceError(404, "Run not found") from exc
+        except StorageCorruptionError as exc:
+            raise DashboardServiceError(500, "Run summary is corrupted") from exc
+        suites = {str(suite["suite_id"]): suite for suite in self._read_suites(limit=0)}
+        return self._with_suite_metadata(summary, suites)
+
+    def responses(self, run_id: str) -> dict[str, Any]:
+        self._check_id(run_id)
+        repository = self._run_repository()
+        try:
+            repository.read_summary(run_id)
+        except FileNotFoundError as exc:
+            raise DashboardServiceError(404, "Run not found") from exc
+        except StorageCorruptionError as exc:
+            raise DashboardServiceError(500, "Run summary is corrupted") from exc
+        return {"run_id": run_id, "responses": repository.read_responses(run_id)}
+
+    def measurements(self, run_id: str) -> dict[str, Any]:
+        self._check_id(run_id)
+        repository = self._run_repository()
+        try:
+            repository.read_summary(run_id)
+        except FileNotFoundError as exc:
+            raise DashboardServiceError(404, "Run not found") from exc
+        except StorageCorruptionError as exc:
+            raise DashboardServiceError(500, "Run summary is corrupted") from exc
+        return {
+            "run_id": run_id,
+            "schema_version": 1,
+            "measurements": repository.read_measurements(run_id),
+        }
+
+    def delete(self, run_id: str) -> dict[str, Any]:
+        self._check_id(run_id)
+        repository = self._run_repository()
+        try:
+            summary = repository.read_summary(run_id)
+        except FileNotFoundError as exc:
+            raise DashboardServiceError(404, "Run not found") from exc
+        except StorageCorruptionError as exc:
+            raise DashboardServiceError(500, "Run summary is corrupted") from exc
+
+        active = self._active_experiment()
+        suite_id = str(summary.get("suite_id") or "")
+        if active and active.get("status") in NONTERMINAL_JOB_STATES:
+            if suite_id and suite_id == str(active.get("suite_id") or ""):
+                raise DashboardServiceError(409, "A run in the active model suite cannot be deleted")
+            if run_id == str((active.get("latest") or {}).get("run_id") or ""):
+                raise DashboardServiceError(409, "The active run cannot be deleted")
+
+        try:
+            repository.delete(run_id)
+        except FileNotFoundError as exc:
+            raise DashboardServiceError(404, "Run not found") from exc
+        except StorageCorruptionError as exc:
+            raise DashboardServiceError(409, "Run storage identity is unsafe") from exc
+        except OSError as exc:
+            raise DashboardServiceError(500, "Run could not be moved to private trash") from exc
+
+        suite_removed = False
+        if suite_id:
+            suites = self._suite_repository()
+            try:
+                suite = suites.read(suite_id)
+            except (FileNotFoundError, StorageCorruptionError):
+                suite = None
+            if suite is not None:
+                remaining = [
+                    item for item in (suite.get("summaries") or [])
+                    if str(item.get("run_id") or "") != run_id
+                ]
+                if not remaining:
+                    suites.delete(suite_id)
+                    suite_removed = True
+                else:
+                    deleted_index = int(summary.get("model_index") or 0)
+                    models = []
+                    for model in suite.get("models") or []:
+                        record = dict(model)
+                        if int(record.get("model_index") or 0) == deleted_index:
+                            record["status"] = "deleted"
+                            record["run_id"] = None
+                        models.append(record)
+                    deleted_ids = list(suite.get("deleted_run_ids") or [])
+                    if run_id not in deleted_ids:
+                        deleted_ids.append(run_id)
+                    suite.update(
+                        {
+                            "status": "partial",
+                            "summaries": remaining,
+                            "models": models,
+                            "completed_models": sum(item.get("status") == "completed" for item in remaining),
+                            "deleted_run_ids": deleted_ids,
+                            "updated_at": self._utc_now(),
+                        }
+                    )
+                    suites.write(suite_id, suite)
+
+        self._publish_event(
+            "results_changed",
+            channel=EventChannel.EXPERIMENT,
+            operation="deleted",
+            run_id=run_id,
+            suite_id=suite_id or None,
+        )
+        return {
+            "ok": True,
+            "run_id": run_id,
+            "suite_id": suite_id or None,
+            "suite_removed": suite_removed,
+            "recoverable": True,
+        }
+
+
+__all__ = ["ResultService"]
