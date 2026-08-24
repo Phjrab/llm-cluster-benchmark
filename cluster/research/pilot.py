@@ -162,6 +162,31 @@ def validate_pilot_plan(
     if thermal.get("active_throttling_allowed") is not False:
         raise PilotValidationError("active throttling must remain forbidden")
 
+    telemetry = _mapping(plan.get("telemetry_policy"), "telemetry_policy")
+    overhead_limit = _number(
+        telemetry.get("maximum_worker_collection_overhead_fraction"),
+        "maximum_worker_collection_overhead_fraction",
+    )
+    if not 0 < overhead_limit < 1:
+        raise PilotValidationError("worker collection overhead limit must be between 0 and 1")
+    failure_policy = _mapping(plan.get("failure_policy"), "failure_policy")
+    maximum_attempt_failure_rate = _number(
+        failure_policy.get("maximum_attempt_failure_rate"),
+        "maximum_attempt_failure_rate",
+    )
+    minimum_request_success_rate = _number(
+        failure_policy.get("minimum_request_success_rate_per_run"),
+        "minimum_request_success_rate_per_run",
+    )
+    if not 0 <= maximum_attempt_failure_rate < 1:
+        raise PilotValidationError("maximum attempt failure rate must be below 1")
+    if not 0 < minimum_request_success_rate <= 1:
+        raise PilotValidationError("minimum request success rate must be in (0, 1]")
+    if failure_policy.get("failed_attempts_and_requests_are_preserved") is not True:
+        raise PilotValidationError("pilot failures must be preserved")
+    if failure_policy.get("retry_is_a_distinct_attempt") is not True:
+        raise PilotValidationError("pilot retries must remain distinct attempts")
+
     approved = {
         str(item.get("model_key"))
         for item in model_lock.get("models", [])
@@ -272,8 +297,20 @@ def _instrumentation(summary: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]
     if not isinstance(nodes, Mapping) or not nodes:
         return [], 0.0, ["measurement node summaries missing"]
     records = [item for item in nodes.values() if isinstance(item, Mapping)]
-    overhead = sum(float(item.get("controller_collection_overhead_s") or 0.0) for item in records)
-    return records, overhead, []
+    overhead = 0.0
+    errors: list[str] = []
+    for item in records:
+        samples = item.get("worker_collection_overhead_samples_s")
+        if not isinstance(samples, list) or not samples:
+            errors.append("worker telemetry collection overhead missing")
+            continue
+        for sample in samples:
+            value = sample.get("overhead_s") if isinstance(sample, Mapping) else None
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                errors.append("worker telemetry collection overhead is invalid")
+                continue
+            overhead += float(value)
+    return records, overhead, errors
 
 
 def analyze_pilot(
@@ -284,6 +321,7 @@ def analyze_pilot(
     precision = _mapping(plan.get("precision_policy"), "precision_policy")
     thermal = _mapping(plan.get("thermal_policy"), "thermal_policy")
     telemetry = _mapping(plan.get("telemetry_policy"), "telemetry_policy")
+    failure_policy = _mapping(plan.get("failure_policy"), "failure_policy")
     minimum = int(precision["minimum_formal_repeats"])
     maximum = int(precision["maximum_formal_repeats"])
     minimum_pilot = int(precision["minimum_successful_pilot_repeats_per_cell"])
@@ -295,6 +333,7 @@ def analyze_pilot(
     failures: list[dict[str, Any]] = []
     blockers: list[str] = []
     overhead_fractions: list[float] = []
+    request_failure_rates: list[float] = []
     for observation in observations:
         cell_id = str(observation.get("pilot_cell_id") or "")
         repeat_index = observation.get("pilot_repeat_index")
@@ -314,6 +353,13 @@ def analyze_pilot(
                 "error_code": summary.get("error_code") or observation.get("error_code") or "RUN_FAILED",
             })
             continue
+        success_rate = summary.get("success_rate")
+        if isinstance(success_rate, bool) or not isinstance(success_rate, (int, float)):
+            blockers.append(f"{cell_id}/{repeat_index}: request success rate missing")
+        else:
+            request_failure_rates.append(1.0 - float(success_rate))
+            if float(success_rate) < float(failure_policy["minimum_request_success_rate_per_run"]):
+                blockers.append(f"{cell_id}/{repeat_index}: request success rate below policy")
         records, overhead, errors = _instrumentation(summary)
         blockers.extend(f"{cell_id}/{repeat_index}: {error}" for error in errors)
         wall_s = float(summary.get("wall_s") or 0.0)
@@ -399,8 +445,14 @@ def analyze_pilot(
     maximum_overhead = max(overhead_fractions, default=None)
     if maximum_overhead is None:
         blockers.append("telemetry overhead could not be measured")
-    elif maximum_overhead > float(telemetry["maximum_controller_overhead_fraction"]):
-        blockers.append("telemetry controller overhead exceeded the predeclared fraction")
+    elif maximum_overhead > float(telemetry["maximum_worker_collection_overhead_fraction"]):
+        blockers.append("worker telemetry collection overhead exceeded the predeclared fraction")
+
+    attempt_failure_rate = len(failures) / len(observations) if observations else None
+    if attempt_failure_rate is not None and attempt_failure_rate > float(
+        failure_policy["maximum_attempt_failure_rate"]
+    ):
+        blockers.append("pilot attempt failure rate exceeded the predeclared fraction")
 
     expected_observations = sum(int(item["runs"]) for item in plan.get("calibration_cells") or []) + sum(
         int(item["runs"]) for item in plan.get("variance_cells") or []
@@ -418,7 +470,12 @@ def analyze_pilot(
         "expected_observations": expected_observations,
         "successful_observations": len(observations) - len(failures),
         "failures": failures,
-        "failure_rate": len(failures) / len(observations) if observations else None,
+        "failure_rate": attempt_failure_rate,
+        "failure_decision": {
+            "maximum_attempt_failure_rate": failure_policy["maximum_attempt_failure_rate"],
+            "minimum_request_success_rate_per_run": failure_policy["minimum_request_success_rate_per_run"],
+            "maximum_request_failure_rate_observed": max(request_failure_rates, default=None),
+        },
         "cell_summaries": cell_summaries,
         "precision_decision": {
             "selected_formal_repeats": required_repeats,
@@ -437,8 +494,10 @@ def analyze_pilot(
             },
         },
         "telemetry_decision": {
-            "maximum_controller_overhead_fraction_observed": maximum_overhead,
-            "maximum_allowed_fraction": telemetry["maximum_controller_overhead_fraction"],
+            "metric": "worker_internal_collection_time_over_measurement_wall_time",
+            "maximum_worker_collection_overhead_fraction_observed": maximum_overhead,
+            "maximum_allowed_fraction": telemetry["maximum_worker_collection_overhead_fraction"],
+            "controller_probe_elapsed_is_descriptive_only": True,
         },
         "median_successful_run_s": median([
             float(observation["summary"].get("wall_s") or 0.0)

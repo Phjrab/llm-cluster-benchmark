@@ -38,6 +38,7 @@ def validate(plan: dict) -> None:
 def completed_summary(value: float = 10.0, start_temp: float = 50.0) -> dict:
     return {
         "status": "completed",
+        "success_rate": 1.0,
         "wall_s": 100.0,
         "cluster_tokens_per_s": value,
         "requests_per_s": value / 10,
@@ -53,6 +54,10 @@ def completed_summary(value: float = 10.0, start_temp: float = 50.0) -> dict:
                     "throttling_sample_count": 0,
                     "steady_state_start": 2.0,
                     "controller_collection_overhead_s": 1.0,
+                    "worker_collection_overhead_samples_s": [
+                        {"sampled_at": "one", "overhead_s": 0.01},
+                        {"sampled_at": "two", "overhead_s": 0.01},
+                    ],
                 }
             }
         },
@@ -187,9 +192,32 @@ class PilotAnalysisTests(unittest.TestCase):
         self.assertEqual(result["thermal_decision"]["selected_minimum_cooldown_s"], 3.0)
         self.assertGreater(result["median_total_run_s"], result["median_successful_run_s"])
         self.assertLessEqual(
-            result["telemetry_decision"]["maximum_controller_overhead_fraction_observed"],
+            result["telemetry_decision"]["maximum_worker_collection_overhead_fraction_observed"],
             0.05,
         )
+
+    def test_controller_wait_is_descriptive_but_worker_collection_overhead_blocks(self) -> None:
+        observations = complete_observations(self.plan, self.matrix)
+        for observation in observations:
+            node = observation["summary"]["measurement_instrumentation"]["nodes"]["worker"]
+            node["controller_collection_overhead_s"] = 95.0
+        self.assertTrue(analyze_pilot(self.plan, observations)["freeze_ready"])
+
+        node = observations[-1]["summary"]["measurement_instrumentation"]["nodes"]["worker"]
+        node["worker_collection_overhead_samples_s"] = [
+            {"sampled_at": "one", "overhead_s": 6.0}
+        ]
+        result = analyze_pilot(self.plan, observations)
+        self.assertFalse(result["freeze_ready"])
+        self.assertTrue(any("worker telemetry" in item for item in result["blockers"]))
+
+    def test_request_and_attempt_failures_are_preserved_and_gated(self) -> None:
+        observations = complete_observations(self.plan, self.matrix)
+        observations[-1]["summary"]["success_rate"] = 0.5
+        result = analyze_pilot(self.plan, observations)
+        self.assertFalse(result["freeze_ready"])
+        self.assertEqual(result["failure_decision"]["maximum_request_failure_rate_observed"], 0.5)
+        self.assertTrue(any("request success rate" in item for item in result["blockers"]))
 
     def test_incomplete_or_failed_pilot_never_opens_freeze_gate(self) -> None:
         observations = complete_observations(self.plan, self.matrix)

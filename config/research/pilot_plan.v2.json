@@ -57,10 +57,17 @@
     "active_throttling_allowed": false
   },
   "telemetry_policy": {
-    "maximum_controller_overhead_fraction": 0.05,
+    "maximum_worker_collection_overhead_fraction": 0.05,
     "minimum_measurement_samples_per_node": 2,
     "primary_metrics_must_be_available": true,
-    "energy_is_descriptive_when_power_sensor_is_available": true
+    "energy_is_descriptive_when_power_sensor_is_available": true,
+    "controller_probe_elapsed_is_descriptive_only": true
+  },
+  "failure_policy": {
+    "maximum_attempt_failure_rate": 0.05,
+    "minimum_request_success_rate_per_run": 0.95,
+    "failed_attempts_and_requests_are_preserved": true,
+    "retry_is_a_distinct_attempt": true
   },
   "calibration_cells": [
     {
