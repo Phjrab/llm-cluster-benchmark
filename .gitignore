@@ -11,6 +11,12 @@ build/
 dist/
 *.egg-info/
 
+# Node/browser test artifacts
+node_modules/
+playwright-report/
+test-results/
+.artifacts/
+
 # Local model assets
 models/
 *.gguf

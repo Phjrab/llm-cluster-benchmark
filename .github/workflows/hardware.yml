@@ -1,0 +1,161 @@
+name: Hardware acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Manual smoke or release-candidate blocking gate
+        required: true
+        default: manual
+        type: choice
+        options:
+          - manual
+          - release-candidate
+      inventory:
+        description: Absolute inventory path on the self-hosted runner
+        required: false
+        type: string
+      model_id:
+        description: GGUF model ID already present on every test Worker
+        required: false
+        default: qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf
+        type: string
+  schedule:
+    - cron: "17 18 * * *"
+  push:
+    tags:
+      - "v*-rc*"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: hardware-lab
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Hardware runner preflight
+    runs-on: ubuntu-24.04
+    outputs:
+      available: ${{ steps.runners.outputs.available }}
+      mode: ${{ steps.mode.outputs.value }}
+    steps:
+      - name: Resolve hardware gate mode
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_MODE: ${{ inputs.mode }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$EVENT_NAME" == "schedule" ]]; then value=nightly
+          elif [[ "$EVENT_NAME" == "push" && "$REF_NAME" == *-rc* ]]; then value=release-candidate
+          else value="${DISPATCH_MODE:-manual}"
+          fi
+          echo "value=$value" >> "$GITHUB_OUTPUT"
+          echo "Hardware gate mode: $value" >> "$GITHUB_STEP_SUMMARY"
+      - name: Find an online self-hosted hardware runner
+        id: runners
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          url = f"https://api.github.com/repos/{os.environ['REPOSITORY']}/actions/runners?per_page=100"
+          request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {os.environ['GH_TOKEN']}", "X-GitHub-Api-Version": "2022-11-28"})
+          available = False
+          reason = "no online runner labeled llm-cluster-hardware"
+          try:
+              with urllib.request.urlopen(request, timeout=15) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              for runner in payload.get("runners", []):
+                  labels = {item.get("name") for item in runner.get("labels", [])}
+                  if runner.get("status") == "online" and not runner.get("busy") and "llm-cluster-hardware" in labels:
+                      available = True
+                      reason = f"runner {runner.get('name')} is online"
+                      break
+          except Exception as exc:
+              reason = f"runner inventory unavailable: {type(exc).__name__}: {exc}"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"available={'true' if available else 'false'}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write(f"\nHardware availability: **{'available' if available else 'skipped'}** — {reason}\n")
+          print(reason)
+          PY
+
+  smoke:
+    name: Jetson Pi and RPC smoke
+    needs: preflight
+    if: needs.preflight.outputs.available == 'true'
+    runs-on: [self-hosted, llm-cluster-hardware]
+    timeout-minutes: 90
+    outputs:
+      outcome: ${{ steps.smoke.outputs.outcome }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install Controller-side benchmark client
+        run: python -m pip install -r requirements-controller.txt
+      - name: Run hardware smoke matrix
+        id: smoke
+        env:
+          INVENTORY_INPUT: ${{ inputs.inventory }}
+          INVENTORY_DEFAULT: ${{ vars.LLM_CLUSTER_INVENTORY }}
+          MODEL_INPUT: ${{ inputs.model_id }}
+          MODEL_DEFAULT: ${{ vars.LLM_CLUSTER_SMOKE_MODEL }}
+          MODE: ${{ needs.preflight.outputs.mode }}
+        run: |
+          mkdir -p .artifacts/hardware/results
+          inventory="${INVENTORY_INPUT:-$INVENTORY_DEFAULT}"
+          model="${MODEL_INPUT:-${MODEL_DEFAULT:-qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf}}"
+          if [[ -z "$inventory" ]]; then
+            printf '{"status":"unavailable","reason":"LLM_CLUSTER_INVENTORY is not configured"}\n' > .artifacts/hardware/report.json
+            echo "outcome=unavailable" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          set +e
+          python scripts/ci/hardware_smoke.py --inventory "$inventory" --model-id "$model" --results-dir .artifacts/hardware/results --report .artifacts/hardware/report.json --mode "$MODE"
+          code=$?
+          set -e
+          if [[ $code -eq 0 ]]; then echo "outcome=passed" >> "$GITHUB_OUTPUT"
+          elif [[ $code -eq 78 ]]; then echo "outcome=unavailable" >> "$GITHUB_OUTPUT"
+          else echo "outcome=failed" >> "$GITHUB_OUTPUT"; exit "$code"
+          fi
+      - name: Preserve hardware results and cleanup evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hardware-acceptance-${{ github.run_id }}
+          path: .artifacts/hardware
+          if-no-files-found: error
+          retention-days: 30
+
+  release-gate:
+    name: Release candidate hardware gate
+    if: always()
+    needs: [preflight, smoke]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Enforce release-candidate hardware acceptance
+        env:
+          MODE: ${{ needs.preflight.outputs.mode }}
+          AVAILABLE: ${{ needs.preflight.outputs.available }}
+          JOB_RESULT: ${{ needs.smoke.result }}
+          OUTCOME: ${{ needs.smoke.outputs.outcome }}
+        run: |
+          if [[ "$MODE" != "release-candidate" ]]; then
+            echo "Hardware gate is non-blocking in $MODE mode." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ "$AVAILABLE" != "true" || "$JOB_RESULT" != "success" || "$OUTCOME" != "passed" ]]; then
+            echo "Release candidate blocked: hardware acceptance did not pass." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Release candidate hardware acceptance passed." >> "$GITHUB_STEP_SUMMARY"

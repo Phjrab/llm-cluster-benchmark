@@ -1,0 +1,138 @@
+name: Required CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: required-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-quality:
+    name: Linux quality gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install test runtimes
+        run: |
+          python -m pip install --upgrade pip build
+          python -m pip install -r requirements-controller.txt -r cluster/requirements-runtime.txt
+      - name: Run Python regression suite
+        run: |
+          mkdir -p .artifacts/ci
+          set -o pipefail
+          python -m unittest discover -s cluster/tests -v 2>&1 | tee .artifacts/ci/python-unittest.log
+      - name: Compile Python sources
+        run: python -m compileall -q cluster scripts/ci
+      - name: Build and install wheel in isolation
+        run: |
+          python -m build --wheel --no-isolation
+          python -m unittest cluster.tests.test_packaging -v
+      - name: Validate JSON, scientific locks, workflows, and security invariants
+        run: python scripts/ci/validate_repository.py | tee .artifacts/ci/repository-validation.log
+      - name: Validate shell scripts
+        run: |
+          mapfile -t scripts < <(find . -type f -name '*.sh' -not -path './.git/*' -print)
+          for script in "${scripts[@]}"; do bash -n "$script"; done
+          shellcheck "${scripts[@]}"
+      - name: Preserve Linux evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-quality-evidence
+          path: |
+            .artifacts/ci
+            dist/*.whl
+          if-no-files-found: warn
+          retention-days: 14
+
+  macos-controller:
+    name: macOS controller gate
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install Controller runtime
+        run: |
+          mkdir -p .artifacts/ci
+          set -o pipefail
+          CLUSTER_SHELL_PROFILE="$RUNNER_TEMP/llm-cluster-profile" ./scripts/setup-controller 2>&1 | tee .artifacts/ci/setup-controller.log
+      - name: Exercise lifecycle and Dashboard health
+        run: |
+          set -o pipefail
+          .venv/bin/python scripts/ci/macos_controller_gate.py 2>&1 | tee .artifacts/ci/macos-controller.log
+      - name: Exercise stale-PID and CLI compatibility tests
+        run: .venv/bin/python -m unittest cluster.tests.test_launcher cluster.tests.test_process_guard cluster.tests.test_phase14_regression -v
+      - name: Preserve macOS evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-controller-evidence
+          path: |
+            .artifacts/ci
+            .run/controller/*.log
+            .run/controller/*.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  browser-e2e:
+    name: Browser E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install Dashboard and browser test runtimes
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -r requirements-controller.txt
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run JavaScript and browser gates
+        run: |
+          mkdir -p .artifacts/ci
+          set -o pipefail
+          npm test 2>&1 | tee .artifacts/ci/browser-e2e.log
+      - name: Preserve browser traces and screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-e2e-evidence
+          path: |
+            .artifacts/ci
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 14

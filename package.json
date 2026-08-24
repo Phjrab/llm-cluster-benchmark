@@ -1,0 +1,18 @@
+{
+  "name": "llm-cluster-benchmark-dashboard-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned JavaScript and browser regression gates for the LLM cluster Dashboard",
+  "scripts": {
+    "test:syntax": "node --check cluster/dashboard/static/app.js && node --check cluster/dashboard/static/js/utils.js && node --check cluster/dashboard/static/js/power.js && node --check cluster/dashboard/static/js/console.js && node --check cluster/dashboard/static/js/models.js && node --check cluster/dashboard/static/js/results.js && node --check cluster/dashboard/static/js/research.js",
+    "test:fixtures": "node cluster/tests/test_dashboard_exports.js",
+    "test:e2e": "playwright test",
+    "test": "npm run test:syntax && npm run test:fixtures && npm run test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
