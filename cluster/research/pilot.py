@@ -92,8 +92,8 @@ def validate_pilot_plan(
         reason_code = _text(supersedes.get("reason_code"), "supersedes.reason_code")
         if previous_id == pilot_id:
             raise PilotValidationError("a revised pilot cannot supersede itself")
-        if reason_code != "DEPLOYMENT_SOURCE_DRIFT":
-            raise PilotValidationError("revised pilot reason_code must identify deployment source drift")
+        if reason_code not in {"DEPLOYMENT_SOURCE_DRIFT", "WORKER_LLAMA_CONTEXT_RACE"}:
+            raise PilotValidationError("revised pilot reason_code is not an approved pilot remediation")
         _text(supersedes.get("failed_run_id"), "supersedes.failed_run_id")
         _text(supersedes.get("preregistered_parent_commit"), "supersedes.preregistered_parent_commit")
     separation = _mapping(plan.get("separation"), "separation")

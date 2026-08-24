@@ -518,15 +518,20 @@ class LlamaCppInferenceBackend:
             setter(seed)
 
     def tokenize(self, text: str) -> int:
-        if not text or self.llm is None:
-            return 0
-        tokenizer = getattr(self.llm, "tokenize", None)
-        if not callable(tokenizer):
-            return 0
-        try:
-            return len(tokenizer(text.encode("utf-8"), add_bos=False))
-        except Exception:
-            return 0
+        # llama.cpp owns one mutable context per loaded model. Tokenization may
+        # look read-only, but the Python binding is not safe to call from a
+        # second request while decode is active on that context (notably on
+        # Jetson CUDA). Use the same re-entrant lock as generation/load/unload.
+        with self.lock:
+            if not text or self.llm is None:
+                return 0
+            tokenizer = getattr(self.llm, "tokenize", None)
+            if not callable(tokenizer):
+                return 0
+            try:
+                return len(tokenizer(text.encode("utf-8"), add_bos=False))
+            except Exception:
+                return 0
 
     def count_input_tokens(
         self, message: str, history: Sequence[Dict[str, str]]

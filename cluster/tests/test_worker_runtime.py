@@ -5,6 +5,7 @@ import hashlib
 import importlib
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -346,6 +347,57 @@ class WorkerStandaloneBoundaryTests(unittest.TestCase):
 
 
 class LlamaBackendCompatibilityTests(unittest.TestCase):
+    def test_tokenizer_cannot_overlap_generation_on_one_llama_context(self) -> None:
+        class ConcurrentLlama:
+            def __init__(self) -> None:
+                self.generation_started = threading.Event()
+                self.release_generation = threading.Event()
+                self.in_generation = False
+                self.tokenizer_overlapped = False
+
+            def create_chat_completion(self, **_: Any) -> Iterable[Dict[str, object]]:
+                def values() -> Iterable[Dict[str, object]]:
+                    self.in_generation = True
+                    self.generation_started.set()
+                    self.release_generation.wait(timeout=2)
+                    yield {"choices": [{"delta": {"content": "A"}}]}
+                    self.in_generation = False
+
+                return values()
+
+            def tokenize(self, _: bytes, add_bos: bool = False) -> list[int]:
+                self.tokenizer_overlapped = self.tokenizer_overlapped or self.in_generation
+                return [1]
+
+        with tempfile.TemporaryDirectory() as directory:
+            backend = LlamaCppInferenceBackend(Path(directory))
+            llama = ConcurrentLlama()
+            backend.llm = llama
+            generation = threading.Thread(
+                target=lambda: list(
+                    backend.stream_chat(
+                        message="hello",
+                        history=[],
+                        max_tokens=1,
+                        temperature=0.0,
+                        top_p=0.9,
+                    )
+                )
+            )
+            generation.start()
+            self.assertTrue(llama.generation_started.wait(timeout=1))
+            tokenization = threading.Thread(target=lambda: backend.tokenize("hello"))
+            tokenization.start()
+            time.sleep(0.05)
+            self.assertTrue(tokenization.is_alive())
+            llama.release_generation.set()
+            generation.join(timeout=1)
+            tokenization.join(timeout=1)
+
+        self.assertFalse(generation.is_alive())
+        self.assertFalse(tokenization.is_alive())
+        self.assertFalse(llama.tokenizer_overlapped)
+
     def test_model_load_retry_and_chat_template_fallback_match_legacy_behavior(self) -> None:
         class FakeLlama:
             attempts: list[tuple[int, int, int]] = []
