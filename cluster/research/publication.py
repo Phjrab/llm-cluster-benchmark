@@ -20,7 +20,7 @@ import re
 import shutil
 import statistics
 import tempfile
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 from xml.sax.saxutils import escape
 import zipfile
 
@@ -405,6 +405,7 @@ def analyze_dataset(
         "request_level_role": "nested_descriptive_only",
         "seed": seed,
         "bootstrap_resamples": bootstrap_resamples,
+        "attempt_count": len(dataset.runs) + sum(item.get("reason_code") == "MISSING_SUMMARY" for item in dataset.exclusions),
         "run_count": len(dataset.runs),
         "completed_run_count": len(completed),
         "request_count": len(dataset.requests),
@@ -497,6 +498,47 @@ def latency_ecdf_svg(dataset: PublicationDataset) -> str:
     return _svg_document(title, subtitle, "".join(parts))
 
 
+def latency_boxplot_svg(dataset: PublicationDataset) -> str:
+    title = f"{dataset.experiment_type.title()} nested request latency distribution"
+    subtitle = "Median, IQR, range, and successful request observations; requests remain nested within runs"
+    series = {
+        "TTFT": [float(item["ttft_s"]) for item in dataset.requests if item["ok"] and item["ttft_s"] is not None],
+        "E2E": [float(item["e2e_s"]) for item in dataset.requests if item["ok"] and item["e2e_s"] is not None],
+    }
+    all_values = [value for values in series.values() for value in values]
+    if not all_values:
+        return _svg_document(title, subtitle, '<text class="a" x="700" y="430" text-anchor="middle">No successful request latency observations</text>')
+    low, high = 0.0, max(all_values) * 1.05
+    left, right, top, bottom = 170, 1345, 120, 720
+    parts = [f'<rect class="f" x="{left}" y="{top}" width="{right-left}" height="{bottom-top}"/>']
+    for tick in range(6):
+        value = low + (high - low) * tick / 5
+        y = _scale(value, low, high, bottom, top)
+        parts.append(f'<line class="g" x1="{left}" y1="{y:.2f}" x2="{right}" y2="{y:.2f}"/><text class="a" x="{left-14}" y="{y+5:.2f}" text-anchor="end">{value:.1f}</text>')
+    for index, (label, values) in enumerate(series.items()):
+        if not values:
+            continue
+        x = left + (index + 1) * (right - left) / 3
+        q25 = percentile(values, 0.25)
+        median = percentile(values, 0.50)
+        q75 = percentile(values, 0.75)
+        minimum, maximum = min(values), max(values)
+        assert q25 is not None and median is not None and q75 is not None
+        y25, y50, y75 = (_scale(value, low, high, bottom, top) for value in (q25, median, q75))
+        ymin, ymax = (_scale(value, low, high, bottom, top) for value in (minimum, maximum))
+        color = OKABE_ITO[index]
+        parts.append(f'<line x1="{x}" y1="{ymax:.2f}" x2="{x}" y2="{ymin:.2f}" stroke="{color}" stroke-width="4"/><line x1="{x-34}" y1="{ymax:.2f}" x2="{x+34}" y2="{ymax:.2f}" stroke="{color}" stroke-width="4"/><line x1="{x-34}" y1="{ymin:.2f}" x2="{x+34}" y2="{ymin:.2f}" stroke="{color}" stroke-width="4"/>')
+        parts.append(f'<rect x="{x-92}" y="{y75:.2f}" width="184" height="{max(1.0, y25-y75):.2f}" fill="#FFFFFF" stroke="{color}" stroke-width="5"/><line x1="{x-92}" y1="{y50:.2f}" x2="{x+92}" y2="{y50:.2f}" stroke="{color}" stroke-width="6"/>')
+        ordered = sorted(values)
+        for observation_index, value in enumerate(ordered):
+            jitter = ((observation_index * 37) % 101 - 50) * 1.25
+            y = _scale(value, low, high, bottom, top)
+            parts.append(f'<circle cx="{x+jitter:.2f}" cy="{y:.2f}" r="3.5" fill="{color}" fill-opacity="0.38"/>')
+        parts.append(f'<text class="a" x="{x}" y="{bottom+34}" text-anchor="middle">{label} · n={len(values)}</text>')
+    parts.append(f'<text class="a" x="26" y="{(top+bottom)/2}" transform="rotate(-90 26 {(top+bottom)/2})" text-anchor="middle">Latency (seconds)</text>')
+    return _svg_document(title, subtitle, "".join(parts))
+
+
 def metric_bar_svg(dataset: PublicationDataset, metric: str, title: str, unit: str) -> str | None:
     runs = [item for item in dataset.runs if item["status"] == "completed" and item.get(metric) is not None]
     if not runs:
@@ -545,6 +587,7 @@ def render_figures(dataset: PublicationDataset, analysis: Mapping[str, Any]) -> 
     figures = {
         "throughput.svg": throughput_svg(dataset, analysis),
         "latency-ecdf.svg": latency_ecdf_svg(dataset),
+        "latency-boxplot.svg": latency_boxplot_svg(dataset),
         "run-outcomes.svg": failure_svg(dataset),
     }
     energy = metric_bar_svg(dataset, "generated_tokens_per_j", f"{dataset.experiment_type.title()} energy efficiency", "Generated tokens/J")
@@ -621,6 +664,7 @@ def _readme(dataset: PublicationDataset, analysis: Mapping[str, Any]) -> bytes:
         f"- analysis engine: `{ANALYSIS_ENGINE}`",
         f"- deterministic seed: `{analysis['seed']}`",
         f"- bootstrap resamples: `{analysis['bootstrap_resamples']}`",
+        f"- preserved attempts: `{analysis['attempt_count']}`",
         f"- retained runs: `{analysis['run_count']}`",
         f"- completed runs: `{analysis['completed_run_count']}`",
         f"- retained request rows: `{analysis['request_count']}`",
@@ -660,6 +704,7 @@ def write_publication_bundle(
     analysis_plan: Mapping[str, Any],
     locked_inputs: Mapping[str, Path],
     acknowledge_non_formal: bool = False,
+    png_renderer: Callable[[Path], Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Atomically create a deterministic directory and matching zip archive."""
     if experiment_type == "pilot" and acknowledge_non_formal is not True:
@@ -690,6 +735,11 @@ def write_publication_bundle(
         _private_write(temp / "tables" / "cell-summary.csv", _csv_bytes(cell_rows, cell_fields))
         for name, svg in sorted(render_figures(dataset, analysis).items()):
             _private_write(temp / "figures" / name, svg.encode("utf-8"))
+        if png_renderer is not None:
+            render_runtime = dict(png_renderer(temp / "figures"))
+            if render_runtime.get("status") != "completed":
+                raise PublicationError("PNG renderer did not report completed status")
+            _private_write(temp / "inputs" / "png-render-runtime.json", canonical_json(render_runtime))
         _private_write(temp / "README.md", _readme(dataset, analysis))
         for name, source in sorted(locked_inputs.items()):
             if not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,79}", name):

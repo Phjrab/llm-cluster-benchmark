@@ -6,8 +6,9 @@
   "scripts": {
     "test:syntax": "node --check cluster/dashboard/static/app.js && node --check cluster/dashboard/static/js/utils.js && node --check cluster/dashboard/static/js/power.js && node --check cluster/dashboard/static/js/console.js && node --check cluster/dashboard/static/js/models.js && node --check cluster/dashboard/static/js/results.js && node --check cluster/dashboard/static/js/research.js",
     "test:fixtures": "node cluster/tests/test_dashboard_exports.js",
+    "test:publication-png": "node --check scripts/research/render_publication_png.js && node cluster/tests/test_phase11_publication_png.js",
     "test:e2e": "playwright test",
-    "test": "npm run test:syntax && npm run test:fixtures && npm run test:e2e"
+    "test": "npm run test:syntax && npm run test:fixtures && npm run test:publication-png && npm run test:e2e"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1"

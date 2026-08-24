@@ -176,6 +176,13 @@ class PublicationBundleTests(unittest.TestCase):
             create_run(results, "run1", value=10)
             create_run(results, "run2", value=14)
             locks = self.locked_inputs(root / "locks")
+            def fake_png_renderer(figures: Path) -> dict:
+                output = figures / "png-300dpi"
+                output.mkdir(mode=0o700)
+                target = output / "throughput.png"
+                target.write_bytes(b"fixture-png")
+                target.chmod(0o600)
+                return {"status": "completed", "renderer": "fixture", "outputs": [{"path": "png-300dpi/throughput.png", "dpi": 300}]}
             first = write_publication_bundle(
                 results_root=results,
                 output_dir=root / "bundle-a",
@@ -183,6 +190,7 @@ class PublicationBundleTests(unittest.TestCase):
                 analysis_plan=self.plan(),
                 locked_inputs=locks,
                 acknowledge_non_formal=True,
+                png_renderer=fake_png_renderer,
             )
             second = write_publication_bundle(
                 results_root=results,
@@ -191,6 +199,7 @@ class PublicationBundleTests(unittest.TestCase):
                 analysis_plan=self.plan(),
                 locked_inputs=locks,
                 acknowledge_non_formal=True,
+                png_renderer=fake_png_renderer,
             )
             self.assertEqual(first["archive_sha256"], second["archive_sha256"])
             self.assertEqual((root / "bundle-a.zip").read_bytes(), (root / "bundle-b.zip").read_bytes())
@@ -202,9 +211,10 @@ class PublicationBundleTests(unittest.TestCase):
             self.assertNotIn(b"secret prompt", payload)
             self.assertNotIn(b"secret model response", payload)
             self.assertIn(b"NON-FORMAL PILOT OUTPUT", (root / "bundle-a" / "README.md").read_bytes())
+            self.assertTrue((root / "bundle-a" / "inputs" / "png-render-runtime.json").is_file())
             self.assertEqual(
-                {path.name for path in (root / "bundle-a" / "figures").iterdir()},
-                {"throughput.svg", "latency-ecdf.svg", "energy-efficiency.svg", "peak-temperature.svg", "run-outcomes.svg"},
+                {path.name for path in (root / "bundle-a" / "figures").iterdir() if path.is_file()},
+                {"throughput.svg", "latency-ecdf.svg", "latency-boxplot.svg", "energy-efficiency.svg", "peak-temperature.svg", "run-outcomes.svg"},
             )
             with zipfile.ZipFile(root / "bundle-a.zip") as archive:
                 self.assertIn("bundle-manifest.json", archive.namelist())
