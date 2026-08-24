@@ -77,6 +77,23 @@ class DeploymentManifestUnitTests(unittest.TestCase):
         self.assertNotIn("models/large.gguf", paths)
         self.assertNotIn("cluster/__pycache__/worker.pyc", paths)
 
+    def test_tree_identity_excludes_frontend_dependencies_and_their_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            make_source(root)
+            binary_dir = root / "node_modules" / ".bin"
+            binary_dir.mkdir(parents=True)
+            (root / "node_modules" / "playwright.js").write_text(
+                "module.exports = {};\n", encoding="utf-8"
+            )
+            (binary_dir / "playwright").symlink_to("../playwright.js")
+
+            manifest = build_fixture(root)
+
+        paths = {item.path for item in manifest.source_files}
+        self.assertFalse(any(path.startswith("node_modules/") for path in paths))
+        self.assertIn("node_modules/", RSYNC_EXCLUDES)
+
     def test_content_or_file_set_drift_fails_verification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -52,6 +52,7 @@ RSYNC_EXCLUDES = (
     ".pytest_cache/",
     ".mypy_cache/",
     ".ruff_cache/",
+    "node_modules/",
     "build/",
     "dist/",
     "*.egg-info/",
@@ -71,6 +72,7 @@ _EXCLUDED_DIRECTORY_NAMES = {
     ".pytest_cache",
     ".mypy_cache",
     ".ruff_cache",
+    "node_modules",
     "build",
     "dist",
 }
