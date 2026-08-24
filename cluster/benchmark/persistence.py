@@ -69,6 +69,15 @@ class RunPersistence:
                     "order_index": self.config.order_index,
                 }
             )
+        elif self.config.pilot_id:
+            event.update(
+                {
+                    "pilot_id": self.config.pilot_id,
+                    "pilot_cell_id": self.config.pilot_cell_id,
+                    "pilot_repeat_index": self.config.pilot_repeat_index,
+                    "pilot_order_index": self.config.pilot_order_index,
+                }
+            )
         self.repository.append_event(self.run_id, event)
         if self.progress:
             self.progress(event)

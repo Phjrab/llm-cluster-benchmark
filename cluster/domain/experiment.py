@@ -71,6 +71,10 @@ class ExperimentConfig:
     runtime_lock_version: int = 0
     condition_profile_id: str = ""
     measurement_quality_policy: str = ""
+    pilot_id: str = ""
+    pilot_cell_id: str = ""
+    pilot_repeat_index: int = 0
+    pilot_order_index: int = 0
 
     @classmethod
     def from_dict(cls, raw: Dict[str, Any]) -> "ExperimentConfig":
@@ -127,7 +131,7 @@ class ExperimentConfig:
         if not isinstance(self.acknowledge_experimental_rpc, bool):
             raise DomainValidationError("acknowledge_experimental_rpc must be a boolean")
 
-        research_values = (
+        formal_research_values = (
             self.experiment_type,
             self.campaign_id,
             self.campaign_cell_id,
@@ -138,11 +142,18 @@ class ExperimentConfig:
             self.condition_profile_id,
             self.measurement_quality_policy,
         )
-        has_research_identity = any(bool(value) for value in research_values) or any(
+        has_formal_identity = bool(self.campaign_id) or any(
+            bool(value) for value in formal_research_values[2:]
+        ) or any(
             value != 0
             for value in (self.repeat_index, self.order_index, self.prompt_set_version, self.runtime_lock_version)
         )
-        if has_research_identity:
+        has_pilot_identity = bool(self.pilot_id or self.pilot_cell_id) or any(
+            value != 0 for value in (self.pilot_repeat_index, self.pilot_order_index)
+        )
+        if has_formal_identity and has_pilot_identity:
+            raise DomainValidationError("formal campaign and pilot identity cannot be mixed")
+        if has_formal_identity:
             if self.experiment_type != "formal":
                 raise DomainValidationError("campaign research identity requires experiment_type=formal")
             validate_campaign_id(self.campaign_id)
@@ -183,6 +194,28 @@ class ExperimentConfig:
                 raise DomainValidationError("prompt_set_version must be a positive integer")
             if not _is_integer(self.runtime_lock_version) or self.runtime_lock_version < 1:
                 raise DomainValidationError("runtime_lock_version must be a positive integer")
+        elif has_pilot_identity:
+            if self.experiment_type != "pilot":
+                raise DomainValidationError("pilot research identity requires experiment_type=pilot")
+            for label, value in (
+                ("pilot_id", self.pilot_id),
+                ("pilot_cell_id", self.pilot_cell_id),
+            ):
+                if (
+                    not isinstance(value, str)
+                    or not value
+                    or len(value) > 512
+                    or "/" in value
+                    or "\\" in value
+                    or any(ord(char) < 32 or ord(char) == 127 for char in value)
+                ):
+                    raise DomainValidationError(f"{label} is invalid")
+            if not _is_integer(self.pilot_repeat_index) or self.pilot_repeat_index < 1:
+                raise DomainValidationError("pilot_repeat_index must be a positive integer")
+            if not _is_integer(self.pilot_order_index) or self.pilot_order_index < 1:
+                raise DomainValidationError("pilot_order_index must be a positive integer")
+        elif self.experiment_type not in {"", "smoke"}:
+            raise DomainValidationError("experiment_type requires matching research identity")
 
         try:
             strategy = ExecutionStrategy(self.execution_strategy)

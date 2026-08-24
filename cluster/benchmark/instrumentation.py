@@ -16,6 +16,9 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 
 MEASUREMENT_SCHEMA_VERSION = 1
+STEADY_STATE_POLICY = "phase09-pilot-window-v1"
+STEADY_STATE_WINDOW_SAMPLES = 3
+STEADY_STATE_TEMPERATURE_SPAN_C = 1.5
 TelemetryProbe = Callable[[Any], Mapping[str, Any]]
 MeasurementWriter = Callable[[Mapping[str, Any]], None]
 
@@ -288,6 +291,31 @@ def _scenario_duration(samples: Sequence[Mapping[str, Any]]) -> Optional[float]:
     return sum(durations) if durations else None
 
 
+def _steady_state_start(samples: Sequence[Mapping[str, Any]]) -> Optional[float]:
+    """Return the first predeclared stable thermal window endpoint.
+
+    This is descriptive instrumentation only.  Formal admission still depends
+    on the separately frozen Phase 09 cooldown and thermal gate.
+    """
+    ordered = sorted(
+        (
+            (_number(item.get("monotonic_elapsed_s")), _temperature(item), item.get("throttled"))
+            for item in samples
+        ),
+        key=lambda item: float(item[0]) if item[0] is not None else float("inf"),
+    )
+    valid = [item for item in ordered if item[0] is not None and item[1] is not None]
+    for index in range(STEADY_STATE_WINDOW_SAMPLES - 1, len(valid)):
+        window = valid[index - STEADY_STATE_WINDOW_SAMPLES + 1:index + 1]
+        temperatures = [float(item[1]) for item in window]
+        if (
+            max(temperatures) - min(temperatures) <= STEADY_STATE_TEMPERATURE_SPAN_C
+            and all(item[2] is not True for item in window)
+        ):
+            return round(float(window[-1][0]), 9)
+    return None
+
+
 def summarize_measurements(
     samples: Sequence[Mapping[str, Any]],
     request_records: Sequence[Mapping[str, Any]],
@@ -310,6 +338,7 @@ def summarize_measurements(
         idle_powers = [value for value in idle_powers if value is not None]
         temperatures = [_temperature(item) for item in measured]
         temperatures = [value for value in temperatures if value is not None]
+        steady_state_start = _steady_state_start(measured)
         # Never bridge unsampled cooldown time between sequential scenarios.
         energy_j = _scenario_energy(measured)
         power_duration_s = _scenario_duration(measured)
@@ -380,7 +409,13 @@ def summarize_measurements(
             "end_temperature_c": temperatures[-1] if temperatures else None,
             "throttling_sample_count": sum(bool(value) for value in throttle_values) if throttle_values else None,
             "frequency_samples": frequency_samples,
-            "steady_state_start": None,
+            "steady_state_start": steady_state_start,
+            "steady_state_policy": {
+                "id": STEADY_STATE_POLICY,
+                "window_samples": STEADY_STATE_WINDOW_SAMPLES,
+                "maximum_temperature_span_c": STEADY_STATE_TEMPERATURE_SPAN_C,
+                "active_throttling_allowed": False,
+            },
             "bytes_sent": bytes_sent,
             "bytes_received": bytes_received,
             "effective_bandwidth_bytes_s": round(bandwidth, 6) if bandwidth is not None else None,
@@ -413,9 +448,9 @@ def summarize_measurements(
                     reason="temperature_sensor_unavailable",
                 ),
                 "steady_state_start": _available(
-                    None,
-                    source="pilot_policy",
-                    reason="phase_09_steady_state_rule_not_frozen",
+                    steady_state_start,
+                    source=STEADY_STATE_POLICY,
+                    reason="stable_temperature_window_not_observed",
                 ),
                 "network_counters": _available(
                     bytes_sent,

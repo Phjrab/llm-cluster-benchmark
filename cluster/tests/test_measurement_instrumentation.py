@@ -132,8 +132,22 @@ class MeasurementSummaryTests(unittest.TestCase):
         self.assertIsNone(node["steady_state_start"])
         self.assertEqual(
             node["availability"]["steady_state_start"]["reason"],
-            "phase_09_steady_state_rule_not_frozen",
+            "stable_temperature_window_not_observed",
         )
+
+    def test_predeclared_steady_state_rule_detects_three_sample_window(self) -> None:
+        samples = [
+            {
+                "node": "pi-02", "scenario_id": "single", "sample_kind": "measurement",
+                "monotonic_elapsed_s": index, "temperatures_c": {"soc": temperature},
+                "throttling_supported": True, "throttled": False,
+            }
+            for index, temperature in enumerate((50.0, 51.0, 51.2, 51.4))
+        ]
+        node = summarize_measurements(samples, [])["nodes"]["pi-02"]
+        self.assertEqual(node["steady_state_start"], 2.0)
+        self.assertEqual(node["steady_state_policy"]["id"], "phase09-pilot-window-v1")
+        self.assertTrue(node["availability"]["steady_state_start"]["available"])
 
     def test_energy_is_null_when_sensor_or_second_sample_is_missing(self) -> None:
         summary = summarize_measurements(

@@ -56,6 +56,12 @@ class RuntimePaths:
             return self.layout.campaigns_dir
         return self.runtime_dir / "controller" / "campaigns"
 
+    @property
+    def pilots_dir(self) -> Path:
+        if self.runtime_dir == self.layout.runtime_dir:
+            return self.layout.pilots_dir
+        return self.runtime_dir / "controller" / "pilots"
+
 
 def repository_root() -> Path:
     """Return this checkout's root from one explicit integration boundary."""

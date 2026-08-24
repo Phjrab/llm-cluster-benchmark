@@ -61,7 +61,15 @@ def benchmark_parameters(config: ExperimentConfig) -> Dict[str, Any]:
 
 
 def research_identity(config: ExperimentConfig) -> Optional[Dict[str, Any]]:
-    """Return the frozen campaign trace only for formal campaign runs."""
+    """Return a separated formal-campaign or pilot provenance trace."""
+    if config.pilot_id:
+        return {
+            "experiment_type": "pilot",
+            "pilot_id": config.pilot_id,
+            "pilot_cell_id": config.pilot_cell_id,
+            "pilot_repeat_index": config.pilot_repeat_index,
+            "pilot_order_index": config.pilot_order_index,
+        }
     if not config.campaign_id:
         return None
     return {
