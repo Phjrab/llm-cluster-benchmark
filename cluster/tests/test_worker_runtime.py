@@ -347,6 +347,15 @@ class WorkerStandaloneBoundaryTests(unittest.TestCase):
 
 
 class LlamaBackendCompatibilityTests(unittest.TestCase):
+    def test_llama_context_lock_is_not_reentrant_across_stream_requests(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            backend = LlamaCppInferenceBackend(Path(directory))
+            self.assertTrue(backend.lock.acquire(blocking=False))
+            try:
+                self.assertFalse(backend.lock.acquire(blocking=False))
+            finally:
+                backend.lock.release()
+
     def test_tokenizer_cannot_overlap_generation_on_one_llama_context(self) -> None:
         class ConcurrentLlama:
             def __init__(self) -> None:

@@ -10,8 +10,8 @@
     "pilot_id": "formal-study-v1-phase09-pilot-v2",
     "reason_code": "WORKER_LLAMA_CONTEXT_RACE",
     "failed_run_id": "20260824_142359_850c17",
-    "preregistered_parent_commit": "75703675d58a9ebc1534b77aa5c5f028353e9b20",
-    "note": "v2 reproduced a Jetson CUDA termination because request token counting used the mutable llama context outside the generation lock; v3 restarts the unchanged design after serializing all llama context access"
+    "preregistered_parent_commit": "cd978f6d45e91a2c16827fac9121fac512a1e614",
+    "note": "v2 reproduced a Jetson CUDA termination. Pre-pilot smoke then proved that an RLock could re-enter when distinct streamed requests reused one AnyIO thread; v3 starts only after a non-reentrant streaming-safe llama context lock is deployed"
   },
   "lock_ref": {
     "lock_id": "formal-study-v1",

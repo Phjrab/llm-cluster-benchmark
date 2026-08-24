@@ -73,7 +73,12 @@ class LlamaCppInferenceBackend:
 
     def __init__(self, models_dir: Path, *, llama_factory: Any = None, torch_module: Any = None) -> None:
         self.models_dir = Path(models_dir)
-        self.lock = threading.RLock()
+        # A streamed generator may resume on a different AnyIO worker thread,
+        # while two different requests may also reuse the same OS thread.
+        # RLock would treat the latter as re-entry and allow two llama streams
+        # onto one mutable context. A plain Lock is deliberately owner-agnostic
+        # on release and never re-entrant, matching the streaming lifecycle.
+        self.lock = threading.Lock()
         self._llama_factory = llama_factory
         self._torch = torch_module
         self._runtime_error: Optional[str] = None
