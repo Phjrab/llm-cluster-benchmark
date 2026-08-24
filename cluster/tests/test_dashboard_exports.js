@@ -23,6 +23,10 @@ const context = vm.createContext({
   document: { addEventListener() {} },
 });
 context.window = context;
+for (const moduleName of ["state.js", "api.js", "events.js"]) {
+  const modulePath = path.join(dashboardRoot, "static/js", moduleName);
+  vm.runInContext(fs.readFileSync(modulePath, "utf8"), context, { filename: modulePath });
+}
 vm.runInContext(fs.readFileSync(appPath, "utf8"), context, { filename: appPath });
 for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "results.js", "research.js"]) {
   const modulePath = path.join(dashboardRoot, "static/js", moduleName);
@@ -34,7 +38,7 @@ const appSource = fs.readFileSync(appPath, "utf8");
 assert.match(template, /01<\/span>개요[\s\S]*02<\/span>노드[\s\S]*03<\/span>모델[\s\S]*04<\/span>실험[\s\S]*05<\/span>결과[\s\S]*06<\/span>캠페인[\s\S]*07<\/span>비교[\s\S]*08<\/span>연구 준비/);
 assert.match(template, /CONTROLLER[\s\S]*DASHBOARD[\s\S]*SCHEDULER[\s\S]*STORAGE/);
 assert.doesNotMatch(template, /HEAD · CONTROL \+ INFERENCE/);
-for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "results.js", "research.js"]) {
+for (const moduleName of ["state.js", "api.js", "events.js", "utils.js", "power.js", "console.js", "models.js", "results.js", "research.js"]) {
   assert.match(template, new RegExp(`/static/js/${moduleName.replace(".", "\\.")}`));
 }
 
@@ -52,16 +56,16 @@ assert.match(template, /id="modelStarterPacks"/);
 assert.match(appSource, /\.filter\(node => node\.role === "worker"\)[\s\S]*\.sort\(\(left, right\) =>/);
 assert.match(appSource, /telemetryDegraded/);
 assert.match(appSource, /channel === "experiment"/);
-assert.match(appSource, /headers\["X-Cluster-Token"\] = state\.token/);
+assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js"), "utf8"), /headers\["X-Cluster-Token"\] = state\.token/);
 assert.match(appSource, /authenticatedEventStream\("\/api\/events"\)/);
 assert.match(appSource, /chartId === "researchCompareChart"/);
 assert.match(appSource, /Cross-run filtered comparison/);
-assert.doesNotMatch(appSource, /\/api\/events\?token=/);
-assert.doesNotMatch(appSource, /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
+assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/events.js"), "utf8"), /\/api\/events\?token=/);
+assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js"), "utf8"), /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
 assert.match(template, /styles\.css\?v=20260823\.1/);
-assert.match(template, /app\.js\?v=20260823\.1/);
+assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260824\.1/);
 assert.match(template, /results\.js\?v=20260821\.9/);
 assert.match(template, /research\.js\?v=20260823\.1/);
 assert.match(template, /id="campaign"[\s\S]*id="campaignSummary"[\s\S]*id="campaignDetail"/);

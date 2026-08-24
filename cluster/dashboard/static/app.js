@@ -1,73 +1,5 @@
-const state = {
-  token: "",
-  nodes: [],
-  status: [],
-  models: [],
-  modelRecommendations: {},
-  modelStarterPacks: [],
-  modelCatalogPolicy: {},
-  selectedNodes: new Set(),
-  runs: [],
-  experimentGroups: [],
-  actions: [],
-  controller: { role: "controller", inference_enabled: false },
-  activeExperiment: null,
-  onboarding: {},
-  settings: { worker_api_auth: false, dashboard_token_auth: false },
-  environment: [],
-  environmentBusy: false,
-  environmentActionIds: new Set(),
-  onboardingProbe: null,
-  devices: [],
-  eventSource: null,
-  metricHistory: new Map(),
-  detailNode: "",
-  renameNode: "",
-  deleteNode: "",
-  nodePlatformTab: "all",
-  selectedModels: [],
-  suites: [],
-  chartModels: new Map(),
-  chartInteraction: new Map(),
-  publicationChartId: "",
-  rpcCoordinatorNode: "",
-  powerStartWarnings: [],
-  powerWarningKeys: new Set(),
-  jetsonPower: new Map(),
-  jetsonPowerLoading: new Set(),
-  jetsonPowerApplying: new Set(),
-};
-
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-
-function getToken() {
-  const currentUrl = new URL(location.href);
-  if (currentUrl.searchParams.has("token")) {
-    currentUrl.searchParams.delete("token");
-    const clean = new URL(location.href);
-    clean.searchParams.delete("token");
-    history.replaceState({}, "", clean.pathname + clean.search + clean.hash);
-  }
-  return sessionStorage.getItem("clusterToken") || "";
-}
-
-async function api(path, options = {}) {
-  const headers = { ...(options.headers || {}) };
-  if (state.token) headers["X-Cluster-Token"] = state.token;
-  if (options.body && typeof options.body !== "string") {
-    headers["Content-Type"] = "application/json";
-    options.body = JSON.stringify(options.body);
-  }
-  const response = await fetch(path, { ...options, headers });
-  const data = await response.json().catch(() => ({}));
-  if (response.status === 401) {
-    const dialog = $("#authDialog");
-    if (dialog && !dialog.open) dialog.showModal();
-  }
-  if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
-  return data;
-}
 
 function toast(title, message = "", kind = "success") {
   const item = document.createElement("div");
@@ -1966,53 +1898,6 @@ async function refreshExperimentData() {
   renderExperimentGroups();
   renderRuns();
   window.ClusterDashboard?.research?.load?.();
-}
-
-function authenticatedEventStream(path) {
-  const controller = new AbortController();
-  const stream = {
-    closed: false,
-    onopen: null,
-    onerror: null,
-    onmessage: null,
-    close() {
-      this.closed = true;
-      controller.abort();
-    },
-  };
-
-  (async () => {
-    const headers = { Accept: "text/event-stream" };
-    if (state.token) headers["X-Cluster-Token"] = state.token;
-    const response = await fetch(path, { headers, signal: controller.signal, cache: "no-store" });
-    if (!response.ok || !response.body) throw new Error(`SSE HTTP ${response.status}`);
-    stream.onopen?.();
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (!stream.closed) {
-      const { value, done } = await reader.read();
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      const blocks = buffer.split(/\r?\n\r?\n/);
-      buffer = blocks.pop() || "";
-      blocks.forEach(block => {
-        const data = block.split(/\r?\n/)
-          .filter(line => line.startsWith("data:"))
-          .map(line => line.slice(5).trimStart())
-          .join("\n");
-        if (data) stream.onmessage?.({ data });
-      });
-      if (done) break;
-    }
-    if (!stream.closed) throw new Error("SSE connection closed");
-  })().catch(error => {
-    if (stream.closed || error?.name === "AbortError") return;
-    stream.onerror?.(error);
-    setTimeout(() => {
-      if (state.eventSource === stream && !stream.closed) connectEvents();
-    }, 1500);
-  });
-  return stream;
 }
 
 function connectEvents() {

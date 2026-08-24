@@ -4,7 +4,7 @@
   "private": true,
   "description": "Pinned JavaScript and browser regression gates for the LLM cluster Dashboard",
   "scripts": {
-    "test:syntax": "node --check cluster/dashboard/static/app.js && node --check cluster/dashboard/static/js/utils.js && node --check cluster/dashboard/static/js/power.js && node --check cluster/dashboard/static/js/console.js && node --check cluster/dashboard/static/js/models.js && node --check cluster/dashboard/static/js/results.js && node --check cluster/dashboard/static/js/research.js",
+    "test:syntax": "node --check cluster/dashboard/static/app.js && node --check cluster/dashboard/static/js/state.js && node --check cluster/dashboard/static/js/api.js && node --check cluster/dashboard/static/js/events.js && node --check cluster/dashboard/static/js/utils.js && node --check cluster/dashboard/static/js/power.js && node --check cluster/dashboard/static/js/console.js && node --check cluster/dashboard/static/js/models.js && node --check cluster/dashboard/static/js/results.js && node --check cluster/dashboard/static/js/research.js",
     "test:fixtures": "node cluster/tests/test_dashboard_exports.js",
     "test:publication-png": "node --check scripts/research/render_publication_png.js && node cluster/tests/test_phase11_publication_png.js",
     "test:e2e": "playwright test",
