@@ -145,6 +145,8 @@ record_failure() {
   esac
 }
 
+# Called indirectly by the EXIT trap below.
+# shellcheck disable=SC2317,SC2329
 emit_report() {
   [[ "$REPORT_EMITTED" -eq 0 ]] || return 0
   REPORT_EMITTED=1
@@ -254,6 +256,8 @@ print("CLUSTER_READINESS_JSON=" + compact)
 PY
 }
 
+# Called indirectly by Bash when the script exits.
+# shellcheck disable=SC2317,SC2329
 cleanup() {
   local original_status=$?
   emit_report || true

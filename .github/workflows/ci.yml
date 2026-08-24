@@ -47,7 +47,9 @@ jobs:
         run: python scripts/ci/validate_repository.py | tee .artifacts/ci/repository-validation.log
       - name: Validate shell scripts
         run: |
-          mapfile -t scripts < <(find . -type f -name '*.sh' -not -path './.git/*' -print)
+          mapfile -t scripts < <(find . -type f -name '*.sh' \
+            -not -path './.git/*' -not -path './.venv/*' -not -path './build/*' \
+            -not -path './dist/*' -not -path './node_modules/*' -print)
           for script in "${scripts[@]}"; do bash -n "$script"; done
           shellcheck "${scripts[@]}"
       - name: Preserve Linux evidence

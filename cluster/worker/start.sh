@@ -45,7 +45,7 @@ fi
 if [[ -z "${CLUSTER_WORKER_AUTH:-}" ]]; then
   CLUSTER_WORKER_AUTH="false"
   if [[ -f "$SETTINGS_FILE" ]]; then
-    CLUSTER_WORKER_AUTH="$($PROJECT_ROOT/.venv/bin/python - "$SETTINGS_FILE" <<'PY'
+    CLUSTER_WORKER_AUTH="$("$PROJECT_ROOT/.venv/bin/python" - "$SETTINGS_FILE" <<'PY'
 import json
 import sys
 try:
