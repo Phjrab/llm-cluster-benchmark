@@ -55,7 +55,7 @@ function fixtureState() {
     actual_model_config: nodes.map(node => ({ node: node.name, model_id: MODEL_ID, n_ctx: 4096, n_gpu_layers: node.platform === "jetson" ? 30 : 0, n_batch: 512 })),
     per_node: nodes.map((node, index) => ({ node: node.name, tokens_per_s: index ? 7.5 : 10.75, requests: 1 })),
   };
-  return { nodes, status, model, run, deletedRuns: new Set(), activeExperiment: null, deletePayload: null, experimentPayload: null };
+  return { nodes, status, model, run, deletedRuns: new Set(), restoredRuns: new Set(), activeExperiment: null, deletePayload: null, experimentPayload: null };
 }
 
 function bootstrapPayload(fixture) {
@@ -97,6 +97,8 @@ async function installApiFixture(page, fixture) {
     }
     if (path === `/api/runs/${RUN_ID}/responses`) return json({ run_id: RUN_ID, responses: [{ logical_request_id: 1, request_id: 1, node: "jetson-worker-01", model_id: MODEL_ID, prompt: "엣지 LLM 장점을 설명해줘.", response: "네트워크 의존도를 낮추고 지연을 줄일 수 있습니다.", output_sha256: "a".repeat(64), ok: true, ttft_s: 0.42, e2e_s: 2.01, generated_tokens: 14, tokens_per_s: 10.75 }] });
     if (path === `/api/runs/${RUN_ID}` && request.method() === "DELETE") { fixture.deletedRuns.add(RUN_ID); return json({ ok: true, run_id: RUN_ID, trash: true }); }
+    if (path === "/api/results/trash" && request.method() === "GET") return json({ trash: fixture.deletedRuns.has(RUN_ID) ? [{ trash_id: `${RUN_ID}-20260824`, run_id: RUN_ID, status: "completed", deleted_at_epoch_s: 1787500000, archive_sha256: "b".repeat(64), protected: false, campaign_id: null, suite_id: null }] : [] });
+    if (path === `/api/results/trash/${RUN_ID}-20260824/restore` && request.method() === "POST") { fixture.deletedRuns.delete(RUN_ID); fixture.restoredRuns.add(RUN_ID); return json({ ok: true, run_id: RUN_ID, suite_restored: false }); }
     if (path.endsWith("/power")) return json({ power: { supported: true, ok: true, modes: [{ id: 0, name: "MAXN", power_budget_w: 25, is_default: true }], current: { id: 0, name: "MAXN" }, default_mode: 0 } });
     if (path.startsWith("/api/nodes/") && request.method() === "DELETE") {
       const name = decodeURIComponent(path.split("/").at(-1));
@@ -146,6 +148,15 @@ test("Result responses, private trash deletion, and safe worker disconnect remai
   await page.locator(`[data-delete-run="${RUN_ID}"]`).click();
   await expect.poll(() => fixture.deletedRuns.has(RUN_ID)).toBe(true);
   await expect(page.locator("#runsTable")).toContainText("실행 기록 없음");
+
+  await page.locator("#openResultTrashButton").click();
+  await expect(page.locator("#resultTrashDialog")).toBeVisible();
+  await expect(page.locator("#resultTrashList")).toContainText(RUN_ID);
+  await page.locator(`[data-restore-trash="${RUN_ID}-20260824"]`).click();
+  await expect.poll(() => fixture.restoredRuns.has(RUN_ID)).toBe(true);
+  await expect(page.locator("#resultTrashList")).toContainText("휴지통이 비어 있습니다.");
+  await page.locator("#resultTrashDialog [data-close-dialog]").first().click();
+  await expect(page.locator("#runsTable")).toContainText("browser-e2e");
 
   await page.locator('[data-node-detail="pi-worker-02"]').click();
   await page.locator("#nodeDeleteButton").click();

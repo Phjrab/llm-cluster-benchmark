@@ -171,4 +171,5 @@ operations. A later maintenance pass may extract node onboarding, experiment
 admission, environment installation, model transfer, and RPC command services
 one at a time under the same characterization-first policy.
 
-Phase 13 has not been started.
+Phase 13 was subsequently completed in
+[`phase-13-security-deployment-retention.md`](phase-13-security-deployment-retention.md).

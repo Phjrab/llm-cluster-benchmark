@@ -181,6 +181,74 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertEqual(restored.json()["run_id"], run_id)
             self.assertEqual(active.status_code, 200)
 
+    def test_result_trash_purge_requires_exact_checksum_and_confirmation(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self.load_dashboard(root)
+            run_id = "run_purge_contract"
+            run_dir = root / "results" / run_id
+            run_dir.mkdir(parents=True)
+            (run_dir / "summary.json").write_text(
+                json.dumps({"run_id": run_id, "status": "completed", "suite_id": ""}),
+                encoding="utf-8",
+            )
+            with TestClient(dashboard.app) as client:
+                self.assertEqual(client.delete(f"/api/runs/{run_id}").status_code, 200)
+                entry = client.get("/api/results/trash").json()["trash"][0]
+                refused = client.request(
+                    "DELETE",
+                    f"/api/results/trash/{entry['trash_id']}",
+                    json={"confirmed": False, "archive_sha256": entry["archive_sha256"]},
+                )
+                mismatched = client.request(
+                    "DELETE",
+                    f"/api/results/trash/{entry['trash_id']}",
+                    json={"confirmed": True, "archive_sha256": "0" * 64},
+                )
+                purged = client.request(
+                    "DELETE",
+                    f"/api/results/trash/{entry['trash_id']}",
+                    json={"confirmed": True, "archive_sha256": entry["archive_sha256"]},
+                )
+                remaining = client.get("/api/results/trash")
+            self.assertEqual(refused.status_code, 400)
+            self.assertEqual(mismatched.status_code, 409)
+            self.assertEqual(purged.status_code, 200)
+            self.assertTrue(purged.json()["permanent"])
+            self.assertEqual(remaining.json()["trash"], [])
+
+    def test_formal_result_cannot_be_permanently_purged_through_api(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self.load_dashboard(root)
+            run_id = "run_formal_retention_contract"
+            run_dir = root / "results" / run_id
+            run_dir.mkdir(parents=True)
+            (run_dir / "summary.json").write_text(
+                json.dumps({
+                    "run_id": run_id,
+                    "status": "completed",
+                    "suite_id": "",
+                    "campaign_id": "formal-campaign-v1",
+                    "experiment_type": "formal",
+                }),
+                encoding="utf-8",
+            )
+            with TestClient(dashboard.app) as client:
+                self.assertEqual(client.delete(f"/api/runs/{run_id}").status_code, 200)
+                entry = client.get("/api/results/trash").json()["trash"][0]
+                purged = client.request(
+                    "DELETE",
+                    f"/api/results/trash/{entry['trash_id']}",
+                    json={"confirmed": True, "archive_sha256": entry["archive_sha256"]},
+                )
+            self.assertTrue(entry["protected"])
+            self.assertEqual(purged.status_code, 409)
+
     def test_registered_worker_host_key_can_be_scanned_and_explicitly_pinned(self) -> None:
         from fastapi.testclient import TestClient
         from cluster.dashboard import services

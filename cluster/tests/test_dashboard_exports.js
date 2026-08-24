@@ -66,7 +66,7 @@ assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*p
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
 assert.match(template, /styles\.css\?v=20260823\.1/);
 assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260824\.1/);
-assert.match(template, /results\.js\?v=20260821\.9/);
+assert.match(template, /results\.js\?v=20260824\.1/);
 assert.match(template, /research\.js\?v=20260823\.1/);
 assert.match(template, /id="campaign"[\s\S]*id="campaignSummary"[\s\S]*id="campaignDetail"/);
 assert.match(template, /id="compare"[\s\S]*data-compare-filter="campaign_id"[\s\S]*data-compare-filter="measurement_quality"[\s\S]*researchCompareChart/);
@@ -110,6 +110,9 @@ assert.equal(legacyParticipants.length, 1);
 assert.equal(legacyParticipants[0].capture_status, "legacy");
 assert.equal(legacyParticipants[0].runtime_backend, "openblas");
 assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/results.js"), "utf8"), /data-delete-run/);
+assert.match(template, /openResultTrashButton[\s\S]*resultTrashDialog[\s\S]*resultTrashList/);
+assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/results.js"), "utf8"), /archive_sha256/);
+assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/results.js"), "utf8"), /RETENTION PROTECTED/);
 assert.match(appSource, /data-delete-run=/);
 const responseGrouping = vm.runInContext(`ClusterDashboard.results.responseGroups([
   { logical_request_id: 1, node: "jetson-a" },

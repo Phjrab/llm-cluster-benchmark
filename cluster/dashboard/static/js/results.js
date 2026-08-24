@@ -158,16 +158,90 @@
     }
   }
 
-  dashboard.results = { show, clear, remove, renderResponses, responseGroups, errorRecords, participantNodes, renderParticipantNodes };
+  function formatDeletedAt(epochSeconds) {
+    const value = Number(epochSeconds);
+    if (!Number.isFinite(value)) return "삭제 시각 기록 없음";
+    return new Date(value * 1000).toLocaleString("ko-KR");
+  }
+
+  function renderTrash(entries) {
+    const list = dashboard.$?.("#resultTrashList");
+    if (!list) return;
+    list.innerHTML = entries.length ? entries.map(entry => {
+      const protectedResult = entry.protected === true;
+      return `<article class="result-trash-card ${protectedResult ? "protected" : ""}">
+        <header><div><span>${protectedResult ? "RETENTION PROTECTED" : "RECOVERABLE RESULT"}</span><strong>${dashboard.escapeHtml(entry.run_id || "unknown run")}</strong><small>${dashboard.escapeHtml(formatDeletedAt(entry.deleted_at_epoch_s))}</small></div><b>${dashboard.escapeHtml(String(entry.status || "unknown").toUpperCase())}</b></header>
+        <dl><div><dt>TRASH ID</dt><dd>${dashboard.escapeHtml(entry.trash_id || "—")}</dd></div><div><dt>CAMPAIGN / SUITE</dt><dd>${dashboard.escapeHtml(entry.campaign_id || entry.suite_id || "—")}</dd></div><div class="trash-checksum"><dt>CONTENT SHA-256</dt><dd title="${dashboard.escapeHtml(entry.archive_sha256 || "")}">${dashboard.escapeHtml(entry.archive_sha256 || "—")}</dd></div></dl>
+        <footer><button type="button" class="button ghost compact" data-restore-trash="${dashboard.escapeHtml(entry.trash_id || "")}">복원</button><button type="button" class="button danger compact" data-purge-trash="${dashboard.escapeHtml(entry.trash_id || "")}" data-run-id="${dashboard.escapeHtml(entry.run_id || "")}" data-trash-sha="${dashboard.escapeHtml(entry.archive_sha256 || "")}" ${protectedResult ? "disabled title=\"정식 캠페인 결과는 영구 삭제할 수 없습니다.\"" : ""}>${protectedResult ? "보존 보호" : "영구 삭제"}</button></footer>
+      </article>`;
+    }).join("") : `<div class="empty-result"><strong>휴지통이 비어 있습니다.</strong><span>결과 표에서 삭제한 실행이 여기에 보관됩니다.</span></div>`;
+  }
+
+  async function loadTrash({ open = false } = {}) {
+    const dialog = dashboard.$?.("#resultTrashDialog");
+    const list = dashboard.$?.("#resultTrashList");
+    if (!dialog || !list) return;
+    if (open && !dialog.open) dialog.showModal();
+    list.innerHTML = `<div class="empty-result"><strong>휴지통을 불러오는 중입니다.</strong><span>결과 파일의 체크섬과 보호 상태를 확인합니다.</span></div>`;
+    try {
+      const payload = await dashboard.api("/api/results/trash");
+      renderTrash(Array.isArray(payload.trash) ? payload.trash : []);
+    } catch (error) {
+      list.innerHTML = `<div class="empty-result"><strong>휴지통을 불러오지 못했습니다.</strong><span>${dashboard.escapeHtml(error.message)}</span></div>`;
+    }
+  }
+
+  async function restore(trashId) {
+    if (!trashId) return;
+    try {
+      const restored = await dashboard.api(`/api/results/trash/${encodeURIComponent(trashId)}/restore`, { method: "POST" });
+      await dashboard.refreshExperimentData?.();
+      await loadTrash();
+      dashboard.toast?.("실험 결과 복원 완료", restored.run_id || trashId);
+    } catch (error) {
+      dashboard.toast?.("실험 결과 복원 실패", error.message, "error");
+    }
+  }
+
+  async function purge(button) {
+    const trashId = button?.dataset?.purgeTrash || "";
+    const runId = button?.dataset?.runId || "";
+    const archiveSha256 = button?.dataset?.trashSha || "";
+    if (!trashId || !runId || !/^[0-9a-f]{64}$/.test(archiveSha256)) return;
+    const typed = prompt(`이 작업은 복구할 수 없습니다.\n\n영구 삭제하려면 실행 ID를 그대로 입력하세요.\n${runId}`);
+    if (typed !== runId) {
+      if (typed !== null) dashboard.toast?.("영구 삭제 취소", "실행 ID가 일치하지 않습니다.", "error");
+      return;
+    }
+    if (!confirm(`${runId} 결과를 영구 삭제할까요?\n\n현재 휴지통 내용의 SHA-256 체크섬을 서버가 다시 검증합니다.`)) return;
+    try {
+      await dashboard.api(`/api/results/trash/${encodeURIComponent(trashId)}`, {
+        method: "DELETE",
+        body: { confirmed: true, archive_sha256: archiveSha256 },
+      });
+      await loadTrash();
+      dashboard.toast?.("실험 결과 영구 삭제 완료", runId);
+    } catch (error) {
+      dashboard.toast?.("영구 삭제 실패", error.message, "error");
+    }
+  }
+
+  dashboard.results = { show, clear, remove, renderResponses, responseGroups, errorRecords, participantNodes, renderParticipantNodes, renderTrash, loadTrash, restore };
 
   document.addEventListener("DOMContentLoaded", () => {
     document.addEventListener("click", event => {
       const button = event.target.closest("[data-view-run]");
       const deleteButton = event.target.closest("[data-delete-run]");
-      if (!button && !deleteButton) return;
+      const restoreButton = event.target.closest("[data-restore-trash]");
+      const purgeButton = event.target.closest("[data-purge-trash]");
+      if (!button && !deleteButton && !restoreButton && !purgeButton) return;
       event.preventDefault(); event.stopPropagation();
       if (deleteButton) remove(deleteButton.dataset.deleteRun);
+      else if (restoreButton) restore(restoreButton.dataset.restoreTrash);
+      else if (purgeButton) purge(purgeButton);
       else show(button.dataset.viewRun);
     });
+    dashboard.$?.("#openResultTrashButton")?.addEventListener("click", () => loadTrash({ open: true }));
+    dashboard.$?.("#refreshResultTrashButton")?.addEventListener("click", () => loadTrash());
   });
 })();

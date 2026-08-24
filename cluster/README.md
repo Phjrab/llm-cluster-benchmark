@@ -188,6 +188,9 @@ Jetson 그룹을 우선하며, `NVIDIA Jetson` 또는 `Raspberry Pi` 탭을 누�
 ## 보안과 재현성
 
 - SSH는 `BatchMode`와 사용자 소유 `0600` identity 파일만 사용한다.
+- SSH 호스트 키는 기본 신뢰 LAN TOFU 또는 프로젝트 로컬 고정 지문 모드를 선택할 수
+  있다. 원격·공유 LAN에서는 각 Worker 지문을 별도 경로로 확인해 고정한 뒤 strict
+  모드를 사용한다.
 - 공인 IP, hostname, CGNAT, link-local 주소는 Worker 인벤토리에서 거부한다.
 - 원격 명령은 고정 argv와 shell escaping을 사용하며 `shell=True`를 사용하지 않는다.
 - apt 자동 설치는 고정 allowlist와 `sudo -n`만 허용한다.
@@ -197,6 +200,13 @@ Jetson 그룹을 우선하며, `NVIDIA Jetson` 또는 `Raspberry Pi` 탭을 누�
 - Worker 토큰은 브라우저에 보내지 않고 Controller와 Worker 사이에서만 사용한다.
 - 모델은 사용자가 명시적으로 설치/동기화하며 실험 시작이 자동 다운로드하지 않는다.
 - 코드 동기화는 `.git`, `.venv`, `models`, `outputs`, `.run`을 제외하고 `--delete`를 쓰지 않는다.
+- 삭제한 결과는 비공개 `results/_trash/`에서 복원할 수 있다. 영구 삭제는 실행 ID와
+  현재 내용 체크섬을 다시 확인하며, formal/campaign 결과는 영구 삭제할 수 없다.
+
+SSH 지문 등록, VPN/TLS 원격 운영, 일시적 RPC 경계, 결과 archive/retention, source
+checkout과 Controller wheel의 차이는
+[`docs/security/remote-operation-and-retention.md`](../docs/security/remote-operation-and-retention.md)에
+정리되어 있다.
 
 ## Legacy 호환 경계
 
