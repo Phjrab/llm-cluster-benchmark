@@ -79,6 +79,17 @@ class DashboardFacadeCharacterizationTests(unittest.TestCase):
                 continue
             self.assertIn(name, source)
 
+    def test_clusterctl_reexports_extracted_legacy_inventory_contract(self) -> None:
+        from cluster import clusterctl
+        from cluster.integrations import legacy_inventory_runtime
+
+        self.assertIs(clusterctl.Node, legacy_inventory_runtime.Node)
+        self.assertIs(clusterctl.load_nodes, legacy_inventory_runtime.load_nodes)
+        self.assertIs(clusterctl.select_nodes, legacy_inventory_runtime.select_nodes)
+        source = (ROOT / "cluster" / "clusterctl.py").read_text(encoding="utf-8")
+        self.assertNotIn("class Node:", source)
+        self.assertNotIn("csv.DictReader", source)
+
 
 class ExtractedServiceTests(unittest.TestCase):
     class Repository:
