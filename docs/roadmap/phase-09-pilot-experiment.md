@@ -2,14 +2,12 @@
 
 ## 1. Outcome
 
-Phase 09 was resumed on 2026-08-24 and continued on 2026-08-25 on branch
-`codex/roadmap-phase-09-complete`, but remains **incomplete**. The earlier v3
-stop boundary and artifacts remain preserved; current observations are written
-only to the separated v5 pilot identity.
-
-The pilot did not freeze the formal repeat count, run duration, cooldown, or
-campaign matrix. Phase 10 formal execution remains blocked. No pilot request
-or failed attempt was admitted to a formal result pool.
+Phase 09 was resumed on 2026-08-24 and completed on 2026-08-25 on branch
+`codex/roadmap-phase-09-complete`. The separated v5 pilot passed every declared
+thermal, instrumentation, precision, and reliability gate with no blockers.
+It froze the formal campaign at **15 independent repeats per cell** and a
+**180-second minimum cooldown**. No pilot request or failed attempt was admitted
+to a formal result pool.
 
 The historical durable v3 pilot contains 7 of 28 declared attempts:
 
@@ -20,9 +18,11 @@ The historical durable v3 pilot contains 7 of 28 declared attempts:
 - `freeze_ready=false`.
 
 The running Pi model was unloaded successfully after cancellation. No Worker
-or RPC process was left by the stopped run. The current v5 pilot contains 20
-successful observations, one preserved pre-run failure, and eight pending
-attempts including one distinct retry. Every successful run unloaded its model.
+or RPC process was left by the stopped run. The completed v5 pilot contains 28
+successful observations and one preserved pre-run failure across 29 attempts.
+The distinct retry succeeded, every successful run unloaded its model, and the
+final status check found all four participating Workers online with no model
+loaded.
 
 ## 2. Preregistered design
 
@@ -333,12 +333,9 @@ the preregistered 5% limit. Individual Raspberry Pi sample ratios reached about
 7.8% and remain descriptive evidence, but they do not replace the frozen
 aggregate gate after observing results.
 
-The v5 calibration stage is now 8/8 complete with zero failed attempts.
-`freeze_ready` remains false because all four variance cells still require five
-successful independent runs each. The current 30-repeat recommendation is an
-incomplete-data sentinel and is not frozen. Phase 10 formal execution remains
-blocked until those 20 observations complete and the analyzer returns
-`freeze_ready=true`.
+The v5 calibration stage completed 8/8 with zero failed attempts. Its thermal
+and instrumentation decisions were then carried unchanged into the completed
+variance stage described below.
 
 ### 10.6 First variance round and per-Worker aggregation correction
 
@@ -390,19 +387,59 @@ observations, and supplied no retry slot. The executor now:
 - includes the failed attempt in the attempt-failure denominator;
 - retains the original failed row and cleanup evidence unchanged.
 
-The existing manifest was reconciled to 29 attempts: 20 successful, one failed,
-and eight pending. The retry is broadcast repeat 6, order 29, linked to failed
-order 21. The observed failure rate is 1/21 (4.76%), below but close to the 5%
-cap. If another attempt fails, the pilot will fail its frozen reliability gate
-even if all remaining successful-run counts are eventually met.
+The existing manifest was reconciled to 29 attempts. The retry is broadcast
+repeat 6, order 29, linked to failed order 21. It completed 60/60 physical
+calls, 20/20 logical requests, 100% all-replica success, and 100% exact
+answer-hash agreement. The original failure remains immutable evidence. The
+final attempt failure rate is therefore 1/29 (3.45%), below the 5% cap.
 
-### 10.8 Resume checkpoints
+### 10.8 Final variance and freeze decision
+
+Every variance cell reached five successful independent runs. The final
+run-level estimates are:
+
+| Variance cell | Successful runs | Mean TPS | TPS CV | Mean TTFT p50 | TTFT CV | Median wall time |
+|---|---:|---:|---:|---:|---:|---:|
+| Jetson 02 single | 5/5 | 17.181 | 3.33% | 15.514 s | 3.08% | 148.350 s |
+| Pi 02 single | 5/5 | 3.724 | 1.78% | 67.365 s | 3.59% | 687.035 s |
+| Pi 02+03 round-robin | 5/5 | 7.318 | 0.71% | 34.321 s | 2.41% | 350.759 s |
+| Pi 02+03+04 broadcast | 5/5 | 11.020 physical | 1.77% | 52.654 s | 29.47% | 698.497 s |
+
+Round-robin assigned ten of the 20 requests to each Pi in every checked final
+run. The broadcast cell counts duplicated replica work: each successful run
+contains 20 logical requests and 60 physical calls, so its TPS is explicitly a
+physical aggregate rather than unique-user throughput.
+
+The broadcast TTFT variation is the limiting precision metric. Its 29.47%
+coefficient of variation requires 15 independent formal repeats for the
+declared 95% confidence-interval relative half-width. Every other metric is at
+or below the preregistered 10-repeat minimum. The maximum per-Worker telemetry
+collection fraction is 4.7985%, below the 5% cap. All successful runs met the
+95% request-success floor, and the sole failed attempt produces a 3.45% attempt
+failure rate.
+
+The final analyzer therefore reports:
+
+- `freeze_ready=true`;
+- `selected_formal_repeats=15`;
+- `selected_minimum_cooldown_s=180`;
+- no precision-limited metric and no blocker;
+- 29 attempts, 28 successful observations, and one preserved failure.
+
+Phase 10 formal campaign execution is now scientifically unblocked, provided
+it uses this frozen repeat count, cooldown, model identity, prompt, workload,
+power-integrity policy, and telemetry policy without post-pilot changes.
+
+### 10.9 Resume checkpoints
 
 | Checkpoint | Commit |
 |---|---|
 | Preregister platform-specific low-intrusion telemetry | `7aeb9fe` |
 | Add bounded, resumable Phase 09 execution batches | `1c9a323` |
 | Preregister the expanded v5 thermal recovery range | `dfd0482` |
+| Record the completed v5 calibration | `232e1c9` |
+| Correct the per-Worker telemetry aggregation | `5242c5d` |
+| Preserve cleanup failures and distinct retries | `826aeb4` |
 
 All six registered Workers were source-verified at `1c9a323…` before live
 execution. Only source synchronization and Worker restart were performed; no
