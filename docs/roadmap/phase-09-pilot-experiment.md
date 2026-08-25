@@ -20,8 +20,8 @@ The historical durable v3 pilot contains 7 of 28 declared attempts:
 - `freeze_ready=false`.
 
 The running Pi model was unloaded successfully after cancellation. No Worker
-or RPC process was left by the stopped run. The current v5 pilot contains 8 of
-28 completed observations, 20 pending observations, and no failures. All eight
+or RPC process was left by the stopped run. The current v5 pilot contains 12 of
+28 completed observations, 16 pending observations, and no failures. All twelve
 completed runs also unloaded their model successfully.
 
 ## 2. Preregistered design
@@ -340,7 +340,38 @@ incomplete-data sentinel and is not frozen. Phase 10 formal execution remains
 blocked until those 20 observations complete and the analyzer returns
 `freeze_ready=true`.
 
-### 10.6 Resume checkpoints
+### 10.6 First variance round and per-Worker aggregation correction
+
+The first independent repeat of every variance cell completed successfully:
+
+| Variance cell | Requests | Wall time | TPS | TTFT p50 | Result |
+|---|---:|---:|---:|---:|---|
+| Jetson 02 single | 20/20 | 146.478 s | 17.477 | 14.730 s | pass |
+| Pi 02 single | 20/20 | 687.035 s | 3.726 | 63.761 s | pass |
+| Pi 02+03 round-robin | 20/20 | 350.828 s | 7.297 | 35.214 s | pass |
+| Pi 02+03+04 broadcast | 60/60 physical | 712.464 s | 10.779 physical | 36.167 s | pass |
+
+The round-robin run assigned ten requests to each Pi. The broadcast run
+completed every replica, achieved 100% all-replica success and 100% exact
+answer-hash agreement, and completed 20 logical requests as 60 physical calls.
+Its aggregate physical TPS is not represented as unique-user throughput.
+
+The first multi-node analysis exposed an implementation error in the
+predeclared per-Worker perturbation gate. The analyzer summed collection time
+from all Workers before dividing by one wall time, causing unchanged local 2%
+samplers to appear as 4% or 6% solely as node count increased. The policy name,
+reporting language, and Worker-local instrumentation all define the gate per
+Worker. The implementation now computes each Worker's collection-time fraction
+and uses the maximum Worker in each run. It does not change the 5% threshold or
+discard any observation. A three-Worker regression fixture proves that three
+2% Workers remain a 2% maximum, while one 6% Worker still blocks the pilot.
+
+Reanalysis reports a maximum per-Worker fraction of 4.80%, so the telemetry
+gate remains satisfied. The pilot is 12/28 complete with a zero attempt failure
+rate. Each variance cell is 1/5; repeat-count freezing and Phase 10 remain
+blocked until all four reach five independent successful runs.
+
+### 10.7 Resume checkpoints
 
 | Checkpoint | Commit |
 |---|---|

@@ -313,17 +313,20 @@ def _metric_summary(values: Sequence[float], target: float, minimum: int, maximu
     }
 
 
-def _instrumentation(summary: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]], float, list[str]]:
+def _instrumentation(
+    summary: Mapping[str, Any],
+) -> tuple[list[Mapping[str, Any]], list[float], list[str]]:
     value = summary.get("measurement_instrumentation")
     if not isinstance(value, Mapping):
-        return [], 0.0, ["measurement_instrumentation missing"]
+        return [], [], ["measurement_instrumentation missing"]
     nodes = value.get("nodes")
     if not isinstance(nodes, Mapping) or not nodes:
-        return [], 0.0, ["measurement node summaries missing"]
+        return [], [], ["measurement node summaries missing"]
     records = [item for item in nodes.values() if isinstance(item, Mapping)]
-    overhead = 0.0
+    overhead_by_worker: list[float] = []
     errors: list[str] = []
     for item in records:
+        worker_overhead = 0.0
         samples = item.get("worker_collection_overhead_samples_s")
         if not isinstance(samples, list) or not samples:
             errors.append("worker telemetry collection overhead missing")
@@ -333,8 +336,9 @@ def _instrumentation(summary: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 errors.append("worker telemetry collection overhead is invalid")
                 continue
-            overhead += float(value)
-    return records, overhead, errors
+            worker_overhead += float(value)
+        overhead_by_worker.append(worker_overhead)
+    return records, overhead_by_worker, errors
 
 
 def analyze_pilot(
@@ -384,7 +388,7 @@ def analyze_pilot(
             request_failure_rates.append(1.0 - float(success_rate))
             if float(success_rate) < float(failure_policy["minimum_request_success_rate_per_run"]):
                 blockers.append(f"{cell_id}/{repeat_index}: request success rate below policy")
-        records, overhead, errors = _instrumentation(summary)
+        records, overhead_by_worker, errors = _instrumentation(summary)
         blockers.extend(f"{cell_id}/{repeat_index}: {error}" for error in errors)
         if int(plan.get("pilot_version") or 0) >= 4:
             intervals = telemetry["worker_collection_interval_s_by_platform"]
@@ -402,8 +406,11 @@ def analyze_pilot(
                         f"{cell_id}/{repeat_index}: Worker telemetry collection interval mismatch"
                     )
         wall_s = float(summary.get("wall_s") or 0.0)
-        if wall_s > 0:
-            overhead_fractions.append(overhead / wall_s)
+        if wall_s > 0 and overhead_by_worker:
+            # Telemetry perturbs each Worker locally. Summing collection time
+            # across Workers would make an unchanged per-Worker sampler appear
+            # N times more intrusive merely because a topology has N nodes.
+            overhead_fractions.append(max(overhead_by_worker) / wall_s)
         for record in records:
             if int(record.get("sample_count") or 0) < int(telemetry["minimum_measurement_samples_per_node"]):
                 blockers.append(f"{cell_id}/{repeat_index}: insufficient telemetry samples")
@@ -547,6 +554,7 @@ def analyze_pilot(
         },
         "telemetry_decision": {
             "metric": "worker_internal_collection_time_over_measurement_wall_time",
+            "aggregation": "maximum_per_worker_per_run",
             "maximum_worker_collection_overhead_fraction_observed": maximum_overhead,
             "maximum_allowed_fraction": telemetry["maximum_worker_collection_overhead_fraction"],
             "controller_probe_elapsed_is_descriptive_only": True,

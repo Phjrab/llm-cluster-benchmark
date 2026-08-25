@@ -242,6 +242,38 @@ class PilotAnalysisTests(unittest.TestCase):
         self.assertFalse(result["freeze_ready"])
         self.assertTrue(any("worker telemetry" in item for item in result["blockers"]))
 
+    def test_multi_worker_overhead_uses_worst_worker_not_cluster_sum(self) -> None:
+        observations = complete_observations(self.plan, self.matrix)
+        summary = observations[-1]["summary"]
+        template = summary["measurement_instrumentation"]["nodes"]["worker"]
+        template["worker_collection_overhead_samples_s"] = [
+            {"sampled_at": "one", "overhead_s": 2.0}
+        ]
+        summary["measurement_instrumentation"]["nodes"] = {
+            f"worker-{index}": copy.deepcopy(template) for index in range(3)
+        }
+
+        result = analyze_pilot(self.plan, observations)
+
+        self.assertTrue(result["freeze_ready"])
+        self.assertEqual(
+            result["telemetry_decision"]["aggregation"],
+            "maximum_per_worker_per_run",
+        )
+        self.assertAlmostEqual(
+            result["telemetry_decision"][
+                "maximum_worker_collection_overhead_fraction_observed"
+            ],
+            0.02,
+        )
+
+        summary["measurement_instrumentation"]["nodes"]["worker-2"][
+            "worker_collection_overhead_samples_s"
+        ] = [{"sampled_at": "one", "overhead_s": 6.0}]
+        blocked = analyze_pilot(self.plan, observations)
+        self.assertFalse(blocked["freeze_ready"])
+        self.assertTrue(any("worker telemetry" in item for item in blocked["blockers"]))
+
     def test_v4_requires_the_predeclared_platform_collection_interval(self) -> None:
         plan = read_json("pilot_plan.v4.json")
         observations = complete_observations(plan, self.matrix)
