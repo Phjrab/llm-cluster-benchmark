@@ -4,9 +4,46 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Optional, Sequence
+from urllib.parse import quote
 
 from cluster.domain.errors import ClusterError, ErrorCode
 from cluster.domain.model import ModelCatalogEntry, ModelInventoryEntry
+
+
+@dataclass(frozen=True)
+class DirectModelInstallSpec:
+    model_id: str
+    source_url: str
+    expected_sha256: str
+    expected_size_bytes: int
+    metadata: Mapping[str, object]
+
+
+def build_direct_install_spec(entry: ModelCatalogEntry) -> DirectModelInstallSpec:
+    eligibility = entry.download_eligibility
+    if not eligibility["eligible"]:
+        raise ModelPreflightError(
+            str(eligibility["reason_ko"]), code=ErrorCode.CONFIG_MISMATCH,
+            stage="model_install", model_id=entry.id,
+            evidence={"download_policy": eligibility["policy"]},
+        )
+    repo = entry.download_repo
+    revision = entry.download_revision
+    source_url = f"https://huggingface.co/{repo}/resolve/{revision}/{quote(entry.gguf_filename, safe='._-')}"
+    return DirectModelInstallSpec(
+        model_id=entry.id,
+        source_url=source_url,
+        expected_sha256=entry.sha256,
+        expected_size_bytes=int(entry.size_bytes or 0),
+        metadata={
+            "source_revision": revision,
+            "source_repo": repo,
+            "provenance_status": entry.provenance_status.value,
+            "architecture": entry.architecture,
+            "metadata_contract": "gguf-metadata-v1",
+            "license_accepted": not entry.requires_license_acceptance,
+        },
+    )
 
 
 class ModelPreflightError(ClusterError, ValueError):
@@ -199,4 +236,4 @@ def validate_model_preflight(
             observed_checksums[model_id] = model.sha256
 
 
-__all__ = ["ModelPreflightError", "WorkerModelInventory", "aggregate_catalog", "parse_worker_inventory", "validate_model_preflight"]
+__all__ = ["DirectModelInstallSpec", "ModelPreflightError", "WorkerModelInventory", "aggregate_catalog", "build_direct_install_spec", "parse_worker_inventory", "validate_model_preflight"]

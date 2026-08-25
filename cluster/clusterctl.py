@@ -1796,7 +1796,7 @@ def command_delete_models(nodes: Sequence[Node], args: argparse.Namespace) -> in
     return 0 if results and all(item["ok"] for item in results) else 1
 
 
-def install_model_url_one(node: Node, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None) -> Dict[str, Any]:
+def install_model_url_one(node: Node, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None, expected_size_bytes: int = 0) -> Dict[str, Any]:
     _print_model_progress(node.name, model_id, "queued", 0, 0)
     _print_model_progress(node.name, model_id, "downloading", 0, 0)
     try:
@@ -1815,7 +1815,8 @@ def install_model_url_one(node: Node, model_id: str, source_url: str, expected_s
         _print_model_progress(node.name, model_id, "failed", 0, 0)
         return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc)}
     model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
-    if payload.get("ok") is not True or not model.get("checksum_valid"):
+    actual_size = int(model.get("size_bytes") or 0)
+    if payload.get("ok") is not True or not model.get("checksum_valid") or (expected_size_bytes and actual_size != expected_size_bytes):
         _print_model_progress(node.name, model_id, "failed", 0, 0)
         return {"name": node.name, "ok": False, "stdout": "", "stderr": "Worker direct download verification failed"}
     downloaded = int(model.get("downloaded_bytes") or 0)
@@ -1839,7 +1840,7 @@ def command_install_model_url(nodes: Sequence[Node], args: argparse.Namespace) -
         "metadata_contract": args.metadata_contract,
         "license_accepted": args.license_accepted,
     }
-    results = [install_model_url_one(node, args.model_id, args.source_url, args.expected_sha256, metadata) for node in workers]
+    results = [install_model_url_one(node, args.model_id, args.source_url, args.expected_sha256, metadata, args.expected_size_bytes) for node in workers]
     for item in results:
         print(f"[{item['name']}] {'OK' if item['ok'] else 'FAIL'}")
         if item["stdout"]:
@@ -2009,6 +2010,7 @@ def build_parser() -> argparse.ArgumentParser:
     install_url_parser.add_argument("--model-id", required=True)
     install_url_parser.add_argument("--source-url", required=True)
     install_url_parser.add_argument("--expected-sha256", required=True)
+    install_url_parser.add_argument("--expected-size-bytes", type=int, default=0)
     install_url_parser.add_argument("--source-revision", default="", help="Immutable source revision recorded with the Worker model")
     install_url_parser.add_argument("--source-repo", default="", help="Official source repository identifier")
     install_url_parser.add_argument("--provenance-status", default="", help="Source provenance status recorded with the model")

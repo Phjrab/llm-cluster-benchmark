@@ -7,7 +7,7 @@ from .failures import FAILURE_GUIDE, failure_from_exception, failure_from_messag
 from .experiment import ExperimentConfig, normalize_model_ids, validate_model_id
 from .identifiers import validate_experiment_id, validate_node_id, validate_run_id, validate_suite_id
 from .layout import ProjectLayout
-from .model import ModelCatalogEntry, ModelInventoryEntry, infer_quantization, recommend_models, validate_model_checksum
+from .model import DownloadPolicy, ModelCatalogEntry, ModelInventoryEntry, infer_quantization, recommend_models, validate_model_checksum
 from .power import (
     MeasurementQuality,
     PowerConditionBits,
@@ -39,6 +39,7 @@ __all__ = [
     "ControllerConfig",
     "ControllerPlatform",
     "DomainValidationError",
+    "DownloadPolicy",
     "ErrorCode",
     "EventChannel",
     "FAILURE_GUIDE",

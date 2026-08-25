@@ -185,6 +185,27 @@ Jetson 그룹을 우선하며, `NVIDIA Jetson` 또는 `Raspberry Pi` 탭을 누�
 검증에 실패한 경우에만 Worker 프로젝트의 `.run/cluster` 아래에서 다시 빌드한다.
 전역 Python 환경이나 시스템 경로에는 RPC 바이너리를 설치하지 않는다.
 
+## Model Library와 안전한 다운로드
+
+Model Library는 모델 원본 repository와 실제 GGUF repository를 구분해 표시한다.
+`direct` 항목은 Hugging Face repository, 40자 commit revision, 단일 GGUF filename,
+정확한 byte size와 SHA-256, quantization, provenance, license가 모두 고정된 경우에만
+**Worker 직접 다운로드**를 허용한다. 브라우저는 URL·경로·체크섬을 보내지 않으며,
+Controller가 정적 catalog에서 HTTPS URL을 구성해 기존 Worker `.part` 다운로드,
+`fsync`, SHA-256 검증, 원자 교체 경로에 전달한다. 저장 공간 보고가 있으면 파일 크기,
+partial reserve와 여유 공간을 먼저 검사한다.
+
+`catalog_only`, `gated_manual`, `multipart_unsupported` 모델은 정보와 권장 배치만
+표시하고 자동 다운로드하지 않는다. Meta Llama와 Google Gemma처럼 라이선스/접근 승인이
+필요한 모델은 token을 저장하거나 조건을 자동 수락하지 않는다. 14B 이상 모델은 선택한
+모든 Worker에 기본 복제하지 않고 intended RPC coordinator 한 대에 먼저 설치하도록
+안내한다. 70B `RPC EXTREME`는 실행 가능성을 보장하지 않는다.
+
+Ollama는 모델이 아니라 별도 local runtime이다. 이 프로젝트의 정식 runtime은
+llama.cpp/llama-cpp-python이며, cloud-only GPT·Claude·Gemini·Grok은 GGUF catalog에
+포함하지 않는다. 모델 설치 성공과 benchmark readiness, 추정 RPC memory fit과 실제 RPC
+성공은 각각 별개의 상태다.
+
 ## 보안과 재현성
 
 - SSH는 `BatchMode`와 사용자 소유 `0600` identity 파일만 사용한다.

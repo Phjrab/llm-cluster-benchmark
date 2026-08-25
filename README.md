@@ -48,6 +48,7 @@ Raspberry Pi 5는 OpenBLAS backend를 검증하며 pinned native llama.cpp RPC r
 - [Refactor and acceptance reports](docs/refactor/)
 - [Formal experiment identity lock](docs/research/experiment-identity-lock.md)
 - [Locked research configuration](config/research/)
+- [Model Library direct-download and RPC-large manual test](docs/manual/model-library-download-and-rpc-large-test.md)
 
 과거 단일 Jetson benchmark, standalone chat server, notebook, plotting script 및
 historical output은 현재 제품 트리에서 제거되었습니다. 삭제 전 내용과 커밋은 Git

@@ -51,8 +51,14 @@ assert.equal(vm.runInContext(`typeof ClusterDashboard.power.normalizeIntegrity`,
 const modelsSource = fs.readFileSync(path.join(dashboardRoot, "static/js/models.js"), "utf8");
 assert.match(modelsSource, /modelStarterPacks/);
 assert.match(modelsSource, /RECOMMENDED/);
-assert.match(modelsSource, /GGUF source 확인 필요/);
+assert.match(modelsSource, /Worker 직접 다운로드/);
+assert.match(modelsSource, /RPC EXTREME/);
+assert.match(modelsSource, /download_eligibility/);
+assert.match(modelsSource, /source: "direct", confirmed: true/);
+assert.doesNotMatch(modelsSource, /body: JSON\.stringify\(\{[^}]*source_url/);
 assert.match(template, /id="modelStarterPacks"/);
+assert.match(template, /data-model-filter="edge"[\s\S]*data-model-filter="rpc"[\s\S]*data-model-filter="downloadable"/);
+assert.match(template, /Ollama는 모델명이 아니라 별도 로컬 실행 도구/);
 assert.match(appSource, /\.filter\(node => node\.role === "worker"\)[\s\S]*\.sort\(\(left, right\) =>/);
 assert.match(appSource, /telemetryDegraded/);
 assert.match(appSource, /channel === "experiment"/);
@@ -64,7 +70,8 @@ assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/events.j
 assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js"), "utf8"), /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260823\.1/);
+assert.match(template, /styles\.css\?v=20260825\.1/);
+assert.match(template, /models\.js\?v=20260825\.1/);
 assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260824\.1/);
 assert.match(template, /results\.js\?v=20260824\.1/);
 assert.match(template, /research\.js\?v=20260823\.1/);

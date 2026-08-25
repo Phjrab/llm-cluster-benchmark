@@ -10,7 +10,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -124,6 +124,19 @@ class ActionPayload(BaseModel):
     action: str
     node_names: List[str] = Field(default_factory=list)
     options: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelInstallPayload(BaseModel):
+    nodes: List[str] = Field(min_length=1, max_length=32)
+    source: Literal["direct"] = "direct"
+    confirmed: bool = False
+
+    @field_validator("nodes")
+    @classmethod
+    def validate_nodes(cls, values: List[str]) -> List[str]:
+        if len(values) != len(set(values)) or any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", value) for value in values):
+            raise ValueError("nodes must contain unique valid Worker names")
+        return values
 
 
 class ExperimentPayload(BaseModel):

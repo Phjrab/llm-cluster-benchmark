@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>MediFlow Cluster Lab</title>
   <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
-  <link rel="stylesheet" href="/static/styles.css?v=20260823.1">
+  <link rel="stylesheet" href="/static/styles.css?v=20260825.1">
 </head>
 <body>
   <div class="app-shell">
@@ -146,6 +146,10 @@
           </div>
         </div>
         <p class="section-intro">카탈로그 정보와 각 워커의 실제 GGUF 설치 상태를 함께 표시합니다. 설치·동기화는 실험 시간에 포함되지 않으며, 선택한 워커에만 실행됩니다.</p>
+        <p class="model-runtime-note"><strong>RUNTIME · llama.cpp</strong> Ollama는 모델명이 아니라 별도 로컬 실행 도구이므로 이 카탈로그에 모델로 등록하지 않습니다. Gemini는 cloud model이며, Gemma가 Google의 local/open-weight family입니다.</p>
+        <div class="model-library-filters" id="modelLibraryFilters" aria-label="모델 필터">
+          <button type="button" data-model-filter="all" class="active">전체</button><button type="button" data-model-filter="edge">Pi / Edge</button><button type="button" data-model-filter="jetson">Jetson</button><button type="button" data-model-filter="rpc">RPC</button><button type="button" data-model-filter="large">8B 초과</button><button type="button" data-model-filter="reasoning">Reasoning</button><button type="button" data-model-filter="coding">Coding</button><button type="button" data-model-filter="installed">설치됨</button><button type="button" data-model-filter="downloadable">다운로드 가능</button><button type="button" data-model-filter="gated">Gated / License review</button>
+        </div>
         <div class="model-library-summary" id="modelLibrarySummary" aria-live="polite"><span>모델 인벤토리 불러오는 중</span></div>
         <div class="model-starter-packs" id="modelStarterPacks" aria-label="권장 모델 묶음"></div>
         <div class="model-library-grid" id="modelLibrary" aria-live="polite"><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
@@ -539,7 +543,7 @@
   <script src="/static/js/utils.js?v=20260821.6" defer></script>
   <script src="/static/js/power.js?v=20260821.6" defer></script>
   <script src="/static/js/console.js?v=20260821.6" defer></script>
-  <script src="/static/js/models.js?v=20260821.6" defer></script>
+  <script src="/static/js/models.js?v=20260825.1" defer></script>
   <script src="/static/js/results.js?v=20260824.1" defer></script>
   <script src="/static/js/research.js?v=20260823.1" defer></script>
 </body>

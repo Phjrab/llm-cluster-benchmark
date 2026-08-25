@@ -21,6 +21,7 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _QUANTIZATION_RE = re.compile(r"^(?:Q[2-8](?:_[01]|_K(?:_[SML])?)?|IQ[1-4](?:_[A-Z0-9]+)?|F16|BF16)$", re.IGNORECASE)
 _FILENAME_QUANTIZATION_RE = re.compile(r"(?:^|[-_.])(Q\d(?:_[A-Z0-9]+)*)?(?:[-_.]|$)", re.IGNORECASE)
 _HF_REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
+_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 class ModelTier(str, Enum):
@@ -45,6 +46,13 @@ class ProvenanceStatus(str, Enum):
     OFFICIAL = "official"
     COMMUNITY_REVIEW = "community_review"
     UNKNOWN = "unknown"
+
+
+class DownloadPolicy(str, Enum):
+    DIRECT = "direct"
+    GATED_MANUAL = "gated_manual"
+    CATALOG_ONLY = "catalog_only"
+    MULTIPART_UNSUPPORTED = "multipart_unsupported"
 
 
 def _as_tuple(values: Any) -> tuple[str, ...]:
@@ -163,7 +171,21 @@ class ModelCatalogEntry:
     default_reasoning_mode: Optional[str] = None
     hf_repo: str = ""
     hf_revision: str = ""
+    source_model_repo: str = ""
+    source_model_revision: str = ""
+    gguf_repo: str = ""
+    gguf_revision: str = ""
     gguf_filename: str = ""
+    quantized_by: str = ""
+    converter: str = ""
+    converter_revision: str = ""
+    download_policy: DownloadPolicy | str = DownloadPolicy.CATALOG_ONLY
+    download_disabled_reason_ko: str = ""
+    capability_tags: tuple[str, ...] = ()
+    size_class: str = ""
+    minimum_aggregate_memory_mb: Optional[int] = None
+    recommended_worker_count: Optional[int] = None
+    multipart: bool = False
     size_bytes: Optional[int] = None
     sha256: str = ""
     official_gguf: bool = False
@@ -193,7 +215,7 @@ class ModelCatalogEntry:
         from .experiment import validate_model_id
 
         validate_model_id(self.id)
-        for field in ("display_name", "family", "vendor", "architecture", "parameter_reporting_note", "korean_support", "hf_repo", "hf_revision", "gguf_filename", "license", "source_url", "description", "summary_ko"):
+        for field in ("display_name", "family", "vendor", "architecture", "parameter_reporting_note", "korean_support", "hf_repo", "hf_revision", "source_model_repo", "source_model_revision", "gguf_repo", "gguf_revision", "gguf_filename", "quantized_by", "converter", "converter_revision", "download_disabled_reason_ko", "size_class", "license", "source_url", "description", "summary_ko"):
             if not isinstance(getattr(self, field), str):
                 raise DomainValidationError(f"Model {field} must be a string")
         total = self.parameters_total_b if self.parameters_total_b is not None else self.parameter_count_b
@@ -213,21 +235,26 @@ class ModelCatalogEntry:
         object.__setattr__(self, "size_bytes", _positive_int(self.size_bytes, "size_bytes", minimum=1))
         object.__setattr__(self, "estimated_memory_mb", _positive_int(self.estimated_memory_mb, "estimated_memory_mb", minimum=1))
         object.__setattr__(self, "kv_cache_bytes_per_token", _positive_int(self.kv_cache_bytes_per_token, "kv_cache_bytes_per_token", minimum=1))
+        object.__setattr__(self, "minimum_aggregate_memory_mb", _positive_int(self.minimum_aggregate_memory_mb, "minimum_aggregate_memory_mb", minimum=1))
+        object.__setattr__(self, "recommended_worker_count", _positive_int(self.recommended_worker_count, "recommended_worker_count", minimum=1))
         for field in ("compute_buffers_mb", "backend_overhead_mb"):
             value = getattr(self, field)
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise DomainValidationError(f"{field} must be a non-negative integer")
-        if self.hf_repo and not _HF_REPO_RE.fullmatch(self.hf_repo):
-            raise DomainValidationError("hf_repo must be a Hugging Face owner/repository identifier")
+        for field in ("hf_repo", "source_model_repo", "gguf_repo"):
+            value = getattr(self, field)
+            if value and not _HF_REPO_RE.fullmatch(value):
+                raise DomainValidationError(f"{field} must be a Hugging Face owner/repository identifier")
         object.__setattr__(self, "quantization", validate_quantization(self.quantization) if self.quantization is not None else infer_quantization(self.gguf_filename or self.id))
         if self.sha256:
             object.__setattr__(self, "sha256", validate_model_checksum(self.sha256))
-        if not isinstance(self.official_gguf, bool) or not isinstance(self.license_review_required, bool) or not isinstance(self.gated, bool) or not isinstance(self.instruction_tuned, bool) or not isinstance(self.supports_reasoning_modes, bool):
+        if not isinstance(self.official_gguf, bool) or not isinstance(self.license_review_required, bool) or not isinstance(self.gated, bool) or not isinstance(self.instruction_tuned, bool) or not isinstance(self.supports_reasoning_modes, bool) or not isinstance(self.multipart, bool):
             raise DomainValidationError("Model catalog booleans must be boolean")
         try:
             object.__setattr__(self, "provenance_status", ProvenanceStatus(self.provenance_status))
             object.__setattr__(self, "recommendation_tier", ModelTier(self.recommendation_tier))
             object.__setattr__(self, "verification_status", ModelVerificationStatus(self.verification_status))
+            object.__setattr__(self, "download_policy", DownloadPolicy(self.download_policy))
         except (TypeError, ValueError) as exc:
             raise DomainValidationError("Unsupported catalog status value") from exc
         if self.official_gguf and self.provenance_status is not ProvenanceStatus.OFFICIAL:
@@ -236,6 +263,7 @@ class ModelCatalogEntry:
         object.__setattr__(self, "supported_languages", _as_tuple(self.supported_languages))
         object.__setattr__(self, "recommended_platforms", tuple(sorted(set(_as_tuple(self.recommended_platforms)))))
         object.__setattr__(self, "benchmark_roles", _as_tuple(self.benchmark_roles))
+        object.__setattr__(self, "capability_tags", _as_tuple(self.capability_tags))
         object.__setattr__(self, "recommendation_reason_ko", _as_tuple(self.recommendation_reason_ko))
         object.__setattr__(self, "cautions_ko", _as_tuple(self.cautions_ko))
         object.__setattr__(self, "verified_llama_cpp_commits", tuple(sorted(set(_as_tuple(self.verified_llama_cpp_commits)))))
@@ -253,7 +281,42 @@ class ModelCatalogEntry:
 
     @property
     def identity_locked(self) -> bool:
-        return bool(self.hf_repo and self.hf_revision and self.gguf_filename and self.sha256)
+        return bool(self.download_repo and self.download_revision and self.gguf_filename and self.size_bytes and self.sha256)
+
+    @property
+    def download_repo(self) -> str:
+        return self.gguf_repo or self.hf_repo
+
+    @property
+    def download_revision(self) -> str:
+        return self.gguf_revision or self.hf_revision
+
+    @property
+    def download_eligibility(self) -> dict[str, Any]:
+        reason = self.download_disabled_reason_ko
+        eligible = True
+        if self.download_policy is not DownloadPolicy.DIRECT:
+            eligible = False
+            reason = reason or {
+                DownloadPolicy.GATED_MANUAL: "라이선스 또는 접근 승인이 필요하여 자동 다운로드가 비활성화되었습니다.",
+                DownloadPolicy.MULTIPART_UNSUPPORTED: "여러 GGUF shard 설치는 현재 안전 설치 경로에서 지원하지 않습니다.",
+                DownloadPolicy.CATALOG_ONLY: "Exact revision 또는 SHA-256이 없어 다운로드가 비활성화되었습니다.",
+            }[self.download_policy]
+        elif not self.download_repo or not _HF_REPO_RE.fullmatch(self.download_repo):
+            eligible, reason = False, "검증된 GGUF repository가 없습니다."
+        elif not _COMMIT_RE.fullmatch(self.download_revision):
+            eligible, reason = False, "Exact 40-character GGUF revision lock이 없습니다."
+        elif not self.gguf_filename or "/" in self.gguf_filename or not self.gguf_filename.lower().endswith(".gguf"):
+            eligible, reason = False, "안전한 단일 GGUF filename lock이 없습니다."
+        elif not self.size_bytes or not self.sha256 or not self.quantization:
+            eligible, reason = False, "크기·SHA-256·quantization identity가 완전하지 않습니다."
+        elif self.provenance_status is ProvenanceStatus.UNKNOWN or not self.license:
+            eligible, reason = False, "Provenance 또는 license 검토가 완료되지 않았습니다."
+        elif self.gated or self.license_review_required:
+            eligible, reason = False, "라이선스 또는 gated access 승인이 필요합니다."
+        elif self.multipart:
+            eligible, reason = False, "Multipart GGUF는 현재 자동 설치할 수 없습니다."
+        return {"eligible": eligible, "policy": self.download_policy.value, "reason_ko": reason}
 
     @property
     def requires_license_acceptance(self) -> bool:
@@ -269,6 +332,7 @@ class ModelCatalogEntry:
             context_length=raw.get("context_length"), context_length_advertised=raw.get("context_length_advertised"), default_context=int(raw.get("default_context", 4096)), verified_context_lengths=tuple(raw.get("verified_context_lengths") or ()),
             supports_reasoning_modes=raw.get("supports_reasoning_modes", False), reasoning_modes=tuple(raw.get("reasoning_modes") or ()), default_reasoning_mode=raw.get("default_reasoning_mode"),
             hf_repo=str(raw.get("hf_repo") or ""), hf_revision=str(raw.get("hf_revision") or ""), gguf_filename=str(raw.get("gguf_filename") or ""), size_bytes=raw.get("size_bytes"), sha256=str(raw.get("sha256") or ""),
+            source_model_repo=str(raw.get("source_model_repo") or (raw.get("hf_repo") if raw.get("official_gguf") is False else "")), source_model_revision=str(raw.get("source_model_revision") or ""), gguf_repo=str(raw.get("gguf_repo") or ""), gguf_revision=str(raw.get("gguf_revision") or ""), quantized_by=str(raw.get("quantized_by") or ("community" if raw.get("provenance_status") == "community_review" else "")), converter=str(raw.get("converter") or ""), converter_revision=str(raw.get("converter_revision") or ""), download_policy=raw.get("download_policy", "gated_manual" if raw.get("gated") else "catalog_only"), download_disabled_reason_ko=str(raw.get("download_disabled_reason_ko") or ""), capability_tags=tuple(raw.get("capability_tags") or ()), size_class=str(raw.get("size_class") or ""), minimum_aggregate_memory_mb=raw.get("minimum_aggregate_memory_mb"), recommended_worker_count=raw.get("recommended_worker_count"), multipart=raw.get("multipart", False),
             official_gguf=raw.get("official_gguf", False), provenance_status=raw.get("provenance_status", "unknown"), license=str(raw.get("license") or ""), license_review_required=raw.get("license_review_required", False), gated=raw.get("gated", False), source_url=str(raw.get("source_url") or ""),
             recommended_platforms=tuple(raw.get("recommended_platforms") or ()), recommendation_tier=raw.get("recommendation_tier", "core_stable"), benchmark_roles=tuple(raw.get("benchmark_roles") or ()), estimated_memory_mb=raw.get("estimated_memory_mb"), kv_cache_bytes_per_token=raw.get("kv_cache_bytes_per_token"), compute_buffers_mb=int(raw.get("compute_buffers_mb", 256)), backend_overhead_mb=int(raw.get("backend_overhead_mb", 256)),
             quantization=(str(raw["quantization"]) if raw.get("quantization") is not None else None), description=str(raw.get("description") or ""), summary_ko=str(raw.get("summary_ko") or ""), recommendation_reason_ko=tuple(raw.get("recommendation_reason_ko") or ()), cautions_ko=tuple(raw.get("cautions_ko") or ()),
@@ -283,6 +347,8 @@ class ModelCatalogEntry:
             "context_length": self.context_length, "context_length_advertised": self.context_length_advertised, "default_context": self.default_context, "verified_context_lengths": list(self.verified_context_lengths),
             "supports_reasoning_modes": self.supports_reasoning_modes, "reasoning_modes": list(self.reasoning_modes), "default_reasoning_mode": self.default_reasoning_mode,
             "hf_repo": self.hf_repo, "hf_revision": self.hf_revision, "gguf_filename": self.gguf_filename, "quantization": self.quantization, "size_bytes": self.size_bytes, "sha256": self.sha256,
+            "source_model_repo": self.source_model_repo, "source_model_revision": self.source_model_revision, "gguf_repo": self.gguf_repo, "gguf_revision": self.gguf_revision, "quantized_by": self.quantized_by, "converter": self.converter, "converter_revision": self.converter_revision,
+            "download_policy": self.download_policy.value, "download_disabled_reason_ko": self.download_disabled_reason_ko, "download_eligibility": self.download_eligibility, "capability_tags": list(self.capability_tags), "size_class": self.size_class, "minimum_aggregate_memory_mb": self.minimum_aggregate_memory_mb, "recommended_worker_count": self.recommended_worker_count, "multipart": self.multipart,
             "official_gguf": self.official_gguf, "provenance_status": self.provenance_status.value, "license": self.license, "license_review_required": self.license_review_required, "gated": self.gated, "source_url": self.source_url,
             "recommended_platforms": list(self.recommended_platforms), "recommendation_tier": self.recommendation_tier.value, "benchmark_roles": list(self.benchmark_roles), "estimated_memory_mb": self.estimated_memory_mb,
             "kv_cache_bytes_per_token": self.kv_cache_bytes_per_token, "compute_buffers_mb": self.compute_buffers_mb, "backend_overhead_mb": self.backend_overhead_mb,
@@ -401,4 +467,4 @@ def parse_catalog_entries(values: Iterable[Mapping[str, Any]]) -> tuple[ModelCat
     return parsed
 
 
-__all__ = ["MemoryFitEstimate", "ModelCatalogEntry", "ModelInventoryEntry", "ModelRecommendation", "ModelTier", "ModelVerificationStatus", "ProvenanceStatus", "estimate_memory_fit", "infer_quantization", "parse_catalog_entries", "recommend_model_candidates", "recommend_models", "validate_model_checksum", "validate_quantization"]
+__all__ = ["DownloadPolicy", "MemoryFitEstimate", "ModelCatalogEntry", "ModelInventoryEntry", "ModelRecommendation", "ModelTier", "ModelVerificationStatus", "ProvenanceStatus", "estimate_memory_fit", "infer_quantization", "parse_catalog_entries", "recommend_model_candidates", "recommend_models", "validate_model_checksum", "validate_quantization"]

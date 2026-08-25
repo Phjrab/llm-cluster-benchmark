@@ -45,6 +45,7 @@ from cluster.application.model_service import (
     aggregate_catalog,
     parse_worker_inventory,
     validate_model_preflight,
+    build_direct_install_spec,
 )
 from cluster.application.suite_runner import suite_document, suite_model_records
 from cluster.domain.events import ClusterEvent, EventChannel
@@ -69,7 +70,7 @@ from cluster.clusterctl import (
     select_nodes,
 )
 from cluster.integrations.runtime_layout import resolve_runtime_paths
-from cluster.domain.errors import ClusterError, ErrorCode
+from cluster.domain.errors import ClusterError, ErrorCode, FailureRecord
 from cluster.domain.failures import http_status_for_failure
 from cluster.domain.model import ModelCatalogEntry, estimate_memory_fit, recommend_model_candidates, recommend_models
 from cluster.domain.power import (
@@ -1390,8 +1391,16 @@ class ActionManager:
                     "--model-id", str(payload.options.get("model_id", "")),
                     "--source-url", str(payload.options.get("source_url", "")),
                     "--expected-sha256", str(payload.options.get("expected_sha256", "")),
+                    "--expected-size-bytes", str(payload.options.get("expected_size_bytes", 0)),
+                    "--source-revision", str(payload.options.get("source_revision", "")),
+                    "--source-repo", str(payload.options.get("source_repo", "")),
+                    "--provenance-status", str(payload.options.get("provenance_status", "")),
+                    "--architecture", str(payload.options.get("architecture", "")),
+                    "--metadata-contract", str(payload.options.get("metadata_contract", "gguf-metadata-v1")),
                 ]
             )
+            if payload.options.get("license_accepted") is True:
+                command.append("--license-accepted")
         elif payload.action == "prepare-rpc":
             pass
         elif payload.action == "select-model":
@@ -2032,6 +2041,52 @@ class DashboardFacade:
             "catalog_policy": catalog_document["catalog_policy"],
         }
 
+    def install_catalog_model(self, model_id: str, payload: Any) -> Dict[str, Any]:
+        """Create a direct install action exclusively from immutable catalog metadata."""
+        if payload.confirmed is not True or payload.source != "direct":
+            raise DashboardServiceError(400, "Worker direct download requires explicit confirmation")
+        catalog = {entry.id: entry for entry in read_model_catalog()}
+        entry = catalog.get(model_id)
+        if entry is None:
+            raise DashboardServiceError(404, "Catalog model not found")
+        try:
+            spec = build_direct_install_spec(entry)
+        except ClusterError as exc:
+            raise DashboardServiceError(http_status_for_failure(exc.to_failure_record()), exc.to_failure_record().to_dict()) from exc
+        workers = [node for node in select_nodes(read_enabled_nodes(), payload.nodes) if node.role == "worker"]
+        if len(workers) != len(payload.nodes):
+            raise DashboardServiceError(400, "Only enabled Worker nodes may receive a model")
+        if (entry.parameters_total_b or 0) >= 14 and len(workers) != 1:
+            raise DashboardServiceError(400, "14B 이상 모델은 RPC coordinator Worker 한 대에 먼저 설치하세요")
+        reports = {item.get("node"): item for item in read_environment_reports()}
+        required_bytes = int(spec.expected_size_bytes * 1.15) + 512 * 1024 * 1024
+        for worker in workers:
+            free_gb = (reports.get(worker.name) or {}).get("disk_free_gb")
+            if isinstance(free_gb, (int, float)) and free_gb * (1024 ** 3) < required_bytes:
+                failure = FailureRecord(
+                    code=ErrorCode.CONFIG_MISMATCH,
+                    stage="model_install_preflight",
+                    message=f"{worker.name}: model download storage is insufficient",
+                    node=worker.name,
+                    model_id=model_id,
+                    evidence={"reason_code": "MODEL_STORAGE_INSUFFICIENT", "required_bytes": required_bytes, "free_bytes": int(free_gb * (1024 ** 3))},
+                    solutions=("Worker 저장 공간을 확보한 뒤 다시 시도하세요.",),
+                )
+                raise DashboardServiceError(http_status_for_failure(failure), failure.to_dict())
+        options = {
+            "confirmed": True,
+            "model_id": spec.model_id,
+            "source_url": spec.source_url,
+            "expected_sha256": spec.expected_sha256,
+            "expected_size_bytes": spec.expected_size_bytes,
+            **dict(spec.metadata),
+        }
+        try:
+            record = actions.start(ActionPayload(action="install-model-url", node_names=[node.name for node in workers], options=options))
+        except ValueError as exc:
+            raise DashboardServiceError(400, str(exc)) from exc
+        return {"ok": True, "action": record, "model_id": model_id, "nodes": [node.name for node in workers]}
+
     def refresh_status(self) -> Dict[str, Any]:
         threading.Thread(target=status_monitor.refresh_now, daemon=True).start()
         return {"ok": True}
@@ -2316,6 +2371,11 @@ class DashboardFacade:
         return {"ok": True, "node": node_name, "cleanup": cleanup}
 
     def start_action(self, payload: ActionPayload) -> Dict[str, Any]:
+        if payload.action == "install-model-url":
+            raise DashboardServiceError(
+                400,
+                "Direct model installation is available only through the catalog model install endpoint",
+            )
         requires_confirmation = {
             "setup", "prepare", "prepare-rpc", "environment-install", "delete-models", "install-model-url", "power-set"
         }

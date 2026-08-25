@@ -23,6 +23,7 @@ from cluster.dashboard.schemas import (
     ClusterSettingsPayload,
     ExperimentPayload,
     JetsonPowerModePayload,
+    ModelInstallPayload,
     NodeDeletePayload,
     NodePayload,
     NodeRenamePayload,
@@ -119,6 +120,17 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
         dashboard: DashboardFacade = Depends(get_dashboard_services),
     ) -> Dict[str, Any]:
         return await dashboard.models()
+
+    @models_router.post("/api/models/{model_id:path}/install")
+    async def install_catalog_model(
+        model_id: str,
+        payload: ModelInstallPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.install_catalog_model(model_id, payload)
+        except ValueError as exc:
+            return _error_response(exc)
 
     @nodes_router.post("/api/status/refresh")
     async def refresh_status(
