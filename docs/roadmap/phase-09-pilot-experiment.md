@@ -20,9 +20,9 @@ The historical durable v3 pilot contains 7 of 28 declared attempts:
 - `freeze_ready=false`.
 
 The running Pi model was unloaded successfully after cancellation. No Worker
-or RPC process was left by the stopped run. The current v5 pilot contains 12 of
-28 completed observations, 16 pending observations, and no failures. All twelve
-completed runs also unloaded their model successfully.
+or RPC process was left by the stopped run. The current v5 pilot contains 20
+successful observations, one preserved pre-run failure, and eight pending
+attempts including one distinct retry. Every successful run unloaded its model.
 
 ## 2. Preregistered design
 
@@ -371,7 +371,32 @@ gate remains satisfied. The pilot is 12/28 complete with a zero attempt failure
 rate. Each variance cell is 1/5; repeat-count freezing and Phase 10 remain
 blocked until all four reach five independent successful runs.
 
-### 10.7 Resume checkpoints
+### 10.7 Preserved pre-run cleanup failure and retry recovery
+
+The fourth broadcast repeat did not enter measurement. Its pre-run unload call
+to Pi 04 timed out, so order 21 was preserved as
+`PRE_RUN_CLEANUP_FAILED` with no run ID and no benchmark result. A subsequent
+read-only status check found Pi 04 SSH, project, and Worker API online with no
+model loaded. No result was deleted or converted to success.
+
+This event exposed a workflow mismatch: the plan requires failures to be
+preserved and every retry to be a distinct attempt, but the executor recorded a
+pre-run cleanup failure only on the run row, omitted it from analyzer
+observations, and supplied no retry slot. The executor now:
+
+- copies every pre-run cleanup failure into the durable observation set;
+- appends exactly one idempotent retry with a new repeat and order index;
+- executes retries after the remaining declared order;
+- includes the failed attempt in the attempt-failure denominator;
+- retains the original failed row and cleanup evidence unchanged.
+
+The existing manifest was reconciled to 29 attempts: 20 successful, one failed,
+and eight pending. The retry is broadcast repeat 6, order 29, linked to failed
+order 21. The observed failure rate is 1/21 (4.76%), below but close to the 5%
+cap. If another attempt fails, the pilot will fail its frozen reliability gate
+even if all remaining successful-run counts are eventually met.
+
+### 10.8 Resume checkpoints
 
 | Checkpoint | Commit |
 |---|---|

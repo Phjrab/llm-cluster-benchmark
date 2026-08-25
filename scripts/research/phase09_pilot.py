@@ -189,6 +189,96 @@ def find_run(manifest: Mapping[str, Any], item: Mapping[str, Any]) -> dict[str, 
     raise RuntimeError("pilot manifest lost a predeclared run")
 
 
+def append_retry_run(manifest: dict[str, Any], item: Mapping[str, Any]) -> dict[str, Any]:
+    """Append one distinct retry attempt without changing the failed attempt."""
+    runs = manifest.setdefault("runs", [])
+    original_order = int(item["pilot_order_index"])
+    for run in runs:
+        if run.get("retry_of_order_index") == original_order:
+            return run
+    cell_id = str(item["pilot_cell_id"])
+    retry = {
+        "pilot_cell_id": cell_id,
+        "pilot_stage": str(item["pilot_stage"]),
+        "pilot_repeat_index": max(
+            int(run.get("pilot_repeat_index") or 0)
+            for run in runs
+            if run.get("pilot_cell_id") == cell_id
+        ) + 1,
+        "pilot_order_index": max(int(run.get("pilot_order_index") or 0) for run in runs) + 1,
+        "cooldown_before_s": float(item.get("cooldown_before_s") or 0.0),
+        "status": "pending",
+        "run_id": None,
+        "summary_path": None,
+        "error_code": None,
+        "retry_of_order_index": original_order,
+    }
+    runs.append(retry)
+    return retry
+
+
+def reconcile_pre_run_failures(manifest: dict[str, Any]) -> bool:
+    """Upgrade already-preserved cleanup failures to observations plus retries."""
+    identities = {
+        (item.get("pilot_cell_id"), item.get("pilot_repeat_index"))
+        for item in manifest.get("observations") or []
+    }
+    changed = False
+    for run in list(manifest.get("runs") or []):
+        if (
+            run.get("status") != "failed"
+            or run.get("error_code") != "PRE_RUN_CLEANUP_FAILED"
+        ):
+            continue
+        identity = (run.get("pilot_cell_id"), run.get("pilot_repeat_index"))
+        if identity not in identities:
+            manifest.setdefault("observations", []).append({
+                "pilot_cell_id": run.get("pilot_cell_id"),
+                "pilot_stage": run.get("pilot_stage"),
+                "pilot_repeat_index": run.get("pilot_repeat_index"),
+                "pilot_order_index": run.get("pilot_order_index"),
+                "cooldown_before_s": float(run.get("cooldown_before_s") or 0.0),
+                "status": "failed",
+                "run_id": run.get("run_id"),
+                "summary_path": run.get("summary_path"),
+                "error_code": "PRE_RUN_CLEANUP_FAILED",
+                "cleanup_errors": list(run.get("cleanup_errors") or []),
+                "total_elapsed_s": float(run.get("total_elapsed_s") or 0.0),
+            })
+            identities.add(identity)
+            changed = True
+        before = len(manifest.get("runs") or [])
+        append_retry_run(manifest, run)
+        changed = changed or len(manifest.get("runs") or []) != before
+    return changed
+
+
+def manifest_execution_order(
+    declared_order: list[dict[str, Any]], manifest: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    """Resolve declared cells plus durable retry slots into execution items."""
+    declared_by_order = {
+        int(item["pilot_order_index"]): item for item in declared_order
+    }
+    resolved = list(declared_order)
+    for run in manifest.get("runs") or []:
+        retry_of = run.get("retry_of_order_index")
+        if isinstance(retry_of, bool) or not isinstance(retry_of, int):
+            continue
+        original = declared_by_order.get(retry_of)
+        if original is None:
+            raise RuntimeError("pilot retry references an unknown declared run")
+        item = dict(original)
+        item.update({
+            "pilot_repeat_index": int(run["pilot_repeat_index"]),
+            "pilot_order_index": int(run["pilot_order_index"]),
+            "cooldown_before_s": float(run.get("cooldown_before_s") or 0.0),
+            "retry_of_order_index": retry_of,
+        })
+        resolved.append(item)
+    return sorted(resolved, key=lambda item: int(item["pilot_order_index"]))
+
+
 def observations_from_manifest(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
     observations: list[dict[str, Any]] = []
     for raw in manifest.get("observations") or []:
@@ -214,10 +304,12 @@ def execute(args: argparse.Namespace) -> int:
     inventory = resolve_runtime_paths().inventory_path
     models = model_map(model_lock)
     prompts = prompt_map(prompt_lock)
-    order = expand_pilot_plan(plan, matrix)
+    declared_order = expand_pilot_plan(plan, matrix)
     new_attempts = 0
     with exclusive_lock(directory):
         manifest = ensure_manifest(directory, plan, matrix)
+        reconcile_pre_run_failures(manifest)
+        order = manifest_execution_order(declared_order, manifest)
         for run in manifest.get("runs") or []:
             if run.get("status") == "running":
                 run.update({"status": "interrupted", "error_code": "PILOT_INTERRUPTED"})
@@ -229,14 +321,32 @@ def execute(args: argparse.Namespace) -> int:
             run = find_run(manifest, item)
             if run.get("status") in {"completed", "failed", "interrupted"}:
                 continue
+            pre_cleanup_started = time.monotonic()
             pre_cleanup_errors = unload_models(list(item["node_set"]), inventory)
             if pre_cleanup_errors:
+                finished_at = utc_now()
+                total_elapsed_s = time.monotonic() - pre_cleanup_started
                 run.update({
                     "status": "failed",
-                    "finished_at": utc_now(),
+                    "finished_at": finished_at,
                     "error_code": "PRE_RUN_CLEANUP_FAILED",
                     "cleanup_errors": pre_cleanup_errors,
+                    "total_elapsed_s": total_elapsed_s,
                 })
+                manifest.setdefault("observations", []).append({
+                    "pilot_cell_id": item["pilot_cell_id"],
+                    "pilot_stage": item["pilot_stage"],
+                    "pilot_repeat_index": item["pilot_repeat_index"],
+                    "pilot_order_index": item["pilot_order_index"],
+                    "cooldown_before_s": float(item.get("cooldown_before_s") or 0.0),
+                    "status": "failed",
+                    "run_id": None,
+                    "summary_path": None,
+                    "error_code": "PRE_RUN_CLEANUP_FAILED",
+                    "cleanup_errors": pre_cleanup_errors,
+                    "total_elapsed_s": total_elapsed_s,
+                })
+                append_retry_run(manifest, item)
                 manifest.update({"status": "failed", "phase": "cleanup_failed"})
                 persist_manifest(directory, manifest)
                 return 1
@@ -344,6 +454,7 @@ def analyze(args: argparse.Namespace) -> int:
     directory = pilot_directory(plan, args.pilot_dir)
     with exclusive_lock(directory):
         manifest = ensure_manifest(directory, plan, matrix)
+        reconcile_pre_run_failures(manifest)
         analysis = analyze_pilot(plan, observations_from_manifest(manifest))
         write_json_object(directory / "analysis.json", analysis, default_mode=0o600)
         manifest["analysis"] = {

@@ -16,7 +16,13 @@ from cluster.research.pilot import (
     expand_pilot_plan,
     validate_pilot_plan,
 )
-from scripts.research.phase09_pilot import parser as pilot_parser
+from scripts.research.phase09_pilot import (
+    append_retry_run,
+    initial_manifest,
+    manifest_execution_order,
+    parser as pilot_parser,
+    reconcile_pre_run_failures,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -168,6 +174,52 @@ class PilotPlanTests(unittest.TestCase):
                 prompt_lock=read_json("prompt_set.json"),
             )
 
+    def test_failed_attempt_gets_one_distinct_durable_retry_slot(self) -> None:
+        plan = read_json("pilot_plan.v5.json")
+        declared = expand_pilot_plan(plan, self.matrix)
+        manifest = initial_manifest(plan, self.matrix)
+        failed_item = next(
+            item for item in declared if item["pilot_order_index"] == 21
+        )
+
+        retry = append_retry_run(manifest, failed_item)
+        same_retry = append_retry_run(manifest, failed_item)
+        order = manifest_execution_order(declared, manifest)
+
+        self.assertIs(retry, same_retry)
+        self.assertEqual(len(manifest["runs"]), 29)
+        self.assertEqual(retry["pilot_repeat_index"], 6)
+        self.assertEqual(retry["pilot_order_index"], 29)
+        self.assertEqual(retry["retry_of_order_index"], 21)
+        self.assertEqual(order[-1]["node_set"], failed_item["node_set"])
+        self.assertEqual(order[-1]["pilot_repeat_index"], 6)
+        self.assertEqual(order[-1]["pilot_order_index"], 29)
+
+    def test_existing_pre_run_failure_is_reconciled_without_deletion(self) -> None:
+        plan = read_json("pilot_plan.v5.json")
+        manifest = initial_manifest(plan, self.matrix)
+        failed = next(
+            item for item in manifest["runs"] if item["pilot_order_index"] == 21
+        )
+        failed.update({
+            "status": "failed",
+            "error_code": "PRE_RUN_CLEANUP_FAILED",
+            "cleanup_errors": ["pi-worker-04: timed out"],
+            "finished_at": "2026-08-25T05:44:21+00:00",
+            "total_elapsed_s": 30.0,
+        })
+
+        self.assertTrue(reconcile_pre_run_failures(manifest))
+        self.assertFalse(reconcile_pre_run_failures(manifest))
+
+        self.assertEqual(len(manifest["observations"]), 1)
+        self.assertEqual(
+            manifest["observations"][0]["error_code"],
+            "PRE_RUN_CLEANUP_FAILED",
+        )
+        self.assertEqual(len(manifest["runs"]), 29)
+        self.assertEqual(manifest["runs"][-1]["retry_of_order_index"], 21)
+
 
 class PilotIdentityTests(unittest.TestCase):
     def test_pilot_identity_is_additive_and_separate_from_formal_campaign(self) -> None:
@@ -313,6 +365,28 @@ class PilotAnalysisTests(unittest.TestCase):
         self.assertFalse(result["freeze_ready"])
         self.assertGreater(result["failure_rate"], 0)
         self.assertTrue(any("pilot incomplete" in item for item in result["blockers"]))
+
+    def test_distinct_retry_can_supply_five_successes_without_hiding_failure(self) -> None:
+        observations = complete_observations(self.plan, self.matrix)
+        observations.append({
+            "pilot_cell_id": self.plan["variance_cells"][0]["pilot_cell_id"],
+            "pilot_stage": "variance",
+            "pilot_repeat_index": 6,
+            "pilot_order_index": 29,
+            "cooldown_before_s": 30.0,
+            "status": "failed",
+            "run_id": None,
+            "error_code": "PRE_RUN_CLEANUP_FAILED",
+            "summary": {"status": "failed", "error_code": "PRE_RUN_CLEANUP_FAILED"},
+        })
+
+        result = analyze_pilot(self.plan, observations)
+
+        self.assertTrue(result["freeze_ready"])
+        self.assertEqual(result["observations"], 29)
+        self.assertEqual(result["successful_observations"], 28)
+        self.assertAlmostEqual(result["failure_rate"], 1 / 29)
+        self.assertEqual(result["failures"][0]["error_code"], "PRE_RUN_CLEANUP_FAILED")
 
     def test_unmeasured_cooldown_candidate_cannot_be_selected(self) -> None:
         observations = [
