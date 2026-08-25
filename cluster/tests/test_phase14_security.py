@@ -93,6 +93,10 @@ class SshBoundarySecurityTests(unittest.TestCase):
         self.assertIn("BatchMode=yes", parts)
         self.assertIn("IdentitiesOnly=yes", parts)
         self.assertEqual(parts[parts.index("-i") + 1], str(identity.resolve()))
+        for index, part in enumerate(parts):
+            if part == "-o":
+                self.assertLess(index + 1, len(parts))
+                self.assertIn("=", parts[index + 1])
 
     def test_public_or_hostname_worker_inventory_is_rejected(self) -> None:
         for host in ("8.8.8.8", "worker.example.com", "169.254.10.20", "100.64.0.10"):
