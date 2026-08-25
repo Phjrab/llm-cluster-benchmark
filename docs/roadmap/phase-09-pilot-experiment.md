@@ -2,10 +2,10 @@
 
 ## 1. Outcome
 
-Phase 09 was resumed on 2026-08-24 on branch
-`codex/roadmap-phase-09-resume`, but remains **incomplete**. The earlier v3
-stop boundary and artifacts remain preserved; resumed observations are written
-only to the new v4 pilot identity.
+Phase 09 was resumed on 2026-08-24 and continued on 2026-08-25 on branch
+`codex/roadmap-phase-09-complete`, but remains **incomplete**. The earlier v3
+stop boundary and artifacts remain preserved; current observations are written
+only to the separated v5 pilot identity.
 
 The pilot did not freeze the formal repeat count, run duration, cooldown, or
 campaign matrix. Phase 10 formal execution remains blocked. No pilot request
@@ -20,8 +20,8 @@ The historical durable v3 pilot contains 7 of 28 declared attempts:
 - `freeze_ready=false`.
 
 The running Pi model was unloaded successfully after cancellation. No Worker
-or RPC process was left by the stopped run. The current v4 pilot contains 5 of
-28 completed observations, 23 pending observations, and no failures. All five
+or RPC process was left by the stopped run. The current v5 pilot contains 8 of
+28 completed observations, 20 pending observations, and no failures. All eight
 completed runs also unloaded their model successfully.
 
 ## 2. Preregistered design
@@ -294,12 +294,53 @@ The first v5 hardware batch completed all four Jetson 02 calibration runs with
 | 180 s | 43.97 °C | 50.88 °C | 3.20% | pass |
 | 300 s | 43.50 °C | 51.19 °C | 3.92% | pass |
 
-The smallest passing Jetson candidate is therefore 180 seconds. It is not yet
-the global selected cooldown because the Raspberry Pi calibration cohort is
-still unmeasured in v5. The v5 manifest is 4/28 complete, has zero failed
-attempts, and remains `freeze_ready=false`.
+The smallest passing Jetson candidate is therefore 180 seconds. At that
+checkpoint it was not yet global because the Raspberry Pi calibration cohort
+was still unmeasured. The completed cross-platform decision is recorded below.
 
-### 10.5 Resume checkpoints
+### 10.5 Completed v5 calibration decision
+
+The Raspberry Pi 02 calibration was executed on 2026-08-25 after a read-only
+environment preflight verified the Raspberry Pi 5, Ubuntu 24.04, Python 3.12,
+OpenBLAS-backed `llama-cpp-python` 0.3.20, three local GGUF files, and the pinned
+llama.cpp RPC runtime. No packages, models, or runtimes were installed during
+that preflight.
+
+All four Raspberry Pi observations completed 20/20 requests and unloaded the
+model successfully:
+
+| Cooldown | Start temperature | Peak temperature | TPS | TTFT p50 | Worker overhead | Pi result |
+|---:|---:|---:|---:|---:|---:|---|
+| baseline | 57.22 °C | 63.35 °C | 3.636 | 70.116 s | 2.23% | reference |
+| 60 s | 56.75 °C | 63.10 °C | 3.643 | 70.174 s | 2.52% | pass |
+| 180 s | 53.73 °C | 61.15 °C | 3.725 | 68.075 s | 2.10% | pass |
+| 300 s | 53.15 °C | 60.90 °C | 3.720 | 67.353 s | 1.85% | pass |
+
+No active thermal throttling was observed in any Raspberry Pi calibration
+run. Historical undervoltage/throttling bits remain preserved as non-blocking
+quality warnings; current undervoltage and current throttling were false.
+
+The preregistered thermal decision now passes 180 and 300 seconds across both
+platform cohorts and rejects 60 seconds because Jetson 02 did not recover to
+the baseline start-temperature tolerance. The selected minimum cooldown is
+therefore **180 seconds**. This is the smallest passing candidate; the longer
+300-second candidate is not substituted merely because it also passed.
+
+The official instrumentation gate is total Worker-internal collection time
+divided by measurement wall time, not the largest individual sample divided by
+its collection interval. The maximum observed v5 gate value is 4.80%, below
+the preregistered 5% limit. Individual Raspberry Pi sample ratios reached about
+7.8% and remain descriptive evidence, but they do not replace the frozen
+aggregate gate after observing results.
+
+The v5 calibration stage is now 8/8 complete with zero failed attempts.
+`freeze_ready` remains false because all four variance cells still require five
+successful independent runs each. The current 30-repeat recommendation is an
+incomplete-data sentinel and is not frozen. Phase 10 formal execution remains
+blocked until those 20 observations complete and the analyzer returns
+`freeze_ready=true`.
+
+### 10.6 Resume checkpoints
 
 | Checkpoint | Commit |
 |---|---|
