@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import stat
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -61,6 +63,24 @@ class DownloadEligibilityTests(unittest.TestCase):
             with self.assertRaises(ModelPreflightError):
                 build_direct_install_spec(entry)
 
+    def test_license_and_gated_access_are_independent_explicit_gates(self) -> None:
+        licensed = locked_entry(license="Model Community License", license_review_required=True)
+        self.assertFalse(licensed.download_eligibility["eligible"])
+        self.assertTrue(build_direct_install_spec(licensed, license_accepted=True).metadata["license_accepted"])
+
+        gated = locked_entry(
+            license="Gated Model Terms",
+            license_review_required=True,
+            gated=True,
+        )
+        for accepted, access in ((False, False), (True, False), (False, True)):
+            with self.assertRaises(ModelPreflightError):
+                build_direct_install_spec(gated, license_accepted=accepted, gated_access=access)
+        spec = build_direct_install_spec(gated, license_accepted=True, gated_access=True)
+        self.assertEqual(spec.repo_id, "owner/model-GGUF")
+        self.assertEqual(spec.revision, "a" * 40)
+        self.assertEqual(spec.filename, "model-Q4_K_M.gguf")
+
     def test_legacy_hf_repo_is_a_compatible_download_source(self) -> None:
         entry = locked_entry(gguf_repo="", gguf_revision="", hf_repo="owner/model-GGUF", hf_revision="c" * 40)
         self.assertTrue(entry.download_eligibility["eligible"])
@@ -77,11 +97,13 @@ class CatalogExpansionTests(unittest.TestCase):
         self.assertIn("granite-3.3-8b/granite-3.3-8b-instruct-Q4_K_M.gguf", ids)
         families = {entry.family for entry in entries}
         self.assertTrue({"DeepSeek-R1 Distill", "Gemma 3", "Ministral 3", "Magistral", "Llama 3.3"}.issubset(families))
+        self.assertEqual(sum(entry.download_policy is DownloadPolicy.DIRECT for entry in entries), 33)
         direct = [entry for entry in entries if entry.download_eligibility["eligible"]]
-        self.assertEqual({entry.id for entry in direct}, {
-            "qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf",
-            "granite-3.3-2b/granite-3.3-2b-instruct-Q4_K_M.gguf",
-        })
+        self.assertGreaterEqual(len(direct), 20)
+        self.assertTrue(all(entry.identity_locked for entry in entries if entry.download_policy is DownloadPolicy.DIRECT))
+        self.assertTrue(all(entry.download_repo and entry.download_revision for entry in entries if entry.download_policy is DownloadPolicy.DIRECT))
+        self.assertEqual(sum(entry.gated for entry in entries), 5)
+        self.assertGreaterEqual(sum(entry.requires_license_acceptance for entry in entries), 12)
         extreme = next(entry for entry in entries if entry.family == "Llama 3.3")
         self.assertEqual(extreme.download_policy, DownloadPolicy.MULTIPART_UNSUPPORTED)
         self.assertTrue(extreme.multipart)
@@ -173,6 +195,76 @@ class CatalogInstallServiceTests(unittest.TestCase):
         with self.assertRaises(services.DashboardServiceError) as blocked:
             services.DashboardFacade().start_action(payload)
         self.assertEqual(blocked.exception.status_code, 400)
+
+    def test_project_local_acceptance_is_revision_bound_and_private(self) -> None:
+        from cluster.dashboard import services
+
+        entry = locked_entry(license="Model Community License", license_review_required=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            acceptance_path = Path(temporary) / "model_license_acceptances.json"
+            with mock.patch.object(services, "MODEL_LICENSE_ACCEPTANCE_PATH", acceptance_path):
+                initial = services.model_license_status(entry)
+                self.assertFalse(initial["accepted"])
+                saved = services.write_model_license_acceptance(entry, accepted=True)
+                self.assertTrue(saved["accepted"])
+                self.assertEqual(stat.S_IMODE(acceptance_path.stat().st_mode), 0o600)
+                changed = locked_entry(
+                    license="Model Community License",
+                    license_review_required=True,
+                    gguf_revision="c" * 40,
+                )
+                self.assertFalse(services.model_license_status(changed)["accepted"])
+                document = json.loads(acceptance_path.read_text(encoding="utf-8"))
+                self.assertNotIn("token", json.dumps(document).lower())
+
+    def test_experiment_preflight_obeys_current_project_acceptance(self) -> None:
+        from cluster.dashboard import services
+
+        entry = locked_entry(license="Model Community License", license_review_required=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            acceptance_path = Path(temporary) / "model_license_acceptances.json"
+            with mock.patch.object(services, "MODEL_LICENSE_ACCEPTANCE_PATH", acceptance_path):
+                with self.assertRaises(ModelPreflightError):
+                    services.validate_project_model_acceptances([entry.id], {entry.id: entry})
+                services.write_model_license_acceptance(entry, accepted=True)
+                services.validate_project_model_acceptances([entry.id], {entry.id: entry})
+                services.write_model_license_acceptance(entry, accepted=False)
+                with self.assertRaises(ModelPreflightError):
+                    services.validate_project_model_acceptances([entry.id], {entry.id: entry})
+
+    def test_gated_install_uses_authenticated_controller_cache_without_token_options(self) -> None:
+        from cluster.dashboard import services
+
+        entry = locked_entry(
+            license="Gated Model Terms",
+            license_review_required=True,
+            gated=True,
+        )
+        action = {"id": "action-gated", "status": "queued"}
+        payload = ModelInstallPayload(nodes=[self.worker.name], source="direct", confirmed=True)
+        accepted = {
+            entry.id: {
+                "fingerprint": services._model_license_fingerprint(entry),
+                "accepted_at": "2026-08-25T00:00:00Z",
+            }
+        }
+        with mock.patch.object(services, "read_model_catalog", return_value=[entry]), mock.patch.object(
+            services, "read_model_license_acceptances", return_value=accepted
+        ), mock.patch.object(
+            services, "huggingface_access_status", return_value={"installed": True, "configured": True, "verified": True, "account": "tester"}
+        ), mock.patch.object(services, "read_enabled_nodes", return_value=[self.worker]), mock.patch.object(
+            services, "read_environment_reports", return_value=[]
+        ), mock.patch.object(services.psutil, "disk_usage", return_value=mock.Mock(free=10_000_000_000)), mock.patch.object(
+            services.actions, "start", return_value=action
+        ) as start:
+            result = services.DashboardFacade().install_catalog_model(entry.id, payload)
+        self.assertEqual(result["download_mode"], "controller_authenticated")
+        sent = start.call_args.args[0]
+        self.assertEqual(sent.action, "install-model-cache")
+        self.assertEqual(sent.options["source_repo"], entry.download_repo)
+        self.assertEqual(sent.options["source_filename"], entry.gguf_filename)
+        self.assertNotIn("token", json.dumps(sent.options).lower())
+        self.assertNotIn("source_url", sent.options)
 
 
 if __name__ == "__main__":

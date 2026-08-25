@@ -89,12 +89,15 @@ class PackagingMetadataTests(unittest.TestCase):
             "torchvision",
             "jetson-stats",
             "jtop",
-            "huggingface-hub",
         }
         self.assertTrue(
             forbidden_controller_packages.isdisjoint(
                 {_normalized_name(requirement) for requirement in extras["controller"]}
             )
+        )
+        self.assertIn(
+            "huggingface-hub",
+            {_normalized_name(requirement) for requirement in extras["controller"]},
         )
 
     def test_package_discovery_and_data_are_explicit(self) -> None:

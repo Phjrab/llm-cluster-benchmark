@@ -242,7 +242,12 @@ def mount_worker_routes(
     @app.post("/cluster/models/verify")
     async def verify_model(payload: VerifyModelRequest) -> Dict[str, Any]:
         try:
-            model = backend.verify_model(payload.model_id, payload.expected_sha256 or None)
+            if payload.metadata:
+                model = backend.verify_model(
+                    payload.model_id, payload.expected_sha256 or None, payload.metadata
+                )
+            else:
+                model = backend.verify_model(payload.model_id, payload.expected_sha256 or None)
         except Exception as exc:
             failure = failure_from_exception(exc, stage="model_verify", model_id=payload.model_id)
             raise HTTPException(

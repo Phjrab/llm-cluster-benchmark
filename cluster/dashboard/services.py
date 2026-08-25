@@ -87,11 +87,17 @@ from cluster.infrastructure.storage import (
     FilesystemSettingsRepository,
     FilesystemSuiteRepository,
     StorageCorruptionError,
+    read_json_object,
+    write_json_object,
 )
 from cluster.infrastructure.ssh_host_keys import (
     list_pinned_host_keys,
     pin_host_key,
     scan_host_keys,
+)
+from cluster.infrastructure.huggingface_access import (
+    HuggingFaceAccessError,
+    huggingface_access_status,
 )
 
 
@@ -107,6 +113,7 @@ EXPERIMENTS_DIR = RUNTIME_PATHS.experiments_dir
 DEFAULTS_PATH = CLUSTER_DIR / "config" / "experiment_defaults.json"
 MODEL_CATALOG_PATH = CLUSTER_DIR / "config" / "model_catalog.json"
 MODEL_CATALOG_CACHE_PATH = RUNTIME_DIR / "model_catalog.cache.json"
+MODEL_LICENSE_ACCEPTANCE_PATH = RUNTIME_DIR / "model_license_acceptances.json"
 EXAMPLE_INVENTORY = CLUSTER_DIR / "config" / "nodes.example.csv"
 TOKEN_PATH = RUNTIME_PATHS.dashboard_token_path
 SETTINGS_PATH = RUNTIME_PATHS.settings_path
@@ -264,6 +271,7 @@ def _tighten_existing_runtime_permissions() -> None:
         TOKEN_PATH,
         SETTINGS_PATH,
         MODEL_CATALOG_CACHE_PATH,
+        MODEL_LICENSE_ACCEPTANCE_PATH,
     ):
         _chmod_private_file(path)
 
@@ -381,6 +389,7 @@ events = EventBus()
 
 inventory_lock = threading.RLock()
 settings_lock = threading.RLock()
+model_license_lock = threading.RLock()
 
 
 def _settings_repository() -> FilesystemSettingsRepository:
@@ -858,6 +867,139 @@ def read_model_catalog() -> List[ModelCatalogEntry]:
     return read_model_catalog_document()["catalog"]
 
 
+def _model_license_fingerprint(entry: ModelCatalogEntry) -> str:
+    payload = "\0".join(
+        (
+            entry.id,
+            entry.license,
+            entry.source_model_repo,
+            entry.source_model_revision,
+            entry.download_repo,
+            entry.download_revision,
+        )
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def read_model_license_acceptances() -> Dict[str, Dict[str, Any]]:
+    with model_license_lock:
+        try:
+            document = read_json_object(MODEL_LICENSE_ACCEPTANCE_PATH)
+        except FileNotFoundError:
+            return {}
+        except StorageCorruptionError as exc:
+            raise DashboardServiceError(503, "Model license acceptance state is corrupted") from exc
+        records = document.get("acceptances")
+        if not isinstance(records, dict):
+            raise DashboardServiceError(503, "Model license acceptance state is invalid")
+        return {
+            str(model_id): dict(record)
+            for model_id, record in records.items()
+            if isinstance(model_id, str) and isinstance(record, dict)
+        }
+
+
+def model_license_status(
+    entry: ModelCatalogEntry, acceptances: Optional[Dict[str, Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    records = read_model_license_acceptances() if acceptances is None else acceptances
+    fingerprint = _model_license_fingerprint(entry)
+    record = records.get(entry.id) or {}
+    accepted = bool(
+        entry.requires_license_acceptance
+        and secrets.compare_digest(str(record.get("fingerprint") or ""), fingerprint)
+    )
+    repo = entry.source_model_repo or entry.download_repo
+    artifact_repo = entry.download_repo
+    return {
+        "required": entry.requires_license_acceptance,
+        "accepted": accepted,
+        "accepted_at": record.get("accepted_at") if accepted else None,
+        "fingerprint": fingerprint,
+        "license": entry.license,
+        "terms_url": f"https://huggingface.co/{repo}" if repo else "",
+        "artifact_url": f"https://huggingface.co/{artifact_repo}" if artifact_repo else "",
+        "gated": entry.gated,
+        "access_ready": not entry.gated,
+    }
+
+
+def model_catalog_view(
+    entry: ModelCatalogEntry, acceptances: Optional[Dict[str, Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    status = model_license_status(entry, acceptances)
+    hf_access = huggingface_access_status(verify=False) if entry.gated else {
+        "installed": True, "configured": True, "verified": True, "account": ""
+    }
+    status["access_ready"] = not entry.gated or hf_access["configured"]
+    value = entry.to_dict()
+    value["license_acceptance"] = status
+    value["download_eligibility"] = entry.download_eligibility_for(
+        license_accepted=status["accepted"],
+        gated_access=status["access_ready"],
+    )
+    value["download_mode"] = "controller_authenticated" if entry.gated else "direct_worker"
+    return value
+
+
+def write_model_license_acceptance(entry: ModelCatalogEntry, *, accepted: bool) -> Dict[str, Any]:
+    with model_license_lock:
+        records = read_model_license_acceptances()
+        if accepted:
+            records[entry.id] = {
+                "fingerprint": _model_license_fingerprint(entry),
+                "license": entry.license,
+                "source_model_repo": entry.source_model_repo,
+                "source_model_revision": entry.source_model_revision,
+                "gguf_repo": entry.download_repo,
+                "gguf_revision": entry.download_revision,
+                "accepted_at": utc_now(),
+                "scope": "this_project",
+            }
+        else:
+            records.pop(entry.id, None)
+        write_json_object(
+            MODEL_LICENSE_ACCEPTANCE_PATH,
+            {"schema_version": 1, "acceptances": records},
+            default_mode=0o600,
+        )
+        MODEL_LICENSE_ACCEPTANCE_PATH.chmod(0o600)
+    return model_license_status(entry, records)
+
+
+def aggregate_catalog_view(
+    inventories: Sequence[WorkerModelInventory], catalog: Sequence[ModelCatalogEntry]
+) -> List[Dict[str, Any]]:
+    acceptances = read_model_license_acceptances()
+    values = aggregate_catalog(inventories, catalog)
+    catalog_by_id = {entry.id: entry for entry in catalog}
+    for value in values:
+        entry = catalog_by_id.get(str(value.get("id") or ""))
+        if entry is not None:
+            value["catalog"] = model_catalog_view(entry, acceptances)
+    return values
+
+
+def validate_project_model_acceptances(
+    model_ids: Sequence[str], catalog: Mapping[str, ModelCatalogEntry]
+) -> None:
+    """Require current project consent before an accepted job may use a licensed model."""
+    acceptances = read_model_license_acceptances()
+    for model_id in model_ids:
+        entry = catalog.get(model_id)
+        if entry is None or not entry.requires_license_acceptance:
+            continue
+        if not model_license_status(entry, acceptances)["accepted"]:
+            raise ModelPreflightError(
+                f"Project license acceptance is required: {model_id}",
+                code=ErrorCode.CONFIG_MISMATCH,
+                stage="model_preflight",
+                model_id=model_id,
+                evidence={"license": entry.license, "gated": entry.gated},
+                solutions=("Model Library에서 현재 약관과 source revision을 확인하고 동의하세요.",),
+            )
+
+
 def fetch_worker_model_inventory(node: Node, timeout: float = 5.0) -> WorkerModelInventory:
     try:
         payload = request_json(f"{node.api_url}/cluster/models", timeout=timeout)
@@ -886,7 +1028,9 @@ def collect_worker_model_inventories(
 
 def list_models() -> List[Dict[str, Any]]:
     """Aggregate Worker filesystem inventories; the Controller model directory is never scanned."""
-    return aggregate_catalog(collect_worker_model_inventories(), read_model_catalog())
+    inventories = collect_worker_model_inventories()
+    catalog = read_model_catalog()
+    return aggregate_catalog_view(inventories, catalog)
 
 
 def model_recommendations(
@@ -1257,6 +1401,7 @@ class ActionManager:
         "sync-models",
         "delete-models",
         "install-model-url",
+        "install-model-cache",
         "start",
         "stop",
         "restart",
@@ -1401,6 +1546,22 @@ class ActionManager:
             )
             if payload.options.get("license_accepted") is True:
                 command.append("--license-accepted")
+        elif payload.action == "install-model-cache":
+            command.extend(
+                [
+                    "--model-id", str(payload.options.get("model_id", "")),
+                    "--source-repo", str(payload.options.get("source_repo", "")),
+                    "--source-revision", str(payload.options.get("source_revision", "")),
+                    "--source-filename", str(payload.options.get("source_filename", "")),
+                    "--expected-sha256", str(payload.options.get("expected_sha256", "")),
+                    "--expected-size-bytes", str(payload.options.get("expected_size_bytes", 0)),
+                    "--provenance-status", str(payload.options.get("provenance_status", "")),
+                    "--architecture", str(payload.options.get("architecture", "")),
+                    "--metadata-contract", str(payload.options.get("metadata_contract", "gguf-metadata-v1")),
+                    "--license-accepted",
+                    "--confirmed",
+                ]
+            )
         elif payload.action == "prepare-rpc":
             pass
         elif payload.action == "select-model":
@@ -1988,13 +2149,14 @@ class DashboardFacade:
         inventories = await asyncio.to_thread(collect_worker_model_inventories)
         catalog = read_model_catalog()
         catalog_document = read_model_catalog_document()
+        acceptances = read_model_license_acceptances()
         snapshot = status_monitor.snapshot()
         return {
             "nodes": [serialize_node(node) for node in read_all_nodes()],
             "status": snapshot,
-            "models": aggregate_catalog(inventories, catalog),
+            "models": aggregate_catalog_view(inventories, catalog),
             "model_inventories": [item.to_dict() for item in inventories],
-            "model_catalog": [item.to_dict() for item in catalog],
+            "model_catalog": [model_catalog_view(item, acceptances) for item in catalog],
             "model_starter_packs": catalog_document["starter_packs"],
             "model_catalog_policy": catalog_document["catalog_policy"],
             "model_recommendations": model_recommendations(catalog, inventories, snapshot),
@@ -2031,11 +2193,12 @@ class DashboardFacade:
         inventories = await asyncio.to_thread(collect_worker_model_inventories)
         catalog = read_model_catalog()
         catalog_document = read_model_catalog_document()
+        acceptances = read_model_license_acceptances()
         recommendations = model_recommendations(catalog, inventories, status_monitor.snapshot())
         return {
-            "models": aggregate_catalog(inventories, catalog),
+            "models": aggregate_catalog_view(inventories, catalog),
             "inventories": [item.to_dict() for item in inventories],
-            "catalog": [item.to_dict() for item in catalog],
+            "catalog": [model_catalog_view(item, acceptances) for item in catalog],
             "recommendations": recommendations,
             "starter_packs": catalog_document["starter_packs"],
             "catalog_policy": catalog_document["catalog_policy"],
@@ -2049,8 +2212,14 @@ class DashboardFacade:
         entry = catalog.get(model_id)
         if entry is None:
             raise DashboardServiceError(404, "Catalog model not found")
+        license_status = model_license_status(entry)
+        hf_access = huggingface_access_status(verify=False)
         try:
-            spec = build_direct_install_spec(entry)
+            spec = build_direct_install_spec(
+                entry,
+                license_accepted=license_status["accepted"],
+                gated_access=entry.gated and hf_access["configured"],
+            )
         except ClusterError as exc:
             raise DashboardServiceError(http_status_for_failure(exc.to_failure_record()), exc.to_failure_record().to_dict()) from exc
         workers = [node for node in select_nodes(read_enabled_nodes(), payload.nodes) if node.role == "worker"]
@@ -2060,6 +2229,21 @@ class DashboardFacade:
             raise DashboardServiceError(400, "14B 이상 모델은 RPC coordinator Worker 한 대에 먼저 설치하세요")
         reports = {item.get("node"): item for item in read_environment_reports()}
         required_bytes = int(spec.expected_size_bytes * 1.15) + 512 * 1024 * 1024
+        if entry.gated and psutil.disk_usage(str(PROJECT_ROOT)).free < required_bytes:
+            raise DashboardServiceError(
+                409,
+                {
+                    "code": ErrorCode.CONFIG_MISMATCH.value,
+                    "stage": "model_install_preflight",
+                    "message": "Controller cache storage is insufficient",
+                    "model_id": model_id,
+                    "evidence": {
+                        "reason_code": "MODEL_STORAGE_INSUFFICIENT",
+                        "required_bytes": required_bytes,
+                        "target": "controller-cache",
+                    },
+                },
+            )
         for worker in workers:
             free_gb = (reports.get(worker.name) or {}).get("disk_free_gb")
             if isinstance(free_gb, (int, float)) and free_gb * (1024 ** 3) < required_bytes:
@@ -2081,11 +2265,69 @@ class DashboardFacade:
             "expected_size_bytes": spec.expected_size_bytes,
             **dict(spec.metadata),
         }
+        action_name = "install-model-url"
+        if entry.gated:
+            action_name = "install-model-cache"
+            options.pop("source_url", None)
+            options["source_filename"] = spec.filename
         try:
-            record = actions.start(ActionPayload(action="install-model-url", node_names=[node.name for node in workers], options=options))
+            record = actions.start(ActionPayload(action=action_name, node_names=[node.name for node in workers], options=options))
         except ValueError as exc:
             raise DashboardServiceError(400, str(exc)) from exc
-        return {"ok": True, "action": record, "model_id": model_id, "nodes": [node.name for node in workers]}
+        return {
+            "ok": True,
+            "action": record,
+            "model_id": model_id,
+            "nodes": [node.name for node in workers],
+            "download_mode": "controller_authenticated" if entry.gated else "direct_worker",
+        }
+
+    def huggingface_status(self) -> Dict[str, Any]:
+        try:
+            status = huggingface_access_status(verify=True)
+        except HuggingFaceAccessError as exc:
+            raise DashboardServiceError(401, str(exc)) from exc
+        return {
+            "ok": status["verified"],
+            **status,
+            "login_command": "hf auth login",
+            "token_stored_by_dashboard": False,
+        }
+
+    def accept_model_license(self, model_id: str, payload: Any) -> Dict[str, Any]:
+        catalog = {entry.id: entry for entry in read_model_catalog()}
+        entry = catalog.get(model_id)
+        if entry is None:
+            raise DashboardServiceError(404, "Catalog model not found")
+        if not entry.requires_license_acceptance or not entry.license:
+            raise DashboardServiceError(400, "This model does not require project-local license acceptance")
+        expected = _model_license_fingerprint(entry)
+        if payload.confirmed is not True or payload.accepted is not True:
+            raise DashboardServiceError(400, "Explicit model license acceptance is required")
+        if not secrets.compare_digest(payload.license_fingerprint, expected):
+            raise DashboardServiceError(409, "Model license or source revision changed; review the current terms again")
+        status = write_model_license_acceptance(entry, accepted=True)
+        events.publish(
+            "model_license_accepted",
+            channel=EventChannel.NODE_OPS,
+            model_id=model_id,
+            license=entry.license,
+            accepted_at=status["accepted_at"],
+        )
+        return {"ok": True, "model_id": model_id, "license_acceptance": status}
+
+    def revoke_model_license(self, model_id: str) -> Dict[str, Any]:
+        catalog = {entry.id: entry for entry in read_model_catalog()}
+        entry = catalog.get(model_id)
+        if entry is None:
+            raise DashboardServiceError(404, "Catalog model not found")
+        status = write_model_license_acceptance(entry, accepted=False)
+        events.publish(
+            "model_license_revoked",
+            channel=EventChannel.NODE_OPS,
+            model_id=model_id,
+        )
+        return {"ok": True, "model_id": model_id, "license_acceptance": status}
 
     def refresh_status(self) -> Dict[str, Any]:
         threading.Thread(target=status_monitor.refresh_now, daemon=True).start()
@@ -2371,7 +2613,7 @@ class DashboardFacade:
         return {"ok": True, "node": node_name, "cleanup": cleanup}
 
     def start_action(self, payload: ActionPayload) -> Dict[str, Any]:
-        if payload.action == "install-model-url":
+        if payload.action in {"install-model-url", "install-model-cache"}:
             raise DashboardServiceError(
                 400,
                 "Direct model installation is available only through the catalog model install endpoint",
@@ -2434,6 +2676,7 @@ class DashboardFacade:
                 raise ValueError("Raspberry Pi nodes require n_gpu_layers=0: " + ", ".join(str(item) for item in pi_nodes))
             inventories = collect_worker_model_inventories(selected_nodes, timeout=60.0)
             catalog = {item.id: item for item in read_model_catalog()}
+            validate_project_model_acceptances(payload.model_ids, catalog)
             validate_model_preflight(
                 node_names=[node.name for node in selected_nodes],
                 inventories={item.node: item for item in inventories},
@@ -2529,6 +2772,6 @@ COMPATIBILITY_EXPORTS = (
     "events", "experiments", "list_models", "model_recommendations", "normalize_environment_report", "probe_candidate",
     "read_all_nodes", "read_enabled_nodes", "read_environment_reports", "read_model_catalog", "read_model_catalog_document",
     "read_run_summaries", "read_settings", "read_suite_summaries", "reconcile_interrupted_suites",
-    "serialize_node", "status_monitor", "utc_now", "validate_catalog_execution_preflight", "validate_experiment_environment",
+    "serialize_node", "status_monitor", "utc_now", "validate_catalog_execution_preflight", "validate_experiment_environment", "validate_project_model_acceptances",
     "write_all_nodes", "write_environment_report", "write_suite_summary",
 )

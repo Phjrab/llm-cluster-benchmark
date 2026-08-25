@@ -139,6 +139,12 @@ class ModelInstallPayload(BaseModel):
         return values
 
 
+class ModelLicenseAcceptancePayload(BaseModel):
+    accepted: Literal[True]
+    confirmed: Literal[True]
+    license_fingerprint: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
 class ExperimentPayload(BaseModel):
     experiment_id: str = Field("", max_length=80, pattern=r"^[a-z0-9][a-z0-9_-]*$|^$")
     name: str = "cluster-load-test"

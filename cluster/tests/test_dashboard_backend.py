@@ -76,6 +76,7 @@ class DashboardBackendTests(unittest.TestCase):
             with TestClient(dashboard.app) as client:
                 controller = client.get("/api/controller/status")
                 models = client.get("/api/models")
+                huggingface = client.get("/api/huggingface/status")
                 health = client.get("/dashboard/health")
                 index = client.get("/")
             self.assertEqual(controller.status_code, 200)
@@ -84,6 +85,10 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertEqual(health.status_code, 200)
             self.assertFalse(health.json()["inference_enabled"])
             self.assertEqual(models.status_code, 200)
+            self.assertEqual(huggingface.status_code, 200)
+            self.assertEqual(huggingface.json()["login_command"], "hf auth login")
+            self.assertFalse(huggingface.json()["token_stored_by_dashboard"])
+            self.assertNotIn("token", {key.lower() for key in huggingface.json() if key != "token_stored_by_dashboard"})
             self.assertEqual(
                 set(models.json()),
                 {

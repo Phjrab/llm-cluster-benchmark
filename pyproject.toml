@@ -23,6 +23,7 @@ controller = [
   "pydantic==2.13.1",
   "psutil==7.2.2",
   "httpx==0.28.1",
+  "huggingface-hub==1.11.0",
 ]
 worker = [
   "fastapi==0.136.0",

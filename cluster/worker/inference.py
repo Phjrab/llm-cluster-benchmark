@@ -34,7 +34,7 @@ class InferenceBackend(Protocol):
 
     def model_inventory(self) -> List[Dict[str, object]]: ...
 
-    def verify_model(self, model_id: str, expected_sha256: Optional[str] = None) -> Dict[str, object]: ...
+    def verify_model(self, model_id: str, expected_sha256: Optional[str] = None, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]: ...
 
     def delete_model(self, model_id: str) -> Dict[str, object]: ...
 
@@ -272,11 +272,11 @@ class LlamaCppInferenceBackend:
                 entries.append({**model, "sha256": digest, "checksum_valid": True})
             return entries
 
-    def verify_model(self, model_id: str, expected_sha256: Optional[str] = None) -> Dict[str, object]:
+    def verify_model(self, model_id: str, expected_sha256: Optional[str] = None, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]:
         with self.lock:
-            return self._verify_model_locked(model_id, expected_sha256)
+            return self._verify_model_locked(model_id, expected_sha256, metadata)
 
-    def _verify_model_locked(self, model_id: str, expected_sha256: Optional[str] = None) -> Dict[str, object]:
+    def _verify_model_locked(self, model_id: str, expected_sha256: Optional[str] = None, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]:
         """Verify a model while the caller already owns ``self.lock``."""
         path = self._resolve_model_path(model_id)
         digest = self._cached_sha256(path)
@@ -284,8 +284,8 @@ class LlamaCppInferenceBackend:
         if expected and (not re.fullmatch(r"[0-9a-f]{64}", expected) or digest != expected):
             raise ValueError(f"Model checksum mismatch: {model_id}")
         records = self._read_model_metadata()
-        metadata = self._verified_model_metadata(path, None, records.get(model_id))
-        records[model_id] = metadata
+        verified_metadata = self._verified_model_metadata(path, metadata, records.get(model_id))
+        records[model_id] = verified_metadata
         self._write_model_metadata(records)
         return {
             "id": model_id,
@@ -294,18 +294,18 @@ class LlamaCppInferenceBackend:
             "sha256": digest,
             "quantization": self._quantization_from_filename(path.name),
             "checksum_valid": True,
-            "source_revision": metadata.get("source_revision", ""),
-            "source_repo": metadata.get("source_repo", ""),
-            "provenance_status": metadata.get("provenance_status", ""),
-            "architecture": metadata.get("architecture", ""),
-            "chat_template_hash": metadata.get("chat_template_hash", ""),
-            "tokenizer_metadata_hash": metadata.get("tokenizer_metadata_hash", ""),
-            "metadata_contract": metadata.get("metadata_contract", ""),
-            "chat_template_keys": metadata.get("chat_template_keys", []),
-            "tokenizer_metadata_keys": metadata.get("tokenizer_metadata_keys", []),
-            "metadata_count": metadata.get("metadata_count", 0),
-            "license_accepted": metadata.get("license_accepted") is True,
-            "metadata_inspected": metadata.get("metadata_contract") == GGUF_METADATA_CONTRACT,
+            "source_revision": verified_metadata.get("source_revision", ""),
+            "source_repo": verified_metadata.get("source_repo", ""),
+            "provenance_status": verified_metadata.get("provenance_status", ""),
+            "architecture": verified_metadata.get("architecture", ""),
+            "chat_template_hash": verified_metadata.get("chat_template_hash", ""),
+            "tokenizer_metadata_hash": verified_metadata.get("tokenizer_metadata_hash", ""),
+            "metadata_contract": verified_metadata.get("metadata_contract", ""),
+            "chat_template_keys": verified_metadata.get("chat_template_keys", []),
+            "tokenizer_metadata_keys": verified_metadata.get("tokenizer_metadata_keys", []),
+            "metadata_count": verified_metadata.get("metadata_count", 0),
+            "license_accepted": verified_metadata.get("license_accepted") is True,
+            "metadata_inspected": verified_metadata.get("metadata_contract") == GGUF_METADATA_CONTRACT,
         }
 
     def delete_model(self, model_id: str) -> Dict[str, object]:

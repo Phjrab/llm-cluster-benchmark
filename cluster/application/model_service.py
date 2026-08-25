@@ -13,14 +13,21 @@ from cluster.domain.model import ModelCatalogEntry, ModelInventoryEntry
 @dataclass(frozen=True)
 class DirectModelInstallSpec:
     model_id: str
+    repo_id: str
+    revision: str
+    filename: str
     source_url: str
     expected_sha256: str
     expected_size_bytes: int
     metadata: Mapping[str, object]
 
 
-def build_direct_install_spec(entry: ModelCatalogEntry) -> DirectModelInstallSpec:
-    eligibility = entry.download_eligibility
+def build_direct_install_spec(
+    entry: ModelCatalogEntry, *, license_accepted: bool = False, gated_access: bool = False
+) -> DirectModelInstallSpec:
+    eligibility = entry.download_eligibility_for(
+        license_accepted=license_accepted, gated_access=gated_access
+    )
     if not eligibility["eligible"]:
         raise ModelPreflightError(
             str(eligibility["reason_ko"]), code=ErrorCode.CONFIG_MISMATCH,
@@ -32,6 +39,9 @@ def build_direct_install_spec(entry: ModelCatalogEntry) -> DirectModelInstallSpe
     source_url = f"https://huggingface.co/{repo}/resolve/{revision}/{quote(entry.gguf_filename, safe='._-')}"
     return DirectModelInstallSpec(
         model_id=entry.id,
+        repo_id=repo,
+        revision=revision,
+        filename=entry.gguf_filename,
         source_url=source_url,
         expected_sha256=entry.sha256,
         expected_size_bytes=int(entry.size_bytes or 0),
@@ -41,7 +51,7 @@ def build_direct_install_spec(entry: ModelCatalogEntry) -> DirectModelInstallSpe
             "provenance_status": entry.provenance_status.value,
             "architecture": entry.architecture,
             "metadata_contract": "gguf-metadata-v1",
-            "license_accepted": not entry.requires_license_acceptance,
+            "license_accepted": license_accepted or not entry.requires_license_acceptance,
         },
     )
 
@@ -195,14 +205,14 @@ def validate_model_preflight(
                         evidence={"expected_quantization": catalog_entry.quantization, "actual_quantization": model.quantization},
                     )
                 if catalog_entry.identity_locked:
-                    if model.source_revision != catalog_entry.hf_revision:
+                    if model.source_revision != catalog_entry.download_revision:
                         raise ModelPreflightError(
                             f"{node_name}: model revision differs from catalog: {model_id}",
                             code=ErrorCode.CONFIG_MISMATCH,
                             stage="model_preflight",
                             node=node_name,
                             model_id=model_id,
-                            evidence={"expected_revision": catalog_entry.hf_revision, "actual_revision": model.source_revision or None},
+                            evidence={"expected_revision": catalog_entry.download_revision, "actual_revision": model.source_revision or None},
                         )
                     if catalog_entry.architecture and model.architecture and model.architecture != catalog_entry.architecture:
                         raise ModelPreflightError(

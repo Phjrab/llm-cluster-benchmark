@@ -69,6 +69,18 @@
     return `<div class="model-special-badges">${values.map(([label,tone]) => `<span class="model-special-badge ${tone}">${label}</span>`).join("")}</div>`;
   }
 
+  function modelApiPath(modelId) { return String(modelId).split("/").map(encodeURIComponent).join("/"); }
+
+  function licenseConsentHtml(model) {
+    const catalog = model.catalog || {}; const status = catalog.license_acceptance || {};
+    if (!status.required) return "";
+    const sourceLink = status.terms_url ? `<a href="${dashboard.escapeHtml(status.terms_url)}" target="_blank" rel="noopener noreferrer">현재 약관과 원본 repository 열기</a>` : "약관 링크 없음";
+    const artifactLink = status.artifact_url && status.artifact_url !== status.terms_url ? `<a href="${dashboard.escapeHtml(status.artifact_url)}" target="_blank" rel="noopener noreferrer">실제 GGUF repository 접근 확인</a>` : "";
+    const terms = [sourceLink, artifactLink].filter(Boolean).join(" · ");
+    if (status.accepted) return `<div class="license-consent accepted"><strong>LICENSE ACCEPTED · THIS PROJECT</strong><small>${dashboard.escapeHtml(catalog.license || "license")} · ${dashboard.escapeHtml(status.accepted_at || "accepted")}</small>${status.gated && !status.access_ready ? `<small>약관 동의는 완료되었습니다. Controller에서 <code>hf auth login</code> 후 계정 접근 권한을 확인하세요.</small>` : ""}<div class="license-consent-actions">${terms}<button type="button" class="button ghost compact danger-text" data-license-revoke="${dashboard.escapeHtml(model.id)}">동의 철회</button></div></div>`;
+    return `<div class="license-consent"><strong>LICENSE REVIEW REQUIRED</strong><small>${dashboard.escapeHtml(catalog.license || "별도 약관")} · 동의는 현재 model/source revision에만 적용되며 토큰을 저장하지 않습니다.</small><div>${terms}</div><label><input type="checkbox" data-license-check="${dashboard.escapeHtml(model.id)}"> 약관과 모델 사용 조건을 확인했고 이 프로젝트에서 사용하는 데 동의합니다.</label><button type="button" class="button ghost compact" data-license-accept="${dashboard.escapeHtml(model.id)}" disabled>동의 저장</button></div>`;
+  }
+
   function renderStarterPacks() {
     const root = dashboard.$?.("#modelStarterPacks");
     if (!root) return;
@@ -115,6 +127,7 @@
       const canDelete = Boolean(installedNodes.length);
       const eligibility = catalog.download_eligibility || { eligible: false, reason_ko: "SOURCE LOCK REQUIRED" };
       const canDirect = Boolean(eligibility.eligible && targets.length);
+      const installLabel = catalog.download_mode === "controller_authenticated" ? "Controller 인증 다운로드" : "Worker 직접 다운로드";
       const large = Number(catalog.parameters_total_b || catalog.parameter_count_b || 0) >= 14;
       const sourceRows = [["원본 모델", catalog.source_model_repo || "—"], ["GGUF source", catalog.gguf_repo || catalog.hf_repo || "—"], ["Revision", catalog.gguf_revision || catalog.hf_revision || "LOCK REQUIRED"], ["Artifact", catalog.gguf_filename || "LOCK REQUIRED"], ["SHA-256", catalog.sha256 || "LOCK REQUIRED"], ["License", catalog.license || "REVIEW REQUIRED"], ["Quantizer / converter", [catalog.quantized_by, catalog.converter].filter(Boolean).join(" / ") || "—"], ["Aggregate memory", catalog.minimum_aggregate_memory_mb ? `estimated ${Number(catalog.minimum_aggregate_memory_mb).toLocaleString()} MB` : "—"]];
       return `<article class="library-model-card" data-library-model="${dashboard.escapeHtml(model.id)}">
@@ -124,14 +137,20 @@
         <div class="library-placement"><strong>WORKER INSTALLATION</strong><p>${installedNodes.length ? installedNodes.map(name => `<span class="worker-install">${dashboard.escapeHtml(name)}</span>`).join("") : "아직 설치된 Worker 없음"}</p><small>${dashboard.escapeHtml(fitLabel(recommendation.memory))} · ${recommendation.workers.length ? `적합 Worker ${recommendation.workers.join(", ")}` : "Worker smoke 확인 필요"}</small></div>
         ${detailList("추천 이유", recommendation.reasons_ko, "reasons")}${detailList("주의사항", recommendation.cautions_ko, "cautions")}
         <details class="library-source-details"><summary>상세 정보 · source / license / identity</summary><dl>${sourceRows.map(([key,value]) => `<dt>${dashboard.escapeHtml(key)}</dt><dd>${dashboard.escapeHtml(value)}</dd>`).join("")}</dl>${large ? `<p class="download-disabled-reason">대형 모델은 선택 Worker 전체에 복제하지 않습니다. intended RPC coordinator 한 대에 먼저 설치하세요. Estimated fit은 실행 보장이 아닙니다.</p>` : ""}</details>
+        ${licenseConsentHtml(model)}
         ${progress ? `<div class="library-progress"><span>${dashboard.escapeHtml(progress.node || "worker")} · ${dashboard.escapeHtml(progress.state || "working")}</span><i><b style="width:${Math.max(0, Math.min(100, Number(progress.percent) || 0))}%"></b></i><strong>${Number.isFinite(Number(progress.percent)) ? `${Number(progress.percent).toFixed(1)}%` : "…"}</strong></div>` : ""}
-        <div class="library-actions"><button type="button" class="button primary compact" data-model-install="${dashboard.escapeHtml(model.id)}" ${canDirect ? "" : "disabled"}>Worker 직접 다운로드</button><button type="button" class="button ghost compact" data-model-sync="${dashboard.escapeHtml(model.id)}" ${canSync ? "" : "disabled"}>${canSync ? `Controller cache에서 ${targetMissing.length}대 동기화` : installedNodes.length ? "선택 Worker에 설치됨" : "Controller cache 없음"}</button><button type="button" class="button ghost compact danger-text" data-model-delete="${dashboard.escapeHtml(model.id)}" ${canDelete ? "" : "disabled"}>Worker에서 삭제</button></div>
+        <div class="library-actions"><button type="button" class="button primary compact" data-model-install="${dashboard.escapeHtml(model.id)}" ${canDirect ? "" : "disabled"}>${installLabel}</button><button type="button" class="button ghost compact" data-model-sync="${dashboard.escapeHtml(model.id)}" ${canSync ? "" : "disabled"}>${canSync ? `Controller cache에서 ${targetMissing.length}대 동기화` : installedNodes.length ? "선택 Worker에 설치됨" : "Controller cache 없음"}</button><button type="button" class="button ghost compact danger-text" data-model-delete="${dashboard.escapeHtml(model.id)}" ${canDelete ? "" : "disabled"}>Worker에서 삭제</button></div>
         ${canDirect ? "" : `<small class="download-disabled-reason">${dashboard.escapeHtml(eligibility.reason_ko || "Exact source identity가 없어 직접 다운로드할 수 없습니다.")}</small>`}
       </article>`;
     }).join("");
     root.querySelectorAll("[data-model-sync]").forEach(button => button.addEventListener("click", () => sync(button.dataset.modelSync)));
     root.querySelectorAll("[data-model-install]").forEach(button => button.addEventListener("click", () => install(button.dataset.modelInstall)));
     root.querySelectorAll("[data-model-delete]").forEach(button => button.addEventListener("click", () => remove(button.dataset.modelDelete)));
+    root.querySelectorAll("[data-license-check]").forEach(checkbox => checkbox.addEventListener("change", () => {
+      const button = [...root.querySelectorAll("[data-license-accept]")].find(item => item.dataset.licenseAccept === checkbox.dataset.licenseCheck); if (button) button.disabled = !checkbox.checked;
+    }));
+    root.querySelectorAll("[data-license-accept]").forEach(button => button.addEventListener("click", () => acceptLicense(button.dataset.licenseAccept)));
+    root.querySelectorAll("[data-license-revoke]").forEach(button => button.addEventListener("click", () => revokeLicense(button.dataset.licenseRevoke)));
   }
 
   async function refresh() {
@@ -156,9 +175,35 @@
     if (!targets.length) return dashboard.toast?.("다운로드 대상 없음", "설치할 선택 Worker가 없거나 이미 설치되어 있습니다.", "error");
     const large = Number(model?.catalog?.parameters_total_b || 0) >= 14;
     if (large && targets.length !== 1) return dashboard.toast?.("RPC coordinator 선택 필요", "14B 이상 모델은 intended coordinator Worker 한 대만 선택하세요.", "error");
-    if (!confirm(`${targets.join(", ")}에서 고정된 Hugging Face GGUF를 직접 다운로드하고 SHA-256을 검증합니다. 다운로드는 benchmark와 분리됩니다. 계속할까요?`)) return;
-    const response = await dashboard.api(`/api/models/${encodeURIComponent(modelId)}/install`, { method: "POST", body: JSON.stringify({ nodes: targets, source: "direct", confirmed: true }) });
+    const authenticated = model?.catalog?.download_mode === "controller_authenticated";
+    const flow = authenticated ? "Controller의 Hugging Face 계정으로 cache에 다운로드한 뒤 선택 Worker로 검증 동기화" : "선택 Worker에서 직접 다운로드";
+    if (!confirm(`${targets.join(", ")}에 고정된 GGUF를 ${flow}하고 SHA-256을 검증합니다. 다운로드는 benchmark와 분리됩니다. 계속할까요?`)) return;
+    const response = await dashboard.api(`/api/models/${modelApiPath(modelId)}/install`, { method: "POST", body: JSON.stringify({ nodes: targets, source: "direct", confirmed: true }) });
     dashboard.toast?.("모델 다운로드 시작", `${response.nodes?.length || targets.length}개 Worker에서 검증형 다운로드를 시작했습니다.`);
+  }
+
+  async function acceptLicense(modelId) {
+    const model = dashboard.state.models.find(item => item.id === modelId); const status = model?.catalog?.license_acceptance || {};
+    if (!status.required || !status.fingerprint) return dashboard.toast?.("약관 정보 없음", "현재 모델의 약관 identity를 다시 불러오세요.", "error");
+    await dashboard.api(`/api/models/${modelApiPath(modelId)}/license-acceptance`, { method: "POST", body: JSON.stringify({ accepted: true, confirmed: true, license_fingerprint: status.fingerprint }) });
+    dashboard.toast?.("모델 약관 동의 저장", "현재 라이선스와 source revision에 대한 동의를 이 프로젝트에 기록했습니다.");
+    await refresh();
+  }
+
+  async function revokeLicense(modelId) {
+    if (!confirm("이 프로젝트의 모델 라이선스 동의를 철회할까요? 이미 설치된 파일은 자동 삭제되지 않습니다.")) return;
+    await dashboard.api(`/api/models/${modelApiPath(modelId)}/license-acceptance`, { method: "DELETE" });
+    dashboard.toast?.("모델 약관 동의 철회", "새 설치는 다시 동의할 때까지 차단됩니다.");
+    await refresh();
+  }
+
+  async function refreshHuggingFaceStatus() {
+    const target = dashboard.$?.("#huggingfaceAccessStatus"); if (!target) return;
+    target.textContent = "접근 권한 확인 중…";
+    try {
+      const status = await dashboard.api("/api/huggingface/status");
+      target.textContent = status.verified ? `연결됨 · ${status.account || "authenticated account"}` : status.installed ? "로그인 필요 · Controller에서 hf auth login 실행" : "Controller 패키지 설치 필요 · setup-controller 재실행";
+    } catch (error) { target.textContent = `접근 확인 실패 · ${error.message}`; }
   }
 
   function recordProgress(progress) { if (progress?.model_id) { progressByModel.set(progress.model_id, { ...progress }); render(); } }
@@ -172,7 +217,7 @@
   }
 
   dashboard.renderModelLibrary = render;
-  dashboard.modelLibrary = { refresh, render, sync, install, remove, recordProgress, tagsFor, specialBadges };
+  dashboard.modelLibrary = { refresh, render, sync, install, remove, acceptLicense, revokeLicense, refreshHuggingFaceStatus, recordProgress, tagsFor, specialBadges };
   document.addEventListener("DOMContentLoaded", () => {
     dashboard.$?.("#libraryModelSearch")?.addEventListener("input", () => render());
     dashboard.$?.("#modelLibraryFilters")?.querySelectorAll("[data-model-filter]").forEach(button => button.addEventListener("click", () => { activeFilter = button.dataset.modelFilter || "all"; dashboard.$("#modelLibraryFilters").querySelectorAll("[data-model-filter]").forEach(item => item.classList.toggle("active", item === button)); render(); }));
@@ -180,5 +225,11 @@
       try { await refresh(); dashboard.toast?.("모델 상태 갱신", "카탈로그와 Worker 인벤토리를 새로 읽었습니다."); }
       catch (error) { dashboard.toast?.("모델 상태 갱신 실패", error.message, "error"); }
     });
+    dashboard.$?.("#refreshHuggingFaceButton")?.addEventListener("click", refreshHuggingFaceStatus);
+    dashboard.$?.("#copyHuggingFaceLoginButton")?.addEventListener("click", async () => {
+      try { await copyText("hf auth login", dashboard.$?.("#huggingFaceLoginCommand"), "Hugging Face 로그인 명령 복사됨"); }
+      catch (error) { dashboard.toast?.("명령 복사 실패", error.message, "error"); }
+    });
+    refreshHuggingFaceStatus();
   });
 })();

@@ -24,6 +24,7 @@ from cluster.dashboard.schemas import (
     ExperimentPayload,
     JetsonPowerModePayload,
     ModelInstallPayload,
+    ModelLicenseAcceptancePayload,
     NodeDeletePayload,
     NodePayload,
     NodeRenamePayload,
@@ -121,6 +122,15 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
     ) -> Dict[str, Any]:
         return await dashboard.models()
 
+    @models_router.get("/api/huggingface/status")
+    async def get_huggingface_status(
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.huggingface_status()
+        except ValueError as exc:
+            return _error_response(exc)
+
     @models_router.post("/api/models/{model_id:path}/install")
     async def install_catalog_model(
         model_id: str,
@@ -129,6 +139,27 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
     ) -> Dict[str, Any]:
         try:
             return dashboard.install_catalog_model(model_id, payload)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @models_router.post("/api/models/{model_id:path}/license-acceptance")
+    async def accept_model_license(
+        model_id: str,
+        payload: ModelLicenseAcceptancePayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.accept_model_license(model_id, payload)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @models_router.delete("/api/models/{model_id:path}/license-acceptance")
+    async def revoke_model_license(
+        model_id: str,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.revoke_model_license(model_id)
         except ValueError as exc:
             return _error_response(exc)
 

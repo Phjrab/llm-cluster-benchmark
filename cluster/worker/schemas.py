@@ -25,6 +25,7 @@ class SelectModelRequest(BaseModel):
 class VerifyModelRequest(BaseModel):
     model_id: str = Field(..., description="Relative GGUF path from the worker models directory")
     expected_sha256: str = Field("", max_length=64)
+    metadata: Dict[str, object] = Field(default_factory=dict)
 
 
 class DeleteModelRequest(BaseModel):

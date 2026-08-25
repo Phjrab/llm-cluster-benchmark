@@ -31,6 +31,7 @@ class FakeInferenceBackend:
         self.loaded: Optional[str] = None
         self.seed: Optional[int] = None
         self.load_calls: list[tuple[str, int, int]] = []
+        self.verified_metadata: Dict[str, object] = {}
 
     def list_models(self) -> list[Dict[str, object]]:
         return [{"id": "tiny.gguf", "name": "tiny.gguf", "filename": "tiny.gguf", "size_bytes": 4, "size_mb": 1.0, "quantization": None, "is_loaded": self.loaded == "tiny.gguf"}]
@@ -38,13 +39,19 @@ class FakeInferenceBackend:
     def model_inventory(self) -> list[Dict[str, object]]:
         return [{**item, "sha256": hashlib.sha256(b"gguf").hexdigest(), "checksum_valid": True} for item in self.list_models()]
 
-    def verify_model(self, model_id: str, expected_sha256: Optional[str] = None) -> Dict[str, object]:
+    def verify_model(
+        self,
+        model_id: str,
+        expected_sha256: Optional[str] = None,
+        metadata: Optional[Dict[str, object]] = None,
+    ) -> Dict[str, object]:
         if model_id != "tiny.gguf":
             raise FileNotFoundError(model_id)
         digest = hashlib.sha256(b"gguf").hexdigest()
         if expected_sha256 and expected_sha256 != digest:
             raise ValueError("Model checksum mismatch: tiny.gguf")
-        return {"id": model_id, "filename": model_id, "size_bytes": 4, "sha256": digest, "quantization": None, "checksum_valid": True}
+        self.verified_metadata = dict(metadata or {})
+        return {"id": model_id, "filename": model_id, "size_bytes": 4, "sha256": digest, "quantization": None, "checksum_valid": True, **self.verified_metadata}
 
     def delete_model(self, model_id: str) -> Dict[str, object]:
         if model_id != "tiny.gguf":
@@ -173,6 +180,21 @@ class WorkerRouteContractTests(unittest.TestCase):
         self.assertTrue(model["checksum_valid"])
         verified = client.post("/cluster/models/verify", json={"model_id": "tiny.gguf", "expected_sha256": model["sha256"]})
         self.assertEqual(verified.status_code, 200)
+        provenance = client.post(
+            "/cluster/models/verify",
+            json={
+                "model_id": "tiny.gguf",
+                "expected_sha256": model["sha256"],
+                "metadata": {
+                    "source_repo": "owner/model-GGUF",
+                    "source_revision": "a" * 40,
+                    "license_accepted": True,
+                },
+            },
+        )
+        self.assertEqual(provenance.status_code, 200)
+        self.assertEqual(backend.verified_metadata["source_revision"], "a" * 40)
+        self.assertTrue(provenance.json()["model"]["license_accepted"])
         invalid = client.post("/cluster/models/verify", json={"model_id": "tiny.gguf", "expected_sha256": "0" * 64})
         self.assertEqual(invalid.status_code, 404)
         direct = client.post("/cluster/models/install", json={"model_id": "tiny.gguf", "source_url": "https://models.example/tiny.gguf", "expected_sha256": model["sha256"]})

@@ -22,7 +22,7 @@ import urllib.request
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from cluster.integrations.runtime_layout import default_project_layout, resolve_runtime_paths
 from cluster.integrations.legacy_inventory_runtime import (
@@ -44,6 +44,10 @@ from cluster.infrastructure.deployment import (
     RSYNC_EXCLUDES,
     build_deployment_manifest,
     write_deployment_manifest,
+)
+from cluster.infrastructure.huggingface_access import (
+    HuggingFaceAccessError,
+    download_verified_model_to_controller_cache,
 )
 
 PROJECT_LAYOUT = default_project_layout()
@@ -1261,7 +1265,12 @@ def command_sync_code(nodes: Sequence[Node], args: argparse.Namespace) -> int:
     return 0 if all(item["ok"] for item in results) else 1
 
 
-def sync_models_one(node: Node, model_paths: Sequence[str], dry_run: bool = False) -> Dict[str, Any]:
+def sync_models_one(
+    node: Node,
+    model_paths: Sequence[str],
+    dry_run: bool = False,
+    model_metadata: Optional[Mapping[str, Mapping[str, object]]] = None,
+) -> Dict[str, Any]:
     if node.is_local:
         return {"name": node.name, "ok": True, "stdout": "local head; skipped", "stderr": ""}
     target_models = f"{node.project_dir}/models"
@@ -1325,6 +1334,30 @@ def sync_models_one(node: Node, model_paths: Sequence[str], dry_run: bool = Fals
             ok = False
             _print_model_progress(node.name, relative, "failed", size_bytes, size_bytes)
             break
+        metadata = dict((model_metadata or {}).get(relative) or {})
+        if metadata:
+            try:
+                verified_payload = request_json(
+                    f"{node.api_url}/cluster/models/verify",
+                    method="POST",
+                    payload={
+                        "model_id": relative,
+                        "expected_sha256": source_sha256,
+                        "metadata": metadata,
+                    },
+                    timeout=7200,
+                )
+            except Exception as exc:
+                stderr.append(f"Worker metadata verification failed for {relative}: {exc}")
+                ok = False
+                _print_model_progress(node.name, relative, "failed", size_bytes, size_bytes)
+                break
+            verified_model = verified_payload.get("model") if isinstance(verified_payload, dict) else None
+            if not isinstance(verified_model, dict) or verified_model.get("source_revision") != metadata.get("source_revision"):
+                stderr.append(f"Worker source metadata mismatch for {relative}")
+                ok = False
+                _print_model_progress(node.name, relative, "failed", size_bytes, size_bytes)
+                break
         models.append({"id": relative, "size_bytes": size_bytes, "sha256": source_sha256, "verified": True})
         _print_model_progress(node.name, relative, "ready", size_bytes, size_bytes)
     return {
@@ -1850,6 +1883,59 @@ def command_install_model_url(nodes: Sequence[Node], args: argparse.Namespace) -
     return 0 if all(item["ok"] for item in results) else 1
 
 
+def command_install_model_cache(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    """Authenticated Controller download followed by exact Worker synchronization."""
+    if not args.confirmed or not args.license_accepted:
+        print("install-model-cache requires explicit license acceptance and confirmation", file=sys.stderr)
+        return 2
+    workers = [node for node in nodes if node.role == "worker"]
+    if not workers:
+        print("No enabled worker nodes; nothing to install.", file=sys.stderr)
+        return 2
+    _print_model_progress("controller-cache", args.model_id, "queued", 0, args.expected_size_bytes)
+    _print_model_progress("controller-cache", args.model_id, "downloading", 0, args.expected_size_bytes)
+    try:
+        cached = download_verified_model_to_controller_cache(
+            project_root=PROJECT_ROOT,
+            runtime_dir=resolve_runtime_paths().runtime_dir,
+            model_id=args.model_id,
+            repo_id=args.source_repo,
+            revision=args.source_revision,
+            filename=args.source_filename,
+            expected_sha256=args.expected_sha256,
+            expected_size_bytes=args.expected_size_bytes,
+        )
+    except HuggingFaceAccessError as exc:
+        _print_model_progress("controller-cache", args.model_id, "failed", 0, args.expected_size_bytes)
+        print(str(exc), file=sys.stderr)
+        return 1
+    _print_model_progress("controller-cache", args.model_id, "verify", args.expected_size_bytes, args.expected_size_bytes)
+    metadata = {
+        "source_revision": args.source_revision,
+        "source_repo": args.source_repo,
+        "provenance_status": args.provenance_status,
+        "architecture": args.architecture,
+        "metadata_contract": args.metadata_contract,
+        "license_accepted": True,
+    }
+    for worker in workers:
+        result = sync_models_one(
+            worker,
+            [args.model_id],
+            model_metadata={args.model_id: metadata},
+        )
+        print(f"[{worker.name}] {'OK' if result['ok'] else 'FAIL'}")
+        if result.get("stdout"):
+            print(result["stdout"])
+        if result.get("stderr"):
+            print(result["stderr"], file=sys.stderr)
+        if not result["ok"]:
+            return 1
+    _print_model_progress("controller-cache", args.model_id, "ready", args.expected_size_bytes, args.expected_size_bytes)
+    print(json.dumps({"ok": True, "cache": cached, "workers": [node.name for node in workers]}, ensure_ascii=False))
+    return 0
+
+
 def _select_model_one(node: Node, model_id: str, n_ctx: int, n_gpu_layers: int) -> Dict[str, Any]:
     try:
         result = request_json(
@@ -2020,6 +2106,22 @@ def build_parser() -> argparse.ArgumentParser:
     install_url_parser.add_argument("--metadata-contract", default="gguf-metadata-v1", help="Expected GGUF metadata identity contract")
     install_url_parser.add_argument("--license-accepted", action="store_true", help="Confirm the selected model license/access conditions were accepted")
 
+    install_cache_parser = subparsers.add_parser(
+        "install-model-cache",
+        help="Download one gated GGUF with Controller Hugging Face auth, then sync it",
+    )
+    install_cache_parser.add_argument("--model-id", required=True)
+    install_cache_parser.add_argument("--source-repo", required=True)
+    install_cache_parser.add_argument("--source-revision", required=True)
+    install_cache_parser.add_argument("--source-filename", required=True)
+    install_cache_parser.add_argument("--expected-sha256", required=True)
+    install_cache_parser.add_argument("--expected-size-bytes", type=int, required=True)
+    install_cache_parser.add_argument("--provenance-status", default="")
+    install_cache_parser.add_argument("--architecture", default="")
+    install_cache_parser.add_argument("--metadata-contract", default="gguf-metadata-v1")
+    install_cache_parser.add_argument("--license-accepted", action="store_true")
+    install_cache_parser.add_argument("--confirmed", action="store_true")
+
     prepare_parser = subparsers.add_parser(
         "prepare",
         help="Sync code, install runtime, sync selected models and start workers",
@@ -2095,6 +2197,8 @@ def main() -> int:
         return command_delete_models(nodes, args)
     if args.command == "install-model-url":
         return command_install_model_url(nodes, args)
+    if args.command == "install-model-cache":
+        return command_install_model_cache(nodes, args)
     if args.command == "prepare":
         return command_prepare(nodes, args)
     if args.command == "prepare-rpc":

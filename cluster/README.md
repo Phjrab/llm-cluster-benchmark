@@ -195,11 +195,30 @@ Controller가 정적 catalog에서 HTTPS URL을 구성해 기존 Worker `.part` 
 `fsync`, SHA-256 검증, 원자 교체 경로에 전달한다. 저장 공간 보고가 있으면 파일 크기,
 partial reserve와 여유 공간을 먼저 검사한다.
 
-`catalog_only`, `gated_manual`, `multipart_unsupported` 모델은 정보와 권장 배치만
-표시하고 자동 다운로드하지 않는다. Meta Llama와 Google Gemma처럼 라이선스/접근 승인이
-필요한 모델은 token을 저장하거나 조건을 자동 수락하지 않는다. 14B 이상 모델은 선택한
-모든 Worker에 기본 복제하지 않고 intended RPC coordinator 한 대에 먼저 설치하도록
-안내한다. 70B `RPC EXTREME`는 실행 가능성을 보장하지 않는다.
+현재 catalog 34개 중 33개는 repository, commit, 단일 GGUF 파일, byte size와 SHA-256이
+고정된 `direct` 항목이다. 공개 Apache/MIT 계열은 선택 Worker에서 검증 다운로드하고,
+별도 라이선스 확인이 필요한 항목은 Model Library에서 현재 약관 링크를 연 뒤 명시적으로
+동의해야 한다. 동의는 `.run/cluster/model_license_acceptances.json`에 현재 프로젝트 범위로만
+0600 저장되며 모델 ID·라이선스·원본/실제 GGUF revision이 바뀌면 자동 무효화된다. 동의를
+철회해도 기존 GGUF를 임의로 삭제하지 않지만 새 설치와 새 실험은 다시 차단한다.
+
+Google Gemma처럼 Hugging Face gated repository인 모델은 Controller에서 먼저 다음 명령으로
+공식 Hugging Face 계정 로그인을 완료하고, 해당 repository 페이지에서 접근 조건을 승인한다.
+
+```bash
+hf auth login
+```
+
+Dashboard의 `HUGGING FACE ACCOUNT`에서 계정 확인 후 다운로드하면 Controller의 비공개
+cache에 exact revision을 인증 다운로드하고 size/SHA-256을 다시 확인한 다음 선택 Worker에
+동기화한다. Dashboard, action 기록, CLI 인자와 로그에는 Hugging Face token을 저장하거나
+표시하지 않는다. 인증 정보는 `huggingface_hub`의 공식 로그인 저장소가 관리한다.
+접근권한이 없거나 token이 만료됐거나 checksum이 다르면 파일을 게시하지 않고 실패한다.
+
+`multipart_unsupported`인 Llama 3.3 70B 한 항목은 여러 shard를 안전하게 원자 설치하는
+경로가 아직 없어 정보와 권장 배치만 표시한다. 14B 이상 모델은 선택한 모든 Worker에 기본
+복제하지 않고 intended RPC coordinator 한 대에 먼저 설치하도록 안내하며, `RPC EXTREME`는
+실행 가능성을 보장하지 않는다.
 
 Ollama는 모델이 아니라 별도 local runtime이다. 이 프로젝트의 정식 runtime은
 llama.cpp/llama-cpp-python이며, cloud-only GPT·Claude·Gemini·Grok은 GGUF catalog에

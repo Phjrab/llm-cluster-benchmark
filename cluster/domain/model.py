@@ -293,6 +293,12 @@ class ModelCatalogEntry:
 
     @property
     def download_eligibility(self) -> dict[str, Any]:
+        return self.download_eligibility_for(license_accepted=False)
+
+    def download_eligibility_for(
+        self, *, license_accepted: bool, gated_access: bool = False
+    ) -> dict[str, Any]:
+        """Evaluate exact download identity plus project-local license consent."""
         reason = self.download_disabled_reason_ko
         eligible = True
         if self.download_policy is not DownloadPolicy.DIRECT:
@@ -312,8 +318,10 @@ class ModelCatalogEntry:
             eligible, reason = False, "크기·SHA-256·quantization identity가 완전하지 않습니다."
         elif self.provenance_status is ProvenanceStatus.UNKNOWN or not self.license:
             eligible, reason = False, "Provenance 또는 license 검토가 완료되지 않았습니다."
-        elif self.gated or self.license_review_required:
-            eligible, reason = False, "라이선스 또는 gated access 승인이 필요합니다."
+        elif self.gated and not gated_access:
+            eligible, reason = False, "약관 동의와 별도로 Hugging Face 계정의 gated repository 접근 권한이 필요합니다."
+        elif self.license_review_required and not license_accepted:
+            eligible, reason = False, "대시보드에서 현재 라이선스와 source revision을 확인하고 동의해야 합니다."
         elif self.multipart:
             eligible, reason = False, "Multipart GGUF는 현재 자동 설치할 수 없습니다."
         return {"eligible": eligible, "policy": self.download_policy.value, "reason_ko": reason}
