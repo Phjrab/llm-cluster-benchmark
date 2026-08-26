@@ -6,6 +6,7 @@ import ast
 import importlib
 import json
 import os
+import shlex
 import stat
 import sys
 import tempfile
@@ -86,7 +87,10 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertFalse(health.json()["inference_enabled"])
             self.assertEqual(models.status_code, 200)
             self.assertEqual(huggingface.status_code, 200)
-            self.assertEqual(huggingface.json()["login_command"], "hf auth login")
+            login_command = shlex.split(huggingface.json()["login_command"])
+            self.assertEqual(login_command[1:], ["auth", "login"])
+            self.assertTrue(Path(login_command[0]).is_absolute())
+            self.assertTrue(login_command[0].endswith("/.venv/bin/hf"))
             self.assertFalse(huggingface.json()["token_stored_by_dashboard"])
             self.assertNotIn("token", {key.lower() for key in huggingface.json() if key != "token_stored_by_dashboard"})
             self.assertEqual(

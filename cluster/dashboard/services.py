@@ -17,6 +17,7 @@ import os
 import queue
 import re
 import secrets
+import shlex
 import socket
 import subprocess
 import sys
@@ -2290,7 +2291,9 @@ class DashboardFacade:
         return {
             "ok": status["verified"],
             **status,
-            "login_command": "hf auth login",
+            "login_command": (
+                f"{shlex.quote(str(PROJECT_ROOT / '.venv' / 'bin' / 'hf'))} auth login"
+            ),
             "token_stored_by_dashboard": False,
         }
 

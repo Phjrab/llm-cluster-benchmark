@@ -206,7 +206,7 @@ Google Gemma처럼 Hugging Face gated repository인 모델은 Controller에서 �
 공식 Hugging Face 계정 로그인을 완료하고, 해당 repository 페이지에서 접근 조건을 승인한다.
 
 ```bash
-hf auth login
+.venv/bin/hf auth login
 ```
 
 Dashboard의 `HUGGING FACE ACCOUNT`에서 계정 확인 후 다운로드하면 Controller의 비공개

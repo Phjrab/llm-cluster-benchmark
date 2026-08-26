@@ -47,6 +47,7 @@ assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("cancell
 assert.equal(vm.runInContext(`ClusterDashboard.terminals.limit`, context), 200);
 assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.recordProgress`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.setSelectedModels`, context), "function");
+assert.equal(vm.runInContext(`typeof ClusterDashboard.copyText`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.power.normalizeIntegrity`, context), "function");
 const modelsSource = fs.readFileSync(path.join(dashboardRoot, "static/js/models.js"), "utf8");
 assert.match(modelsSource, /modelStarterPacks/);
@@ -63,7 +64,7 @@ assert.match(modelsSource, /Controller 인증 다운로드/);
 assert.doesNotMatch(modelsSource, /access_token|authorization:\s*bearer|"token"\s*:/i);
 assert.match(template, /id="modelStarterPacks"/);
 assert.match(template, /HUGGING FACE ACCOUNT/);
-assert.match(template, /hf auth login/);
+assert.match(template, /프로젝트 로그인 명령 불러오는 중/);
 assert.match(template, /id="copyHuggingFaceLoginButton"/);
 assert.match(template, /id="refreshHuggingFaceButton"/);
 assert.match(template, /data-model-filter="edge"[\s\S]*data-model-filter="rpc"[\s\S]*data-model-filter="downloadable"/);
@@ -72,6 +73,9 @@ assert.match(appSource, /\.filter\(node => node\.role === "worker"\)[\s\S]*\.sor
 assert.match(appSource, /telemetryDegraded/);
 assert.match(appSource, /channel === "experiment"/);
 assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js"), "utf8"), /headers\["X-Cluster-Token"\] = state\.token/);
+assert.doesNotMatch(modelsSource, /copyText\("hf auth login"/);
+assert.match(modelsSource, /commandTarget\?\.textContent\?\.trim/);
+assert.match(modelsSource, /dashboard\.copyText\(command/);
 assert.match(appSource, /authenticatedEventStream\("\/api\/events"\)/);
 assert.match(appSource, /chartId === "researchCompareChart"/);
 assert.match(appSource, /Cross-run filtered comparison/);
@@ -80,8 +84,8 @@ assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js")
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
 assert.match(template, /styles\.css\?v=20260825\.1/);
-assert.match(template, /models\.js\?v=20260825\.2/);
-assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260824\.1/);
+assert.match(template, /models\.js\?v=20260826\.1/);
+assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260826\.1/);
 assert.match(template, /results\.js\?v=20260824\.1/);
 assert.match(template, /research\.js\?v=20260823\.1/);
 assert.match(template, /id="campaign"[\s\S]*id="campaignSummary"[\s\S]*id="campaignDetail"/);

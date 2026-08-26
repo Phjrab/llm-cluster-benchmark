@@ -10,7 +10,7 @@
 3. Worker 디스크 여유 공간과 모델 라이선스/접근 조건을 확인한다.
 4. 공개 모델은 `DIRECT`, 별도 조건 모델은 `LICENSE REVIEW REQUIRED` 또는 `GATED`로
    표시되는지 확인한다. `COMMUNITY GGUF`는 원본과 실제 GGUF provenance를 함께 검토한다.
-5. Gated 모델을 사용할 경우 Controller 터미널에서 `hf auth login`을 실행하고, 모델의
+5. Gated 모델을 사용할 경우 프로젝트 루트의 Controller 터미널에서 `.venv/bin/hf auth login`을 실행하고, 모델의
    Hugging Face 페이지에서 계정 접근 요청/약관 승인을 완료한 뒤 Dashboard의
    **접근 권한 확인**을 누른다. Hugging Face token을 Dashboard 입력란이나 로그에 붙이지 않는다.
 

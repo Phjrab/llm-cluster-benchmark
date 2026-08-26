@@ -77,7 +77,7 @@
     const sourceLink = status.terms_url ? `<a href="${dashboard.escapeHtml(status.terms_url)}" target="_blank" rel="noopener noreferrer">현재 약관과 원본 repository 열기</a>` : "약관 링크 없음";
     const artifactLink = status.artifact_url && status.artifact_url !== status.terms_url ? `<a href="${dashboard.escapeHtml(status.artifact_url)}" target="_blank" rel="noopener noreferrer">실제 GGUF repository 접근 확인</a>` : "";
     const terms = [sourceLink, artifactLink].filter(Boolean).join(" · ");
-    if (status.accepted) return `<div class="license-consent accepted"><strong>LICENSE ACCEPTED · THIS PROJECT</strong><small>${dashboard.escapeHtml(catalog.license || "license")} · ${dashboard.escapeHtml(status.accepted_at || "accepted")}</small>${status.gated && !status.access_ready ? `<small>약관 동의는 완료되었습니다. Controller에서 <code>hf auth login</code> 후 계정 접근 권한을 확인하세요.</small>` : ""}<div class="license-consent-actions">${terms}<button type="button" class="button ghost compact danger-text" data-license-revoke="${dashboard.escapeHtml(model.id)}">동의 철회</button></div></div>`;
+    if (status.accepted) return `<div class="license-consent accepted"><strong>LICENSE ACCEPTED · THIS PROJECT</strong><small>${dashboard.escapeHtml(catalog.license || "license")} · ${dashboard.escapeHtml(status.accepted_at || "accepted")}</small>${status.gated && !status.access_ready ? `<small>약관 동의는 완료되었습니다. 위 HUGGING FACE ACCOUNT의 로그인 명령을 복사해 Controller 터미널에서 실행하세요.</small>` : ""}<div class="license-consent-actions">${terms}<button type="button" class="button ghost compact danger-text" data-license-revoke="${dashboard.escapeHtml(model.id)}">동의 철회</button></div></div>`;
     return `<div class="license-consent"><strong>LICENSE REVIEW REQUIRED</strong><small>${dashboard.escapeHtml(catalog.license || "별도 약관")} · 동의는 현재 model/source revision에만 적용되며 토큰을 저장하지 않습니다.</small><div>${terms}</div><label><input type="checkbox" data-license-check="${dashboard.escapeHtml(model.id)}"> 약관과 모델 사용 조건을 확인했고 이 프로젝트에서 사용하는 데 동의합니다.</label><button type="button" class="button ghost compact" data-license-accept="${dashboard.escapeHtml(model.id)}" disabled>동의 저장</button></div>`;
   }
 
@@ -199,10 +199,12 @@
 
   async function refreshHuggingFaceStatus() {
     const target = dashboard.$?.("#huggingfaceAccessStatus"); if (!target) return;
+    const commandTarget = dashboard.$?.("#huggingFaceLoginCommand");
     target.textContent = "접근 권한 확인 중…";
     try {
       const status = await dashboard.api("/api/huggingface/status");
-      target.textContent = status.verified ? `연결됨 · ${status.account || "authenticated account"}` : status.installed ? "로그인 필요 · Controller에서 hf auth login 실행" : "Controller 패키지 설치 필요 · setup-controller 재실행";
+      if (commandTarget && status.login_command) commandTarget.textContent = status.login_command;
+      target.textContent = status.verified ? `연결됨 · ${status.account || "authenticated account"}` : status.installed ? "로그인 필요 · 오른쪽 명령을 복사해 Controller 터미널에서 실행" : "Controller 패키지 설치 필요 · setup-controller 재실행";
     } catch (error) { target.textContent = `접근 확인 실패 · ${error.message}`; }
   }
 
@@ -227,7 +229,13 @@
     });
     dashboard.$?.("#refreshHuggingFaceButton")?.addEventListener("click", refreshHuggingFaceStatus);
     dashboard.$?.("#copyHuggingFaceLoginButton")?.addEventListener("click", async () => {
-      try { await copyText("hf auth login", dashboard.$?.("#huggingFaceLoginCommand"), "Hugging Face 로그인 명령 복사됨"); }
+      const commandTarget = dashboard.$?.("#huggingFaceLoginCommand");
+      const command = commandTarget?.textContent?.trim() || "";
+      try {
+        if (!command || command.includes("불러오는 중")) throw new Error("로그인 명령을 아직 불러오지 못했습니다. 접근 권한 확인을 먼저 눌러주세요.");
+        if (typeof dashboard.copyText !== "function") throw new Error("복사 기능을 불러오지 못했습니다. 페이지를 새로고침하세요.");
+        await dashboard.copyText(command, commandTarget, "Hugging Face 로그인 명령 복사됨");
+      }
       catch (error) { dashboard.toast?.("명령 복사 실패", error.message, "error"); }
     });
     refreshHuggingFaceStatus();

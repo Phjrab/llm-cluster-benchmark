@@ -2559,6 +2559,7 @@ globalThis.ClusterDashboard = Object.assign(globalThis.ClusterDashboard || {}, {
   platformName, strategyMeta, runStrategy, runModelId, shortModelName,
   topologyNodes, renderNodes, renderModels, renderRuns,
   runActionOnNodes, refreshExperimentData, selectedModelIds, setSelectedModels,
+  copyText,
 });
 
 document.addEventListener("DOMContentLoaded", () => {
