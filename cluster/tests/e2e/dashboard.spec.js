@@ -123,6 +123,13 @@ test("Dashboard core flow renders workers, models, power warning, creates and re
   await expect(page.locator('#orbitWorkers [data-orbit-worker="pi-worker-02"]')).toContainText("ONLINE");
   await expect(page.locator("#workerCount")).toHaveText("2");
   await expect(page.locator("#modelLibrary")).toContainText("Qwen2.5 1.5B Instruct");
+  await page.locator('[data-model-view="vendors"]').click();
+  await expect(page.locator(".vendor-overview-card")).toHaveCount(1);
+  await expect(page.locator(".vendor-overview-card")).toContainText("Qwen");
+  await expect(page.locator(".vendor-overview-card header > strong")).toContainText("1");
+  await expect(page.locator(".vendor-overview-card header > strong small")).toHaveText("MODELS");
+  await page.locator('[data-vendor-open="Qwen"]').click();
+  await expect(page.locator("#modelLibrary")).toContainText("Qwen2.5 1.5B Instruct");
 
   await page.locator("#experimentName").fill("phase-08-browser-flow");
   await page.locator("#requestsInput").fill("2");

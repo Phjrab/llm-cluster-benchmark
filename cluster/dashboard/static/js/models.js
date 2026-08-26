@@ -3,6 +3,8 @@
   const dashboard = window.ClusterDashboard || (window.ClusterDashboard = {});
   const progressByModel = new Map();
   let activeFilter = "all";
+  let activeView = "models";
+  let activeVendor = "";
   const STATUS = {
     recommended: ["RECOMMENDED", "ready"], compatible: ["COMPATIBLE", "compatible"],
     candidate: ["CANDIDATE", "candidate"], verified: ["VERIFIED", "verified"],
@@ -59,6 +61,37 @@
     return tags;
   }
 
+  function vendorName(model) {
+    const catalog = model?.catalog || {};
+    return String(catalog.vendor || catalog.organization || "기타 / Community").trim() || "기타 / Community";
+  }
+
+  function groupByVendor(models = []) {
+    const grouped = new Map();
+    for (const model of models) {
+      const vendor = vendorName(model);
+      if (!grouped.has(vendor)) grouped.set(vendor, []);
+      grouped.get(vendor).push(model);
+    }
+    return [...grouped.entries()].map(([vendor, entries]) => {
+      const families = [...new Set(entries.map(model => model.catalog?.family).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      const installed = entries.filter(model => (model.installed_nodes || []).length).length;
+      const supported = entries.filter(model => ["recommended", "compatible", "verified"].includes(recommendationSummary(model.id).status)).length;
+      const platforms = [...new Set(entries.flatMap(model => model.catalog?.recommended_platforms || []))].sort((a, b) => a.localeCompare(b));
+      return { vendor, models: entries, families, installed, supported, platforms };
+    }).sort((a, b) => b.models.length - a.models.length || a.vendor.localeCompare(b.vendor));
+  }
+
+  function renderVendorGroups(groups) {
+    return groups.map(group => `<article class="vendor-overview-card" data-vendor-card="${dashboard.escapeHtml(group.vendor)}">
+      <header><div><span>COMPANY / ORGANIZATION</span><h3>${dashboard.escapeHtml(group.vendor)}</h3></div><strong>${group.models.length}<small>MODELS</small></strong></header>
+      <div class="vendor-overview-stats"><span><b>${group.installed}</b> 설치됨</span><span><b>${group.supported}</b> 권장·호환</span><span><b>${group.families.length}</b> 패밀리</span></div>
+      <p>${group.families.length ? group.families.map(value => dashboard.escapeHtml(value)).join(" · ") : "분류되지 않은 모델군"}</p>
+      <div class="vendor-model-names">${group.models.map(model => `<span>${dashboard.escapeHtml(model.catalog?.display_name || model.filename || model.id)}</span>`).join("")}</div>
+      <footer><small>${group.platforms.length ? group.platforms.map(value => dashboard.escapeHtml(value)).join(" · ") : "플랫폼 검증 대기"}</small><button type="button" class="button ghost compact" data-vendor-open="${dashboard.escapeHtml(group.vendor)}">모델 상세 보기</button></footer>
+    </article>`).join("");
+  }
+
   function specialBadges(catalog) {
     const parameters = Number(catalog.parameters_total_b || catalog.parameter_count_b || 0); const values = [];
     if (parameters >= 70 || catalog.size_class === "rpc_extreme") values.push(["RPC EXTREME", "rpc"]);
@@ -101,15 +134,30 @@
     const summary = dashboard.$?.("#modelLibrarySummary");
     if (!root || !summary) return;
     const query = (dashboard.$("#libraryModelSearch")?.value || "").trim().toLowerCase();
-    const rows = (models || []).filter(model => {
+    const filteredRows = (models || []).filter(model => {
       const catalog = model.catalog || {};
       const matchesQuery = !query || [model.id, model.filename, model.quantization, catalog.display_name, catalog.vendor, catalog.family, catalog.license, catalog.recommendation_tier, ...(catalog.capability_tags || [])].join(" ").toLowerCase().includes(query);
       return matchesQuery && (activeFilter === "all" || tagsFor(model).has(activeFilter));
     });
+    const rows = activeVendor && activeView === "models" ? filteredRows.filter(model => vendorName(model) === activeVendor) : filteredRows;
     const installed = rows.filter(model => (model.installed_nodes || []).length).length;
     const recommended = rows.filter(model => recommendationSummary(model.id).status === "recommended").length;
-    summary.innerHTML = `<span><strong>${rows.length}</strong> catalog records</span><span><strong>${installed}</strong> installed</span><span><strong>${recommended}</strong> smoke-verified recommendations</span><span>Controller는 추론 대상이 아님</span>`;
+    const groups = groupByVendor(filteredRows);
+    summary.innerHTML = `<span><strong>${rows.length}</strong> catalog records</span><span><strong>${groups.length}</strong> companies / organizations</span><span><strong>${installed}</strong> installed</span><span><strong>${recommended}</strong> smoke-verified recommendations</span>${activeVendor ? `<button type="button" class="vendor-filter-clear" id="clearVendorFilter">${dashboard.escapeHtml(activeVendor)} 필터 해제 ×</button>` : ""}`;
     renderStarterPacks();
+    root.classList.toggle("vendor-view", activeView === "vendors");
+    if (activeView === "vendors") {
+      root.innerHTML = groups.length ? renderVendorGroups(groups) : `<div class="model-library-empty">검색 조건에 맞는 회사 또는 모델이 없습니다.</div>`;
+      root.querySelectorAll("[data-vendor-open]").forEach(button => button.addEventListener("click", () => {
+        activeVendor = button.dataset.vendorOpen || "";
+        activeView = "models";
+        dashboard.$("#modelLibraryViewModes")?.querySelectorAll("[data-model-view]").forEach(item => { const active = item.dataset.modelView === activeView; item.classList.toggle("active", active); item.setAttribute("aria-pressed", String(active)); });
+        render();
+        root.scrollIntoView({ behavior: "smooth", block: "start" });
+      }));
+      return;
+    }
+    dashboard.$?.("#clearVendorFilter")?.addEventListener("click", () => { activeVendor = ""; render(); });
     if (!rows.length) { root.innerHTML = `<div class="model-library-empty">검색 조건에 맞는 모델이 없습니다.</div>`; return; }
     root.innerHTML = rows.map(model => {
       const catalog = model.catalog || {};
@@ -219,10 +267,16 @@
   }
 
   dashboard.renderModelLibrary = render;
-  dashboard.modelLibrary = { refresh, render, sync, install, remove, acceptLicense, revokeLicense, refreshHuggingFaceStatus, recordProgress, tagsFor, specialBadges };
+  dashboard.modelLibrary = { refresh, render, sync, install, remove, acceptLicense, revokeLicense, refreshHuggingFaceStatus, recordProgress, tagsFor, specialBadges, vendorName, groupByVendor };
   document.addEventListener("DOMContentLoaded", () => {
     dashboard.$?.("#libraryModelSearch")?.addEventListener("input", () => render());
     dashboard.$?.("#modelLibraryFilters")?.querySelectorAll("[data-model-filter]").forEach(button => button.addEventListener("click", () => { activeFilter = button.dataset.modelFilter || "all"; dashboard.$("#modelLibraryFilters").querySelectorAll("[data-model-filter]").forEach(item => item.classList.toggle("active", item === button)); render(); }));
+    dashboard.$?.("#modelLibraryViewModes")?.querySelectorAll("[data-model-view]").forEach(button => button.addEventListener("click", () => {
+      activeView = button.dataset.modelView || "models";
+      if (activeView === "vendors") activeVendor = "";
+      dashboard.$("#modelLibraryViewModes").querySelectorAll("[data-model-view]").forEach(item => { const active = item === button; item.classList.toggle("active", active); item.setAttribute("aria-pressed", String(active)); });
+      render();
+    }));
     dashboard.$?.("#refreshModelsButton")?.addEventListener("click", async () => {
       try { await refresh(); dashboard.toast?.("모델 상태 갱신", "카탈로그와 Worker 인벤토리를 새로 읽었습니다."); }
       catch (error) { dashboard.toast?.("모델 상태 갱신 실패", error.message, "error"); }

@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>MediFlow Cluster Lab</title>
   <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
-  <link rel="stylesheet" href="/static/styles.css?v=20260826.2">
+  <link rel="stylesheet" href="/static/styles.css?v=20260826.3">
 </head>
 <body>
   <div class="app-shell">
@@ -151,6 +151,13 @@
         </div>
         <div class="model-library-filters" id="modelLibraryFilters" aria-label="모델 필터">
           <button type="button" data-model-filter="all" class="active">전체</button><button type="button" data-model-filter="edge">Pi / Edge</button><button type="button" data-model-filter="jetson">Jetson</button><button type="button" data-model-filter="rpc">RPC</button><button type="button" data-model-filter="large">8B 초과</button><button type="button" data-model-filter="reasoning">Reasoning</button><button type="button" data-model-filter="coding">Coding</button><button type="button" data-model-filter="installed">설치됨</button><button type="button" data-model-filter="downloadable">다운로드 가능</button><button type="button" data-model-filter="gated">Gated / License review</button>
+        </div>
+        <div class="model-library-viewbar">
+          <div class="model-library-viewmodes" id="modelLibraryViewModes" aria-label="모델 정리 방식">
+            <button type="button" data-model-view="models" class="active" aria-pressed="true">모델별 보기</button>
+            <button type="button" data-model-view="vendors" aria-pressed="false">회사별 보기</button>
+          </div>
+          <small>회사별 보기에는 벤더·오픈소스 조직별 모델군과 설치 현황을 요약합니다.</small>
         </div>
         <div class="model-library-summary" id="modelLibrarySummary" aria-live="polite"><span>모델 인벤토리 불러오는 중</span></div>
         <div class="model-starter-packs" id="modelStarterPacks" aria-label="권장 모델 묶음"></div>
@@ -545,7 +552,7 @@
   <script src="/static/js/utils.js?v=20260821.6" defer></script>
   <script src="/static/js/power.js?v=20260821.6" defer></script>
   <script src="/static/js/console.js?v=20260821.6" defer></script>
-  <script src="/static/js/models.js?v=20260826.2" defer></script>
+  <script src="/static/js/models.js?v=20260826.3" defer></script>
   <script src="/static/js/results.js?v=20260824.1" defer></script>
   <script src="/static/js/research.js?v=20260823.1" defer></script>
 </body>

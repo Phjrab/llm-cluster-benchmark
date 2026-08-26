@@ -46,6 +46,7 @@ assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("complet
 assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("cancelled").icon`, context), "−");
 assert.equal(vm.runInContext(`ClusterDashboard.terminals.limit`, context), 200);
 assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.recordProgress`, context), "function");
+assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.groupByVendor`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.setSelectedModels`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.copyText`, context), "function");
 assert.equal(vm.runInContext(`ClusterDashboard.orbitWorkerState({enabled:true}, {api:true})`, context), "ONLINE");
@@ -73,6 +74,7 @@ assert.match(template, /프로젝트 로그인 명령 불러오는 중/);
 assert.match(template, /id="copyHuggingFaceLoginButton"/);
 assert.match(template, /id="refreshHuggingFaceButton"/);
 assert.match(template, /data-model-filter="edge"[\s\S]*data-model-filter="rpc"[\s\S]*data-model-filter="downloadable"/);
+assert.match(template, /data-model-view="models"[\s\S]*data-model-view="vendors"/);
 assert.match(template, /Ollama는 모델명이 아니라 별도 로컬 실행 도구/);
 assert.match(appSource, /\.filter\(node => node\.role === "worker"\)[\s\S]*\.sort\(\(left, right\) =>/);
 assert.match(appSource, /telemetryDegraded/);
@@ -83,6 +85,16 @@ assert.match(modelsSource, /commandTarget\?\.textContent\?\.trim/);
 assert.match(modelsSource, /dashboard\.copyText\(command/);
 assert.match(modelsSource, /model-badge-stack/);
 assert.match(fs.readFileSync(path.join(dashboardRoot, "static/styles.css"), "utf8"), /\.model-badge-stack[\s\S]*row-gap:6px/);
+const vendorGroups = vm.runInContext(`ClusterDashboard.modelLibrary.groupByVendor([
+  { id: "qwen-a", installed_nodes: ["jetson-1"], catalog: { vendor: "Alibaba Cloud / Qwen", family: "Qwen2.5", recommended_platforms: ["jetson"] } },
+  { id: "qwen-b", installed_nodes: [], catalog: { vendor: "Alibaba Cloud / Qwen", family: "Qwen3", recommended_platforms: ["raspberry-pi"] } },
+  { id: "gemma-a", installed_nodes: [], catalog: { vendor: "Google", family: "Gemma" } }
+])`, context);
+assert.equal(vendorGroups.length, 2);
+assert.equal(vendorGroups[0].vendor, "Alibaba Cloud / Qwen");
+assert.equal(vendorGroups[0].models.length, 2);
+assert.equal(vendorGroups[0].installed, 1);
+assert.deepEqual([...vendorGroups[0].families], ["Qwen2.5", "Qwen3"]);
 assert.match(appSource, /orbit\.innerHTML = visible\.map/);
 assert.match(appSource, /authenticatedEventStream\("\/api\/events"\)/);
 assert.match(appSource, /chartId === "researchCompareChart"/);
@@ -91,8 +103,8 @@ assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/events.j
 assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js"), "utf8"), /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260826\.2/);
-assert.match(template, /models\.js\?v=20260826\.2/);
+assert.match(template, /styles\.css\?v=20260826\.3/);
+assert.match(template, /models\.js\?v=20260826\.3/);
 assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260826\.2/);
 assert.match(template, /results\.js\?v=20260824\.1/);
 assert.match(template, /research\.js\?v=20260823\.1/);
