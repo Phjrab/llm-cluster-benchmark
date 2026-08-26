@@ -5,6 +5,7 @@
   let activeFilter = "all";
   let activeView = "models";
   let activeVendor = "";
+  let activePackId = "";
   const STATUS = {
     recommended: ["RECOMMENDED", "ready"], compatible: ["COMPATIBLE", "compatible"],
     candidate: ["CANDIDATE", "candidate"], verified: ["VERIFIED", "verified"],
@@ -114,19 +115,56 @@
     return `<div class="license-consent"><strong>LICENSE REVIEW REQUIRED</strong><small>${dashboard.escapeHtml(catalog.license || "별도 약관")} · 동의는 현재 model/source revision에만 적용되며 토큰을 저장하지 않습니다.</small><div>${terms}</div><label><input type="checkbox" data-license-check="${dashboard.escapeHtml(model.id)}"> 약관과 모델 사용 조건을 확인했고 이 프로젝트에서 사용하는 데 동의합니다.</label><button type="button" class="button ghost compact" data-license-accept="${dashboard.escapeHtml(model.id)}" disabled>동의 저장</button></div>`;
   }
 
+  function packPreviewData(pack, models = dashboard.state.models || []) {
+    const byId = new Map(models.map(model => [model.id, model]));
+    const entries = (pack?.model_ids || []).map((id, index) => {
+      const model = byId.get(id);
+      const catalog = model?.catalog || {};
+      return {
+        id, index, model,
+        name: catalog.display_name || model?.filename || id,
+        vendor: vendorName(model),
+        family: catalog.family || "Unclassified",
+        parameters: catalog.parameters_effective_b || catalog.parameters_total_b || catalog.parameter_count_b || null,
+        installed: Boolean((model?.installed_nodes || []).length),
+        installedNodes: model?.installed_nodes || [],
+      };
+    });
+    return { entries, available: entries.filter(entry => entry.installed).map(entry => entry.id) };
+  }
+
+  function renderPackPreview(pack) {
+    const preview = dashboard.$?.("#modelStarterPackPreview");
+    if (!preview) return;
+    if (!pack) { preview.hidden = true; preview.innerHTML = ""; return; }
+    const data = packPreviewData(pack);
+    preview.hidden = false;
+    preview.innerHTML = `<header><div><span>SELECTED EXPERIMENT PACK</span><h3>${dashboard.escapeHtml(pack.label_ko || pack.id)}</h3><p>팩에 포함된 모델을 확인한 뒤 설치된 모델만 실험에 적용합니다.</p></div><button type="button" class="icon-button" data-pack-close aria-label="실험 팩 미리보기 닫기">×</button></header>
+      <div class="model-pack-preview-list">${data.entries.map(entry => `<article class="${entry.installed ? "installed" : "catalog-only"}">
+        <b>${entry.index + 1}</b><div><strong>${dashboard.escapeHtml(entry.name)}</strong><small>${dashboard.escapeHtml(entry.vendor)} · ${dashboard.escapeHtml(entry.family)}${entry.parameters ? ` · ${dashboard.escapeHtml(entry.parameters)}B` : ""}</small></div><span>${entry.installed ? `설치됨 · ${entry.installedNodes.length}대` : "카탈로그만 등록"}</span>
+      </article>`).join("")}</div>
+      <footer><small>총 ${data.entries.length}개 · 설치됨 ${data.available.length}개 · 미설치 ${data.entries.length - data.available.length}개</small><button type="button" class="button primary compact" data-pack-apply ${data.available.length ? "" : "disabled"}>설치된 ${data.available.length}개 모델을 실험에 적용</button></footer>`;
+    preview.querySelector("[data-pack-close]")?.addEventListener("click", () => { activePackId = ""; renderStarterPacks(); });
+    preview.querySelector("[data-pack-apply]")?.addEventListener("click", () => {
+      if (!data.available.length) return dashboard.toast?.("설치된 모델 없음", "이 실험 팩의 GGUF가 아직 어떤 Worker에도 설치되어 있지 않습니다.", "error");
+      dashboard.setSelectedModels?.(data.available);
+      location.hash = "experiment";
+      dashboard.toast?.("실험 팩 적용", `${data.available.length}개 설치된 모델을 선택 순서대로 실험에 반영했습니다.`);
+    });
+  }
+
   function renderStarterPacks() {
     const root = dashboard.$?.("#modelStarterPacks");
     if (!root) return;
     const packs = dashboard.state.modelStarterPacks || [];
-    root.innerHTML = packs.map(pack => `<button type="button" class="model-pack" data-model-pack="${dashboard.escapeHtml(pack.id)}"><strong>${dashboard.escapeHtml(pack.label_ko || pack.id)}</strong><small>${(pack.model_ids || []).length} models · 설치된 항목만 실험 선택</small></button>`).join("");
+    if (activePackId && !packs.some(pack => pack.id === activePackId)) activePackId = "";
+    root.innerHTML = packs.map(pack => `<button type="button" class="model-pack ${pack.id === activePackId ? "active" : ""}" data-model-pack="${dashboard.escapeHtml(pack.id)}" aria-expanded="${pack.id === activePackId}"><strong>${dashboard.escapeHtml(pack.label_ko || pack.id)}</strong><small>${(pack.model_ids || []).length} models · 눌러서 구성 확인</small></button>`).join("");
     root.querySelectorAll("[data-model-pack]").forEach(button => button.addEventListener("click", () => {
       const pack = packs.find(item => item.id === button.dataset.modelPack);
-      const available = (pack?.model_ids || []).filter(id => dashboard.state.models.some(model => model.id === id && (model.installed_nodes || []).length));
-      if (!available.length) return dashboard.toast?.("설치된 모델 없음", "이 starter pack의 GGUF가 아직 어떤 Worker에도 설치되어 있지 않습니다.", "error");
-      dashboard.setSelectedModels?.(available);
-      location.hash = "experiment";
-      dashboard.toast?.("Starter pack 적용", `${available.length}개 설치된 모델을 실험 선택에 반영했습니다.`);
+      activePackId = activePackId === pack?.id ? "" : (pack?.id || "");
+      renderStarterPacks();
     }));
+    renderPackPreview(packs.find(pack => pack.id === activePackId));
   }
 
   function render(models = dashboard.state.models) {
@@ -267,7 +305,7 @@
   }
 
   dashboard.renderModelLibrary = render;
-  dashboard.modelLibrary = { refresh, render, sync, install, remove, acceptLicense, revokeLicense, refreshHuggingFaceStatus, recordProgress, tagsFor, specialBadges, vendorName, groupByVendor };
+  dashboard.modelLibrary = { refresh, render, sync, install, remove, acceptLicense, revokeLicense, refreshHuggingFaceStatus, recordProgress, tagsFor, specialBadges, vendorName, groupByVendor, packPreviewData };
   document.addEventListener("DOMContentLoaded", () => {
     dashboard.$?.("#libraryModelSearch")?.addEventListener("input", () => render());
     dashboard.$?.("#modelLibraryFilters")?.querySelectorAll("[data-model-filter]").forEach(button => button.addEventListener("click", () => { activeFilter = button.dataset.modelFilter || "all"; dashboard.$("#modelLibraryFilters").querySelectorAll("[data-model-filter]").forEach(item => item.classList.toggle("active", item === button)); render(); }));

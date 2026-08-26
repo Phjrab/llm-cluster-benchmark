@@ -66,7 +66,7 @@ function bootstrapPayload(fixture) {
       "jetson-worker-01": [{ id: MODEL_ID, status: "recommended", reasons_ko: ["CUDA smoke 검증"], cautions_ko: [], memory: { fits: true, required_mb: 1700, safe_available_mb: 5000 } }],
       "pi-worker-02": [{ id: MODEL_ID, status: "compatible", reasons_ko: ["OpenBLAS smoke 검증"], cautions_ko: ["CPU 추론"], memory: { fits: true, required_mb: 1700, safe_available_mb: 2600 } }],
     },
-    model_starter_packs: [], model_catalog_policy: {}, runs: visibleRuns, suites: [],
+    model_starter_packs: [{ id: "minimal_smoke", label_ko: "Minimal Smoke Pack", model_ids: [MODEL_ID, "missing-model/catalog.gguf"] }], model_catalog_policy: {}, runs: visibleRuns, suites: [],
     experiment_groups: [{ experiment_id: "e2e-experiment", name: "browser-e2e", run_count: visibleRuns.length, runs: visibleRuns, latest_run: visibleRuns[0] || null, default_config: { execution_strategy: "replicated_round_robin", node_names: fixture.nodes.map(node => node.name), model_ids: [MODEL_ID] } }],
     actions: [], environment: fixture.nodes.map(node => ({ node: node.name, status: "ready", backend: { kind: node.platform === "jetson" ? "cuda" : "openblas", verified: true }, checked_at: "2026-08-24T10:00:00Z", checks: [] })),
     settings: { worker_api_auth: false, dashboard_token_auth: false }, onboarding: {}, active_experiment: fixture.activeExperiment,
@@ -123,6 +123,12 @@ test("Dashboard core flow renders workers, models, power warning, creates and re
   await expect(page.locator('#orbitWorkers [data-orbit-worker="pi-worker-02"]')).toContainText("ONLINE");
   await expect(page.locator("#workerCount")).toHaveText("2");
   await expect(page.locator("#modelLibrary")).toContainText("Qwen2.5 1.5B Instruct");
+  await page.locator('[data-model-pack="minimal_smoke"]').click();
+  await expect(page.locator("#modelStarterPackPreview")).toBeVisible();
+  await expect(page.locator("#modelStarterPackPreview")).toContainText("Qwen2.5 1.5B Instruct");
+  await expect(page.locator("#modelStarterPackPreview")).toContainText("missing-model/catalog.gguf");
+  await expect(page.locator("#modelStarterPackPreview")).toContainText("설치됨 1개 · 미설치 1개");
+  await expect(page.locator("[data-pack-apply]")).toContainText("설치된 1개 모델을 실험에 적용");
   await page.locator('[data-model-view="vendors"]').click();
   await expect(page.locator(".vendor-overview-card")).toHaveCount(1);
   await expect(page.locator(".vendor-overview-card")).toContainText("Qwen");
