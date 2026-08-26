@@ -491,6 +491,11 @@ function renderEnvironmentSummary() {
   });
 }
 
+function orbitWorkerState(node, status = {}) {
+  if (!node?.enabled) return "DISABLED";
+  return status.api ? "ONLINE" : "OFFLINE";
+}
+
 function updateSummary() {
   const visible = topologyNodes();
   const enabled = visible.filter(node => node.enabled);
@@ -498,6 +503,7 @@ function updateSummary() {
   const selected = [...state.selectedNodes];
   const powers = online.map(node => Number(statusFor(node.name).metrics?.power_w)).filter(Number.isFinite);
   $("#onlineCount").textContent = online.length;
+  $("#workerCount").textContent = visible.length;
   $("#enabledCount").textContent = enabled.length;
   $("#selectedCount").textContent = selected.length;
   $("#runNodes").textContent = selected.length;
@@ -516,15 +522,19 @@ function updateSummary() {
   $("#controllerDashboard").textContent = dashboardReady ? "ONLINE" : "OFFLINE";
   $("#controllerScheduler").textContent = schedulerReady ? "READY" : "CHECKING";
   $("#controllerStorage").textContent = storageReady ? "READY" : "CHECKING";
-  const workers = enabled;
-  $$('[data-orbit-worker]').forEach((element, index) => {
-    const worker = workers[index];
-    element.hidden = !worker;
-    element.title = worker ? `${worker.name} · ${worker.host}` : "";
-    const label = $("span", element);
-    if (label) label.textContent = worker?.name || "";
-    element.classList.toggle("online", Boolean(worker && statusFor(worker.name).api));
-  });
+  const orbit = $("#orbitWorkers");
+  if (orbit) {
+    const workerCount = visible.length;
+    orbit.dataset.dense = workerCount > 8 ? "true" : "false";
+    orbit.innerHTML = visible.map((worker, index) => {
+      const stateLabel = orbitWorkerState(worker, statusFor(worker.name));
+      const angle = -90 + (360 / Math.max(workerCount, 1)) * index;
+      const radius = workerCount <= 4 ? 40 : workerCount <= 8 ? 44 : 47;
+      const left = 50 + Math.cos(angle * Math.PI / 180) * radius;
+      const top = 50 + Math.sin(angle * Math.PI / 180) * radius;
+      return `<div class="satellite ${stateLabel.toLowerCase()}" data-orbit-worker="${escapeHtml(worker.name)}" style="--orbit-left:${left.toFixed(3)}%;--orbit-top:${top.toFixed(3)}%" title="${escapeHtml(`${worker.name} · ${worker.host} · ${stateLabel}`)}" aria-label="${escapeHtml(`${worker.name} ${stateLabel}`)}"><i></i><span>${escapeHtml(worker.name)}</span><b>${stateLabel}</b></div>`;
+    }).join("");
+  }
   $("#addNodeButton").disabled = false;
   $("#addNodeButton").title = "새 워커를 연결합니다. 등록 노드 수에는 고정 제한이 없습니다.";
   const latest = state.runs.find(run => run.status === "completed");
@@ -2559,7 +2569,7 @@ globalThis.ClusterDashboard = Object.assign(globalThis.ClusterDashboard || {}, {
   platformName, strategyMeta, runStrategy, runModelId, shortModelName,
   topologyNodes, renderNodes, renderModels, renderRuns,
   runActionOnNodes, refreshExperimentData, selectedModelIds, setSelectedModels,
-  copyText,
+  copyText, orbitWorkerState,
 });
 
 document.addEventListener("DOMContentLoaded", () => {

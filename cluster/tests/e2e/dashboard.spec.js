@@ -118,6 +118,10 @@ test("Dashboard core flow renders workers, models, power warning, creates and re
 
   await expect(page.locator('[data-node-card="jetson-worker-01"]')).toBeVisible();
   await expect(page.locator('[data-node-card="pi-worker-02"]')).toContainText("POWER WARNING · HISTORY");
+  await expect(page.locator("#orbitWorkers [data-orbit-worker]")).toHaveCount(2);
+  await expect(page.locator('#orbitWorkers [data-orbit-worker="jetson-worker-01"]')).toContainText("ONLINE");
+  await expect(page.locator('#orbitWorkers [data-orbit-worker="pi-worker-02"]')).toContainText("ONLINE");
+  await expect(page.locator("#workerCount")).toHaveText("2");
   await expect(page.locator("#modelLibrary")).toContainText("Qwen2.5 1.5B Instruct");
 
   await page.locator("#experimentName").fill("phase-08-browser-flow");
