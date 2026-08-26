@@ -136,6 +136,24 @@ test("Dashboard core flow renders workers, models, power warning, creates and re
   await expect(page.locator(".vendor-overview-card header > strong small")).toHaveText("MODELS");
   await page.locator('[data-vendor-open="Qwen"]').click();
   await expect(page.locator("#modelLibrary")).toContainText("Qwen2.5 1.5B Instruct");
+  await page.evaluate(() => {
+    const base = window.ClusterDashboard.state.models[0];
+    window.__e2eBaseModel = base;
+    window.ClusterDashboard.state.models = Array.from({ length: 12 }, (_, index) => ({
+      ...base, id: `qwen-page-${index + 1}.gguf`, filename: `qwen-page-${index + 1}.gguf`,
+      catalog: { ...base.catalog, display_name: `Qwen Page Model ${index + 1}` },
+    }));
+    window.ClusterDashboard.renderModelLibrary();
+  });
+  await page.locator("#modelPageSize").selectOption("5");
+  await expect(page.locator("#modelLibrary .library-model-card")).toHaveCount(5);
+  await expect(page.locator("#modelPageInfo")).toHaveText("1–5 / 12개");
+  await page.locator('[data-model-page="2"]:not([aria-label])').click();
+  await expect(page.locator("#modelPageInfo")).toHaveText("6–10 / 12개");
+  await page.evaluate(() => {
+    window.ClusterDashboard.state.models = [window.__e2eBaseModel];
+    window.ClusterDashboard.renderModels({ model_ids: [window.__e2eBaseModel.id] });
+  });
 
   await page.locator("#experimentName").fill("phase-08-browser-flow");
   await page.locator("#requestsInput").fill("2");
@@ -155,6 +173,21 @@ test("Result responses, private trash deletion, and safe worker disconnect remai
   const fixture = fixtureState();
   await installApiFixture(page, fixture);
   await page.goto("/#results");
+
+  await page.evaluate(() => {
+    const base = window.ClusterDashboard.state.runs[0];
+    const runs = [base, ...Array.from({ length: 11 }, (_, index) => ({ ...base, run_id: `run-page-${index + 2}`, name: `browser-page-${index + 2}` }))];
+    window.ClusterDashboard.state.runs = runs;
+    window.ClusterDashboard.state.experimentGroups[0].runs = runs;
+    window.ClusterDashboard.state.experimentGroups[0].run_count = runs.length;
+    window.ClusterDashboard.renderRuns();
+  });
+  await page.locator("#resultPageSize").selectOption("5");
+  await expect(page.locator("#runsTable tr")).toHaveCount(5);
+  await expect(page.locator("#resultPageInfo")).toHaveText("1–5 / 12개");
+  await page.locator('[data-result-page="2"]:not([aria-label])').click();
+  await expect(page.locator("#resultPageInfo")).toHaveText("6–10 / 12개");
+  await page.locator('[data-result-page="1"]:not([aria-label])').click();
 
   await page.locator(`[data-view-run="${RUN_ID}"]`).click();
   await expect(page.locator("#resultInspector")).toContainText("엣지 LLM 장점을 설명해줘.");

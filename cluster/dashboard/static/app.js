@@ -21,6 +21,32 @@ const fmt = (value, digits = 1, fallback = "—") => finite(value) ? Number(valu
 const pct = value => finite(value) ? `${fmt(value, 0)}%` : "—";
 const DASHBOARD_COLORS = ["#718f17", "#e57c38", "#163126", "#0072b2", "#cc79a7", "#f0e442"];
 const PUBLICATION_COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#000000"];
+let resultPageSize = 10;
+let resultCurrentPage = 1;
+
+function paginateItems(items = [], requestedPage = 1, requestedSize = 10) {
+  const pageSize = Math.max(1, Math.min(100, Number(requestedSize) || 10));
+  const totalItems = items.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const page = Math.max(1, Math.min(totalPages, Number(requestedPage) || 1));
+  const startIndex = (page - 1) * pageSize;
+  return { items: items.slice(startIndex, startIndex + pageSize), page, pageSize, totalItems, totalPages, startIndex, endIndex: Math.min(startIndex + pageSize, totalItems) };
+}
+
+function paginationPages(page, totalPages) {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+  const pages = new Set([1, totalPages, page - 1, page, page + 1].filter(value => value >= 1 && value <= totalPages));
+  const sorted = [...pages].sort((a, b) => a - b); const result = [];
+  sorted.forEach((value, index) => { if (index && value - sorted[index - 1] > 1) result.push("…"); result.push(value); });
+  return result;
+}
+
+function renderResultPagination(meta) {
+  const info = $("#resultPageInfo"); const buttons = $("#resultPageButtons");
+  if (!info || !buttons) return;
+  info.textContent = meta.totalItems ? `${meta.startIndex + 1}–${meta.endIndex} / ${meta.totalItems}개` : "0개";
+  buttons.innerHTML = `<button type="button" data-result-page="${meta.page - 1}" ${meta.page <= 1 ? "disabled" : ""} aria-label="이전 페이지">‹</button>${paginationPages(meta.page, meta.totalPages).map(value => value === "…" ? `<span>…</span>` : `<button type="button" data-result-page="${value}" class="${value === meta.page ? "active" : ""}" aria-current="${value === meta.page ? "page" : "false"}">${value}</button>`).join("")}<button type="button" data-result-page="${meta.page + 1}" ${meta.page >= meta.totalPages ? "disabled" : ""} aria-label="다음 페이지">›</button>`;
+}
 const platformName = value => ({ jetson: "NVIDIA Jetson", "raspberry-pi": "Raspberry Pi 5", auto: "자동 감지", "generic-linux": "Linux" }[value] || value || "미확인");
 const STRATEGIES = {
   single_node: { label: "단일 노드 기준선", short: "SINGLE" },
@@ -918,6 +944,9 @@ function renderRuns() {
     ? `${baseContext} · 서로 다른 실행 방식이 섞여 있어 그래프를 숨겼습니다. 방식별 실험 묶음을 따로 만들어 비교하세요.`
     : baseContext;
   const table = $("#runsTable");
+  const paginatedRuns = paginateItems(runs, resultCurrentPage, resultPageSize);
+  resultCurrentPage = paginatedRuns.page;
+  renderResultPagination(paginatedRuns);
   if (!runs.length && !suites.length) {
     table.innerHTML = `<tr><td colspan="10" class="empty-cell">이 실험의 실행 기록 없음</td></tr>`;
     $("#resultHighlight").innerHTML = `<div class="empty-result"><strong>연결된 벤치마크 결과가 없습니다.</strong><span>이 실험을 실행하면 결과가 같은 experiment_id에 누적됩니다.</span></div>`;
@@ -925,7 +954,7 @@ function renderRuns() {
     updateSummary();
     return;
   }
-  table.innerHTML = runs.length ? runs.slice(0, 30).map(run => `
+  table.innerHTML = runs.length ? paginatedRuns.items.map(run => `
     <tr data-run-experiment="${escapeHtml(runExperimentId(run))}">
       <td><strong>${escapeHtml(run.name || run.run_id)}</strong><br><small>${escapeHtml(run.run_id || "")}</small></td>
       <td class="model-cell"><strong title="${escapeHtml(runModelId(run))}">${escapeHtml(shortModelName(runModelId(run)))}</strong>${run.suite_id ? `<span class="suite-badge">SUITE ${escapeHtml(runSuiteLabel(run))}</span>` : ""}</td>
@@ -986,6 +1015,7 @@ function renderRuns() {
   $$('[data-run-experiment]').forEach(row => row.addEventListener("click", event => {
     if (event.target.closest("button")) return;
     $("#resultExperimentFilter").value = row.dataset.runExperiment;
+    resultCurrentPage = 1;
     window.ClusterDashboard.results?.clear?.();
     renderRuns();
   }));
@@ -2498,12 +2528,20 @@ function bindEvents() {
     $("#experimentName").value = group.name;
     applyConfig(group.default_config || {}, false);
     $("#resultExperimentFilter").value = group.experiment_id;
+    resultCurrentPage = 1;
     window.ClusterDashboard.results?.clear?.();
     renderRuns();
   });
   $("#resultExperimentFilter").addEventListener("change", () => {
+    resultCurrentPage = 1;
     window.ClusterDashboard.results?.clear?.();
     renderRuns();
+  });
+  $("#resultPageSize").addEventListener("change", event => { resultPageSize = Number(event.currentTarget.value) || 10; resultCurrentPage = 1; renderRuns(); });
+  $("#resultPageButtons").addEventListener("click", event => {
+    const button = event.target.closest("[data-result-page]"); if (!button || button.disabled) return;
+    resultCurrentPage = Number(button.dataset.resultPage) || 1; renderRuns();
+    $("#runsTable")?.closest(".table-wrap")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
   $("#experimentPickerSearch").addEventListener("input", event => {
     const query = event.currentTarget.value.trim().toLowerCase();
@@ -2569,7 +2607,7 @@ globalThis.ClusterDashboard = Object.assign(globalThis.ClusterDashboard || {}, {
   platformName, strategyMeta, runStrategy, runModelId, shortModelName,
   topologyNodes, renderNodes, renderModels, renderRuns,
   runActionOnNodes, refreshExperimentData, selectedModelIds, setSelectedModels,
-  copyText, orbitWorkerState,
+  copyText, orbitWorkerState, paginateItems, paginationPages,
 });
 
 document.addEventListener("DOMContentLoaded", () => {

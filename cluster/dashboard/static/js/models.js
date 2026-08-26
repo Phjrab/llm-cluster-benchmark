@@ -6,6 +6,8 @@
   let activeView = "models";
   let activeVendor = "";
   let activePackId = "";
+  let modelPageSize = 10;
+  let modelCurrentPage = 1;
   const STATUS = {
     recommended: ["RECOMMENDED", "ready"], compatible: ["COMPATIBLE", "compatible"],
     candidate: ["CANDIDATE", "candidate"], verified: ["VERIFIED", "verified"],
@@ -153,6 +155,13 @@
     });
   }
 
+  function renderModelPagination(meta) {
+    const info = dashboard.$?.("#modelPageInfo"); const buttons = dashboard.$?.("#modelPageButtons");
+    if (!info || !buttons) return;
+    info.textContent = meta.totalItems ? `${meta.startIndex + 1}–${meta.endIndex} / ${meta.totalItems}개` : "0개";
+    buttons.innerHTML = `<button type="button" data-model-page="${meta.page - 1}" ${meta.page <= 1 ? "disabled" : ""} aria-label="이전 페이지">‹</button>${dashboard.paginationPages(meta.page, meta.totalPages).map(value => value === "…" ? `<span>…</span>` : `<button type="button" data-model-page="${value}" class="${value === meta.page ? "active" : ""}" aria-current="${value === meta.page ? "page" : "false"}">${value}</button>`).join("")}<button type="button" data-model-page="${meta.page + 1}" ${meta.page >= meta.totalPages ? "disabled" : ""} aria-label="다음 페이지">›</button>`;
+  }
+
   function renderStarterPacks() {
     const root = dashboard.$?.("#modelStarterPacks");
     if (!root) return;
@@ -185,19 +194,22 @@
     renderStarterPacks();
     root.classList.toggle("vendor-view", activeView === "vendors");
     if (activeView === "vendors") {
-      root.innerHTML = groups.length ? renderVendorGroups(groups) : `<div class="model-library-empty">검색 조건에 맞는 회사 또는 모델이 없습니다.</div>`;
+      const page = dashboard.paginateItems(groups, modelCurrentPage, modelPageSize); modelCurrentPage = page.page; renderModelPagination(page);
+      root.innerHTML = groups.length ? renderVendorGroups(page.items) : `<div class="model-library-empty">검색 조건에 맞는 회사 또는 모델이 없습니다.</div>`;
       root.querySelectorAll("[data-vendor-open]").forEach(button => button.addEventListener("click", () => {
         activeVendor = button.dataset.vendorOpen || "";
         activeView = "models";
+        modelCurrentPage = 1;
         dashboard.$("#modelLibraryViewModes")?.querySelectorAll("[data-model-view]").forEach(item => { const active = item.dataset.modelView === activeView; item.classList.toggle("active", active); item.setAttribute("aria-pressed", String(active)); });
         render();
         root.scrollIntoView({ behavior: "smooth", block: "start" });
       }));
       return;
     }
-    dashboard.$?.("#clearVendorFilter")?.addEventListener("click", () => { activeVendor = ""; render(); });
+    dashboard.$?.("#clearVendorFilter")?.addEventListener("click", () => { activeVendor = ""; modelCurrentPage = 1; render(); });
+    const page = dashboard.paginateItems(rows, modelCurrentPage, modelPageSize); modelCurrentPage = page.page; renderModelPagination(page);
     if (!rows.length) { root.innerHTML = `<div class="model-library-empty">검색 조건에 맞는 모델이 없습니다.</div>`; return; }
-    root.innerHTML = rows.map(model => {
+    root.innerHTML = page.items.map(model => {
       const catalog = model.catalog || {};
       const installedNodes = model.installed_nodes || [];
       const targets = workerTargets();
@@ -307,14 +319,21 @@
   dashboard.renderModelLibrary = render;
   dashboard.modelLibrary = { refresh, render, sync, install, remove, acceptLicense, revokeLicense, refreshHuggingFaceStatus, recordProgress, tagsFor, specialBadges, vendorName, groupByVendor, packPreviewData };
   document.addEventListener("DOMContentLoaded", () => {
-    dashboard.$?.("#libraryModelSearch")?.addEventListener("input", () => render());
-    dashboard.$?.("#modelLibraryFilters")?.querySelectorAll("[data-model-filter]").forEach(button => button.addEventListener("click", () => { activeFilter = button.dataset.modelFilter || "all"; dashboard.$("#modelLibraryFilters").querySelectorAll("[data-model-filter]").forEach(item => item.classList.toggle("active", item === button)); render(); }));
+    dashboard.$?.("#libraryModelSearch")?.addEventListener("input", () => { modelCurrentPage = 1; render(); });
+    dashboard.$?.("#modelLibraryFilters")?.querySelectorAll("[data-model-filter]").forEach(button => button.addEventListener("click", () => { activeFilter = button.dataset.modelFilter || "all"; modelCurrentPage = 1; dashboard.$("#modelLibraryFilters").querySelectorAll("[data-model-filter]").forEach(item => item.classList.toggle("active", item === button)); render(); }));
     dashboard.$?.("#modelLibraryViewModes")?.querySelectorAll("[data-model-view]").forEach(button => button.addEventListener("click", () => {
       activeView = button.dataset.modelView || "models";
       if (activeView === "vendors") activeVendor = "";
+      modelCurrentPage = 1;
       dashboard.$("#modelLibraryViewModes").querySelectorAll("[data-model-view]").forEach(item => { const active = item === button; item.classList.toggle("active", active); item.setAttribute("aria-pressed", String(active)); });
       render();
     }));
+    dashboard.$?.("#modelPageSize")?.addEventListener("change", event => { modelPageSize = Number(event.currentTarget.value) || 10; modelCurrentPage = 1; render(); });
+    dashboard.$?.("#modelPageButtons")?.addEventListener("click", event => {
+      const button = event.target.closest("[data-model-page]"); if (!button || button.disabled) return;
+      modelCurrentPage = Number(button.dataset.modelPage) || 1; render();
+      dashboard.$?.("#modelLibrary")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
     dashboard.$?.("#refreshModelsButton")?.addEventListener("click", async () => {
       try { await refresh(); dashboard.toast?.("모델 상태 갱신", "카탈로그와 Worker 인벤토리를 새로 읽었습니다."); }
       catch (error) { dashboard.toast?.("모델 상태 갱신 실패", error.message, "error"); }
