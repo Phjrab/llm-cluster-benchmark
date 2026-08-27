@@ -40,3 +40,10 @@ Live hardware is reported as unavailable when no labelled runner/Workers are con
 - The repository owner must choose a license before redistribution terms can be stated.
 - A GitHub-hosted run of the changed workflow is the authoritative validation of YAML runner behavior and artifact upload paths after push.
 - Further `services.py` extraction should be driven by a concrete change and characterization test, not file length alone.
+
+## Post-Workstream resolution
+
+On 2026-08-28 the repository owner explicitly selected Apache License 2.0.
+The root license file, package metadata, contributor terms, and wheel regression
+checks now carry that decision. The original gap analysis above is retained as
+the point-in-time reason WS-07 did not choose a license autonomously.

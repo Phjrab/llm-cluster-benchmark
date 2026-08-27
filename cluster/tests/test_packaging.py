@@ -76,6 +76,14 @@ class PackagingMetadataTests(unittest.TestCase):
         project = self.metadata["project"]
         self.assertEqual(project["requires-python"], ">=3.10")
         self.assertEqual(project.get("dependencies"), [])
+        self.assertEqual(project["license"], {"file": "LICENSE"})
+        self.assertIn(
+            "License :: OSI Approved :: Apache Software License",
+            project["classifiers"],
+        )
+        license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+        self.assertIn("Apache License", license_text)
+        self.assertIn("Version 2.0, January 2004", license_text)
 
         extras = project["optional-dependencies"]
         controller = _requirement_lines(ROOT / "requirements-controller.txt")
@@ -134,6 +142,7 @@ class WheelInstallationTests(unittest.TestCase):
             for filename in (
                 "pyproject.toml",
                 "README.md",
+                "LICENSE",
                 "requirements-controller.txt",
                 "requirements-worker.txt",
             ):
@@ -212,6 +221,11 @@ class WheelInstallationTests(unittest.TestCase):
                 metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
                 metadata = BytesParser().parsebytes(archive.read(metadata_name))
                 self.assertEqual(metadata["Requires-Python"], ">=3.10")
+                self.assertIn(
+                    "License :: OSI Approved :: Apache Software License",
+                    metadata.get_all("Classifier"),
+                )
+                self.assertTrue(any(name.endswith(".dist-info/licenses/LICENSE") for name in names))
                 self.assertCountEqual(metadata.get_all("Provides-Extra"), ["controller", "worker"])
                 self.assertTrue(
                     all("extra ==" in requirement for requirement in metadata.get_all("Requires-Dist"))

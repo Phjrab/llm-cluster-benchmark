@@ -8,7 +8,11 @@ version = "1.0.0"
 description = "Controller/Worker LLM benchmark orchestration for Jetson and Raspberry Pi clusters"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
 dependencies = []
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+]
 
 [project.urls]
 Repository = "https://github.com/Phjrab/llm-cluster-benchmark"

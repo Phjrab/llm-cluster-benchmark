@@ -53,6 +53,10 @@ Raspberry Pi 5는 OpenBLAS backend를 검증하며 pinned native llama.cpp RPC r
 - [Locked research configuration](config/research/)
 - [Model Library direct-download and RPC-large manual test](docs/manual/model-library-download-and-rpc-large-test.md)
 
+## License
+
+이 프로젝트는 [Apache License 2.0](LICENSE)으로 배포됩니다.
+
 과거 단일 Jetson benchmark, standalone chat server, notebook, plotting script 및
 historical output은 현재 제품 트리에서 제거되었습니다. 삭제 전 내용과 커밋은 Git
 history에 보존되며 history rewrite 없이 복구할 수 있습니다.

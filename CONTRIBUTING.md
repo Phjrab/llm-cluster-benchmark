@@ -68,5 +68,6 @@ and must not be removed in an unrelated refactor:
 - legacy inventory readers under `cluster.integrations`;
 - additive readers for older result schemas.
 
-There is currently no repository license file. Contributors must not add or
-infer a license without an explicit repository-owner decision.
+Contributions are accepted under the repository's
+[Apache License 2.0](LICENSE). By submitting a contribution, contributors
+agree that it may be distributed under those terms.

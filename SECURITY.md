@@ -37,5 +37,6 @@ Controller is accessed remotely.
 
 Performance differences, model quality, expected RPC inefficiency, and
 hardware-specific package failures are normally engineering issues unless they
-cross a trust boundary or expose protected data. The absence of a project
-license is an owner decision and is not resolved by this policy.
+cross a trust boundary or expose protected data. The repository's Apache-2.0
+license does not change these security boundaries or provide an operational
+security guarantee.

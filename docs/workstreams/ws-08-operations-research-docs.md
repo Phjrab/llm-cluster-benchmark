@@ -36,4 +36,5 @@ The full Python, compile, repository validation, wheel, JavaScript, and browser 
 - No product or schema change and no real hardware run.
 - This guide does not replace the exact JSON locks, schema validators, formal protocol, analysis plan, or security policy.
 - Operators can still export a graph with a misleading handwritten title; publication review must confirm the metric and cohort labels.
-- Project licensing remains an owner decision recorded by WS-07.
+- Project licensing was subsequently resolved by the repository owner's explicit
+  Apache License 2.0 selection; packaging and documentation checks preserve it.
