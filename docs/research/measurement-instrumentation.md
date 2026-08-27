@@ -1,6 +1,6 @@
 # Measurement Instrumentation Contract
 
-Status: Phase 05 contract, schema version 1
+Status: Phase 05 contract with WS-01 additive extension, schema version 2
 
 This contract adds research measurements without changing the existing
 19-column `requests.csv`. Each run may now contain a private
@@ -42,9 +42,27 @@ valid and readable.
 | `decode_time_s` | s | first streamed token to stream completion | Excludes the first-token interval |
 | `decode_tokens_per_s` | tokens/s | tokens after the first divided by decode time | Null for zero-duration decode |
 | `total_tokens` | tokens | input plus generated tokens | Null if input tokens are unavailable |
+| `token_count_source` | enum | Worker/RPC response metadata | One of `server_usage`, `llama_cpp_tokenize`, `retokenized_output`, `stream_chunk_estimate`, or `unavailable` |
+| `controller_executor_queue_wait_s` | s | Controller executor submission to invocation | Thread-pool queue delay, separate from request E2E |
+| `worker_inference_lock_wait_s` | s | Worker llama-context lock | Wait before the single inference slot is acquired |
+| `prompt_eval_s` | s | Worker lock acquisition to first generated token | Backend prompt-eval/first-token interval; null when unavailable |
 
 The existing `server_ttft_s`, `server_generation_s`, `generated_tokens`, and
 `tokens_per_s` fields retain their previous meanings in `requests.csv`.
+
+Worker inference metadata records `inference_path=chat_completion` or
+`completion_fallback`, a stable fallback reason code, the available chat-template
+hash, and `inference_slots=1`. Only recognized chat-template compatibility errors
+may enter the fallback path; allocation, corruption, and other runtime errors
+remain failures.
+
+Run summaries add explicit throughput semantics. `logical_requests_per_s` counts
+fully successful logical user requests, while `physical_requests_per_s` counts
+successful Worker/RPC calls. `effective_user_tokens_per_s` counts one deterministic
+representative response per fully successful logical request; broadcast replicas
+are therefore not multiplied. `physical_cluster_tokens_per_s` sums every successful
+physical response. Legacy `requests_per_s` and `cluster_tokens_per_s` remain aliases
+of the physical metrics for existing readers.
 
 ## 3. Energy metrics
 
@@ -108,7 +126,7 @@ unsupported runtime counter, insufficient samples, or an unfrozen policy is
 <run>/events.jsonl
 <run>/responses.jsonl
 <run>/requests.csv          # unchanged 19 columns
-<run>/measurements.jsonl    # additive schema v1
+<run>/measurements.jsonl    # additive schema v2; schema v1 remains readable
 <run>/summary.json          # additive measurement_instrumentation
 ```
 
