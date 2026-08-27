@@ -1,6 +1,6 @@
 # Measurement Instrumentation Contract
 
-Status: Phase 05 contract with WS-01 additive extension, schema version 2
+Status: Phase 05 contract with WS-01/WS-04 additive extensions, schema version 3
 
 This contract adds research measurements without changing the existing
 19-column `requests.csv`. Each run may now contain a private
@@ -72,6 +72,11 @@ of the physical metrics for existing readers.
 | `average_power_w` | W | Time-weighted measured energy divided by covered scenario duration |
 | `peak_power_w` | W | Maximum valid measurement sample |
 | `energy_j` | J | Trapezoidal integration of consecutive valid power samples inside each scenario |
+| `measurement_energy_j` | J | Explicit alias of `energy_j` for the bounded measurement interval |
+| `joules_per_request` | J/request | Measured energy divided by successful physical requests |
+| `joules_per_generated_token` | J/token | Measured energy divided by successful generated tokens |
+| `tokens_per_joule` | tokens/J | Successful generated tokens divided by measured energy |
+| `tokens_per_second_per_watt` | tokens/s/W | Throughput divided by time-weighted power; dimensionally equal to tokens/J for the same interval |
 | `generated_tokens_per_j` | tokens/J | Successful generated tokens divided by energy |
 | `requests_per_j` | requests/J | Successful physical requests divided by energy |
 
@@ -80,6 +85,13 @@ If one node lacks power telemetry, cluster-wide energy and efficiency are null;
 available per-node values remain intact. Cluster power values are sums of the
 per-node values. Peak is therefore a conservative sum of node peaks rather
 than a claim that every peak occurred simultaneously.
+
+Every telemetry sample records `telemetry_provider`, `power_provider`, provider
+degradation/error evidence, Jetson power mode, and `jetson_clocks`. Valid Jetson
+watts collected through jetson-stats use `power_provider=jtop`. A degraded jtop
+provider leaves energy null with reason `telemetry_provider_degraded`. Raspberry
+Pi psutil telemetry never becomes a watt estimate; without an external sensor
+its energy fields are null with reason `raspberry_pi_power_sensor_unavailable`.
 
 ## 4. Thermal, throttling, and frequency
 
@@ -126,7 +138,7 @@ unsupported runtime counter, insufficient samples, or an unfrozen policy is
 <run>/events.jsonl
 <run>/responses.jsonl
 <run>/requests.csv          # unchanged 19 columns
-<run>/measurements.jsonl    # additive schema v2; schema v1 remains readable
+<run>/measurements.jsonl    # additive schema v3; schema v1/v2 remain readable
 <run>/summary.json          # additive measurement_instrumentation
 ```
 
