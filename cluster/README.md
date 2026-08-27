@@ -4,6 +4,9 @@
 Raspberry Pi 5 Worker를 관리하고, 동일 GGUF 워크로드를 재현 가능하게 비교하는
 클러스터 벤치마크 런타임이다.
 
+실험 전략, 처리량 계산식, 전력·품질 조건, 결과 schema와 복구 절차를 한 번에
+검토하려면 [운영·연구 해석 가이드](../docs/operations-and-research-guide.md)를 먼저 읽는다.
+
 Controller는 대시보드·스케줄링·결과 저장만 담당한다. 모델을 로드하거나 추론에
 참여하지 않는다. Jetson과 Raspberry Pi만 Worker이며, 모델 분할 RPC의 coordinator도
 선택된 Worker 중 한 대다. 과거 CSV의 `head` 행은 읽기·마이그레이션 호환용일 뿐 새
