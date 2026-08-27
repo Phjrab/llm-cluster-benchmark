@@ -151,6 +151,10 @@ coordinator나 계산 장치가 아니다.
 ```bash
 python -m cluster.clusterctl \
   --node edge-worker-01 --node edge-worker-02 prepare-rpc
+
+# 성공·실패·취소 뒤 두 고정 RPC 포트와 관리 프로세스가 사라졌는지 확인
+python -m cluster.clusterctl \
+  --node edge-worker-01 --node edge-worker-02 rpc-cleanup-check
 ```
 
 llama.cpp RPC는 인증되지 않은 실험용 프로토콜이다. 신뢰하는 사설 LAN에서 실험 동안만
@@ -239,6 +243,9 @@ llama.cpp/llama-cpp-python이며, cloud-only GPT·Claude·Gemini·Grok은 GGUF c
 - Dashboard 토큰은 URL query로 받지 않고 `X-Cluster-Token` 헤더로만 전송한다.
 - Worker 토큰은 브라우저에 보내지 않고 Controller와 Worker 사이에서만 사용한다.
 - 모델은 사용자가 명시적으로 설치/동기화하며 실험 시작이 자동 다운로드하지 않는다.
+- direct Worker 다운로드는 catalog의 exact size/SHA-256, redirect 최종 호스트, 128 GiB
+  기본 상한, 디스크 reserve를 검증하고 실패 시 `.part` 파일을 제거한다. 필요하면
+  `CLUSTER_MODEL_DOWNLOAD_ALLOWED_DOMAINS`로 허용 도메인을 더 좁힌다.
 - 코드 동기화는 `.git`, `.venv`, `models`, `outputs`, `.run`을 제외하고 `--delete`를 쓰지 않는다.
 - 삭제한 결과는 비공개 `results/_trash/`에서 복원할 수 있다. 영구 삭제는 실행 ID와
   현재 내용 체크섬을 다시 확인하며, formal/campaign 결과는 영구 삭제할 수 없다.
