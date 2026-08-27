@@ -437,6 +437,12 @@ class ExperimentConfigTests(unittest.TestCase):
         minimum.validate()
         maximum.validate()
 
+    def test_response_storage_mode_defaults_to_full_and_rejects_unknown_mode(self) -> None:
+        config = self.make_config()
+        config.validate()
+        self.assertEqual(config.response_storage_mode, "full")
+        self.assert_invalid(response_storage_mode="raw_forever")
+
     def test_numeric_limits_reject_out_of_range_or_non_finite_values(self) -> None:
         invalid_cases = (
             {"n_ctx": 127},

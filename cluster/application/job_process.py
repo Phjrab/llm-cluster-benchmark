@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 from cluster.application.suite_runner import ExperimentRunner, filesystem_suite_runner, utc_now
+from cluster.application.jobs import scrub_terminal_prompt
 from cluster.benchmark.runner import ExperimentConfig, run_experiment
 from cluster.clusterctl import Node, load_nodes, request_json, select_nodes
 from cluster.infrastructure.process import PsutilProcessInspector
@@ -200,6 +201,7 @@ def run_job(
                     ),
                 }
             )
+            scrub_terminal_prompt(value)
 
         repository.update(job_id, finish)
         return 0 if job_status in {"completed", "cancelled"} else 1
@@ -216,6 +218,7 @@ def run_job(
                     "errors": [*(value.get("errors") or []), error],
                 }
             )
+            scrub_terminal_prompt(value)
 
         repository.update(job_id, fail)
         return 1

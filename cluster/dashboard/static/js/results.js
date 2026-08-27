@@ -73,7 +73,7 @@
     return `<section class="participant-environment" aria-label="실험 참여 노드 정보"><div class="participant-environment-head"><div><span>PARTICIPANT NODE SNAPSHOT</span><h4>실험 참여 노드 · ${participants.length}대</h4></div><small>실험 시작 시점 기준</small></div><p>결과 재현을 위해 저장된 하드웨어와 런타임 정보입니다. SSH 키와 인증 정보는 포함하지 않습니다.</p><div class="participant-grid">${cards}</div></section>`;
   }
 
-  function renderResponses(run, responses) {
+  function renderResponses(run, responses, overallStorageStatus = "") {
     const inspector = dashboard.$?.("#resultInspector");
     const label = dashboard.$?.("#resultInspectorStatus");
     if (!inspector || !label) return;
@@ -94,16 +94,29 @@
         : `LOGICAL REQUEST ${requestId}`;
       return `<article class="response-group"><div class="response-group-head"><div><span>${dashboard.escapeHtml(requestLabel)}</span><strong>${broadcast ? `${group.length} worker responses` : `${group.length} response`}</strong></div><b class="hash-agreement ${hashes.size === 1 ? "match" : hashes.size > 1 ? "mismatch" : "unknown"}">${agreement}</b></div><div class="prompt-block"><span>PROMPT</span><pre>${dashboard.escapeHtml(prompt)}</pre></div><div class="response-grid">${group.map(response => {
         const status = dashboard.utils.statusPresentation(response.ok === false || response.error ? "failed" : "completed");
-        const output = response.response ?? response.output ?? response.text ?? response.error ?? "No generated response was persisted.";
+        const storageStatus = response.response_storage_status || "legacy_missing";
+        const storagePresentation = ({
+          stored: ["원문 저장됨", "stored"],
+          hash_only: ["해시만 저장됨", "hash-only"],
+          not_persisted: ["응답 저장 안 함", "not-persisted"],
+          legacy_missing: ["이전 결과 · 상태 미기록", "legacy-missing"],
+        })[storageStatus] || ["저장 상태 알 수 없음", "legacy-missing"];
+        const output = storageStatus === "stored"
+          ? (response.response ?? response.output ?? response.text ?? "생성된 원문이 비어 있습니다.")
+          : storageStatus === "hash_only"
+            ? "응답 원문은 저장하지 않았습니다. 길이와 SHA-256만 보존됩니다."
+            : storageStatus === "not_persisted"
+              ? "응답 원문·길이·SHA-256을 저장하지 않았습니다. 성능과 실패 메타데이터만 보존됩니다."
+              : "이전 형식의 결과로 응답 원문 저장 여부를 확인할 수 없습니다.";
         const metrics = [
           Number.isFinite(Number(response.ttft_s)) ? `TTFT ${Number(response.ttft_s).toFixed(2)}s` : "",
           Number.isFinite(Number(response.e2e_s)) ? `E2E ${Number(response.e2e_s).toFixed(2)}s` : "",
           Number.isFinite(Number(response.generated_tokens)) ? `${response.generated_tokens} tokens` : "",
           Number.isFinite(Number(response.tokens_per_s)) ? `${Number(response.tokens_per_s).toFixed(2)} tok/s` : "",
         ].filter(Boolean).join(" · ");
-        return `<article class="response-card ${status.tone}"><header><div><span>${status.icon} ${status.label}</span><strong>${dashboard.escapeHtml(response.node || "worker")}</strong><small>${dashboard.escapeHtml(response.model_id || dashboard.runModelId?.(run) || "unknown model")}</small></div><code title="${dashboard.escapeHtml(response.output_sha256 || "")}">${dashboard.escapeHtml(response.output_sha256 ? response.output_sha256.slice(0, 16) : "hash N/A")}</code></header><pre>${dashboard.escapeHtml(output)}</pre><footer>${dashboard.escapeHtml(metrics || "No request-level metrics")}</footer></article>`;
+        return `<article class="response-card ${status.tone}"><header><div><span>${status.icon} ${status.label}</span><strong>${dashboard.escapeHtml(response.node || "worker")}</strong><small>${dashboard.escapeHtml(response.model_id || dashboard.runModelId?.(run) || "unknown model")}</small><em class="response-storage-badge ${storagePresentation[1]}">${dashboard.escapeHtml(storagePresentation[0])}</em></div><code title="${dashboard.escapeHtml(response.output_sha256 || "")}">${dashboard.escapeHtml(response.output_sha256 ? response.output_sha256.slice(0, 16) : "hash N/A")}</code></header><pre>${dashboard.escapeHtml(output)}</pre><footer>${dashboard.escapeHtml(metrics || "No request-level metrics")}</footer></article>`;
       }).join("")}</div></article>`;
-    }).join("") : `<div class="empty-result"><strong>저장된 응답이 없습니다.</strong><span>이전 형식의 결과이거나 prompt/response persistence가 꺼진 실행일 수 있습니다.</span></div>`;
+    }).join("") : `<div class="empty-result"><strong>${overallStorageStatus === "not_persisted" ? "응답을 저장하지 않도록 설정한 실행입니다." : "응답 기록이 없습니다."}</strong><span>${overallStorageStatus === "not_persisted" ? "성능 결과는 유지되며 원문·길이·SHA-256은 저장되지 않습니다." : "이전 형식의 결과이거나 완료된 요청이 없는 실행일 수 있습니다."}</span></div>`;
     const environment = dashboard.power?.resultEnvironmentHtml?.(run) || "";
     inspector.innerHTML = `${renderParticipantNodes(run)}${environment}${content}${renderFailureCards(run, responses)}`;
   }
@@ -134,7 +147,7 @@
     try {
       const payload = await dashboard.api(`/api/runs/${encodeURIComponent(runId)}/responses`);
       selected.responses = payload.responses || [];
-      renderResponses(run, selected.responses);
+      renderResponses(run, selected.responses, payload.response_storage_status || "");
       inspector.closest(".result-inspector")?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       label.className = "inspector-status failed";

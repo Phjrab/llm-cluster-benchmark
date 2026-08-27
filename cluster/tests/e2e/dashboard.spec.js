@@ -95,7 +95,7 @@ async function installApiFixture(page, fixture) {
       fixture.activeExperiment = { id: "job-e2e", name: fixture.experimentPayload.name, nodes: fixture.experimentPayload.node_names, status: "running", phase: "measurement", completed: 1, total: 2, execution_strategy: fixture.experimentPayload.execution_strategy };
       return json({ experiment: fixture.activeExperiment, definition: { experiment_id: "e2e-experiment" }, warnings: [] });
     }
-    if (path === `/api/runs/${RUN_ID}/responses`) return json({ run_id: RUN_ID, responses: [{ logical_request_id: 1, request_id: 1, node: "jetson-worker-01", model_id: MODEL_ID, prompt: "엣지 LLM 장점을 설명해줘.", response: "네트워크 의존도를 낮추고 지연을 줄일 수 있습니다.", output_sha256: "a".repeat(64), ok: true, ttft_s: 0.42, e2e_s: 2.01, generated_tokens: 14, tokens_per_s: 10.75 }] });
+    if (path === `/api/runs/${RUN_ID}/responses`) return json({ run_id: RUN_ID, response_storage_status: "mixed", responses: [{ logical_request_id: 1, request_id: 1, node: "jetson-worker-01", model_id: MODEL_ID, prompt: "엣지 LLM 장점을 설명해줘.", response: "네트워크 의존도를 낮추고 지연을 줄일 수 있습니다.", response_storage_status: "stored", output_sha256: "a".repeat(64), ok: true, ttft_s: 0.42, e2e_s: 2.01, generated_tokens: 14, tokens_per_s: 10.75 }, { logical_request_id: 2, request_id: 2, node: "pi-worker-02", model_id: MODEL_ID, response_storage_status: "hash_only", output_chars: 21, output_sha256: "b".repeat(64), ok: true, ttft_s: 0.71, e2e_s: 3.4, generated_tokens: 11, tokens_per_s: 7.5 }] });
     if (path === `/api/runs/${RUN_ID}` && request.method() === "DELETE") { fixture.deletedRuns.add(RUN_ID); return json({ ok: true, run_id: RUN_ID, trash: true }); }
     if (path === "/api/results/trash" && request.method() === "GET") return json({ trash: fixture.deletedRuns.has(RUN_ID) ? [{ trash_id: `${RUN_ID}-20260824`, run_id: RUN_ID, status: "completed", deleted_at_epoch_s: 1787500000, archive_sha256: "b".repeat(64), protected: false, campaign_id: null, suite_id: null }] : [] });
     if (path === `/api/results/trash/${RUN_ID}-20260824/restore` && request.method() === "POST") { fixture.deletedRuns.delete(RUN_ID); fixture.restoredRuns.add(RUN_ID); return json({ ok: true, run_id: RUN_ID, suite_restored: false }); }
@@ -162,6 +162,8 @@ test("Dashboard core flow renders workers, models, power warning, creates and re
   await expect.poll(() => fixture.experimentPayload?.name).toBe("phase-08-browser-flow");
   expect(fixture.experimentPayload.model_ids).toEqual([MODEL_ID]);
   expect(fixture.experimentPayload.node_names).toEqual(["jetson-worker-01", "pi-worker-02"]);
+  expect(fixture.experimentPayload.persist_prompt).toBe(true);
+  expect(fixture.experimentPayload.response_storage_mode).toBe("full");
   await expect(page.locator("#runPhase")).toHaveText("부하 측정");
 
   await page.reload();
@@ -193,6 +195,9 @@ test("Result responses, private trash deletion, and safe worker disconnect remai
   await expect(page.locator("#resultInspector")).toContainText("엣지 LLM 장점을 설명해줘.");
   await expect(page.locator("#resultInspector")).toContainText("네트워크 의존도를 낮추고 지연을 줄일 수 있습니다.");
   await expect(page.locator("#resultInspector")).toContainText("실험 참여 노드 · 2대");
+  await expect(page.locator("#resultInspector")).toContainText("원문 저장됨");
+  await expect(page.locator("#resultInspector")).toContainText("해시만 저장됨");
+  await expect(page.locator("#resultInspector")).toContainText("응답 원문은 저장하지 않았습니다.");
 
   page.once("dialog", dialog => dialog.accept());
   await page.locator(`[data-delete-run="${RUN_ID}"]`).click();

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import tempfile
 import unittest
@@ -15,7 +16,9 @@ from cluster.domain.failures import FAILURE_GUIDE, failure_from_exception, failu
 from cluster.infrastructure.storage import FilesystemRunRepository
 
 
-def config(*, persist_prompt: bool = True) -> ExperimentConfig:
+def config(
+    *, persist_prompt: bool = True, response_storage_mode: str = "full"
+) -> ExperimentConfig:
     return ExperimentConfig(
         experiment_id="results-failure",
         node_names=["worker-01"],
@@ -28,6 +31,7 @@ def config(*, persist_prompt: bool = True) -> ExperimentConfig:
         warmup_requests=0,
         prompt="patient privacy prompt",
         persist_prompt=persist_prompt,
+        response_storage_mode=response_storage_mode,
     )
 
 
@@ -65,10 +69,14 @@ class ResultDurabilityTests(unittest.TestCase):
             saved = json.loads(response_lines[0])
             self.assertEqual(saved["prompt"], "patient privacy prompt")
             self.assertEqual(saved["response"], "answer")
+            self.assertEqual(saved["response_storage_status"], "stored")
             self.assertEqual(saved["generated_tokens"], 2)
             self.assertEqual(saved["ttft_s"], 0.1)
             self.assertEqual(persistence.recover_records(), [saved])
             self.assertIn("request_completed", (run_dir / "events.jsonl").read_text(encoding="utf-8"))
+            events = (run_dir / "events.jsonl").read_text(encoding="utf-8")
+            self.assertNotIn("answer", events)
+            self.assertNotIn("patient privacy prompt", events)
 
     def test_private_prompt_keeps_hash_not_raw_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -80,7 +88,51 @@ class ResultDurabilityTests(unittest.TestCase):
             self.assertEqual(saved["response"], "answer")
             persisted_config = json.loads((persistence.run_dir / "config.json").read_text(encoding="utf-8"))
             self.assertNotIn("prompt", persisted_config)
+            self.assertEqual(persisted_config["prompt_chars"], len("patient privacy prompt"))
             self.assertEqual((persistence.run_dir / "responses.jsonl").stat().st_mode & 0o777, 0o600)
+
+    def test_hash_only_keeps_length_hash_and_metrics_without_raw_text(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            persistence = RunPersistence(
+                Path(directory), "20260820_123456_ab12",
+                config(persist_prompt=False, response_storage_mode="hash_only"),
+            )
+            sensitive = record(
+                error="failure patient privacy prompt answer", response="answer"
+            )
+            persistence.emit("request_completed", completed=1, total=1, result=sensitive)
+            saved = persistence.recover_records()[0]
+            self.assertEqual(saved["response_storage_status"], "hash_only")
+            self.assertNotIn("response", saved)
+            self.assertEqual(saved["output_chars"], 6)
+            self.assertEqual(len(saved["output_sha256"]), 64)
+            self.assertEqual(saved["error"], "failure [REDACTED] [REDACTED]")
+            artifacts = (persistence.run_dir / "events.jsonl").read_text(encoding="utf-8")
+            self.assertNotIn("patient privacy prompt", artifacts)
+            self.assertNotIn('"response": "answer"', artifacts)
+
+    def test_none_keeps_request_metrics_but_omits_response_length_and_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            persistence = RunPersistence(
+                Path(directory), "20260820_123456_ab12",
+                config(response_storage_mode="none"),
+            )
+            result = record()
+            result["output_chars"] = 6
+            persistence.emit("request_completed", completed=1, total=1, result=result)
+            saved = persistence.recover_records()[0]
+            self.assertEqual(saved["response_storage_status"], "not_persisted")
+            self.assertEqual(saved["generated_tokens"], 2)
+            self.assertNotIn("response", saved)
+            self.assertNotIn("output_chars", saved)
+            self.assertNotIn("output_sha256", saved)
+            persistence.complete([result], {"run_id": persistence.run_id})
+            with (persistence.run_dir / "requests.csv").open(
+                newline="", encoding="utf-8"
+            ) as handle:
+                csv_record = next(csv.DictReader(handle))
+            self.assertEqual(csv_record["output_chars"], "")
+            self.assertEqual(csv_record["output_sha256"], "")
 
     def test_legacy_result_without_response_journal_remains_readable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -194,11 +246,18 @@ class StructuredFailureTests(unittest.TestCase):
             inventory_path.write_text(inventory, encoding="utf-8")
             with mock.patch(
                 "cluster.benchmark.runner._load_model",
-                side_effect=RuntimeError("CUDA out of memory"),
+                side_effect=RuntimeError("CUDA out of memory patient privacy prompt"),
             ):
-                with self.assertRaisesRegex(RuntimeError, "Failed to load model"):
+                with self.assertRaisesRegex(RuntimeError, "Failed to load model") as raised:
                     run_experiment(config(), inventory_path=inventory_path, results_root=root / "results")
-            summary = json.loads(next((root / "results").glob("*/summary.json")).read_text(encoding="utf-8"))
+            self.assertNotIn("patient privacy prompt", str(raised.exception))
+            run_dir = next((root / "results").glob("*"))
+            summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
             self.assertIn("error", summary)
             self.assertEqual(summary["error_code"], ErrorCode.MODEL_LOAD_OOM.value)
             self.assertEqual(summary["failure"]["code"], ErrorCode.MODEL_LOAD_OOM.value)
+            self.assertNotIn("patient privacy prompt", json.dumps(summary))
+            self.assertNotIn(
+                "patient privacy prompt",
+                (run_dir / "events.jsonl").read_text(encoding="utf-8"),
+            )

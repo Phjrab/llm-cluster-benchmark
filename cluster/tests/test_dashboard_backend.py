@@ -134,7 +134,18 @@ class DashboardBackendTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (run_dir / "responses.jsonl").write_text(
-                json.dumps({"request_id": 1, "prompt": "ping", "response": "pong"}) + "\n",
+                "\n".join(
+                    (
+                        json.dumps({"request_id": 1, "prompt": "ping", "response": "pong"}),
+                        json.dumps({
+                            "request_id": 2,
+                            "response_storage_status": "hash_only",
+                            "response": "must-not-escape",
+                            "output_chars": 15,
+                            "output_sha256": "a" * 64,
+                        }),
+                    )
+                ) + "\n",
                 encoding="utf-8",
             )
             service = dashboard.app.state.dashboard_services
@@ -157,6 +168,33 @@ class DashboardBackendTests(unittest.TestCase):
             self.assertEqual(raw.json()["failures"][0]["code"], "MODEL_MISSING")
             self.assertEqual(responses.status_code, 200)
             self.assertEqual(responses.json()["responses"][0]["response"], "pong")
+            self.assertNotIn("response", responses.json()["responses"][1])
+            self.assertEqual(
+                responses.json()["responses"][1]["response_storage_status"],
+                "hash_only",
+            )
+
+    def test_private_experiment_definition_omits_prompt_text(self) -> None:
+        from cluster.dashboard.schemas import ExperimentPayload
+
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self.load_dashboard(Path(directory))
+            from cluster.dashboard import services
+
+            payload = ExperimentPayload(
+                experiment_id="private-definition",
+                node_names=["worker-01"],
+                model_id="models/a.gguf",
+                prompt="private dashboard prompt",
+                persist_prompt=False,
+                response_storage_mode="hash_only",
+            )
+            definition = services.save_experiment_definition(payload)
+            defaults = definition["default_config"]
+            self.assertNotIn("prompt", defaults)
+            self.assertEqual(defaults["prompt_chars"], len("private dashboard prompt"))
+            self.assertEqual(len(defaults["prompt_sha256"]), 64)
+            self.assertEqual(defaults["response_storage_mode"], "hash_only")
 
     def test_terminal_run_can_be_deleted_to_private_trash(self) -> None:
         from fastapi.testclient import TestClient

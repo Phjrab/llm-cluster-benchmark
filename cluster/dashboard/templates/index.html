@@ -286,8 +286,10 @@
               <div class="field range-field"><label for="topPInput">Top-p <output id="topPValue">0.9</output></label><input id="topPInput" name="top_p" type="range" min="0" max="1" step="0.05" value="0.9"></div>
               <div class="field"><label for="seedInput">Seed</label><input id="seedInput" name="seed" type="number" min="-1" max="2147483647" value="42"></div>
               <div class="field"><label for="modelCooldownInput">모델 교체 대기</label><input id="modelCooldownInput" name="model_cooldown_s" type="number" min="0" max="300" step="1" value="3"><small>모델 사이 정리 시간 · 초</small></div>
+              <div class="field"><label for="responseStorageModeSelect">응답 저장 범위</label><div class="select-wrap"><select id="responseStorageModeSelect" name="response_storage_mode"><option value="full">원문 · 길이 · SHA-256</option><option value="hash_only">길이 · SHA-256만</option><option value="none">성능·실패 정보만</option></select></div><small>의료·비공개 응답의 저장 범위를 선택합니다.</small></div>
               <label class="toggle-field"><input id="uniformInput" name="require_uniform_config" type="checkbox" checked><span></span><div><strong>동일 구성 강제</strong><small>자동 하향 조정 시 실험 중단</small></div></label>
               <label class="toggle-field"><input id="continueModelErrorInput" name="continue_on_model_error" type="checkbox" checked><span></span><div><strong>모델 실패 후 계속</strong><small>다음 모델 벤치마크 진행</small></div></label>
+              <label class="toggle-field"><input id="persistPromptInput" name="persist_prompt" type="checkbox" checked><span></span><div><strong>프롬프트 원문 저장</strong><small>끄면 SHA-256과 문자 수만 저장</small></div></label>
             </div>
             <div class="field full-field prompt-field">
               <label for="promptInput">테스트 프롬프트</label>
@@ -353,7 +355,7 @@
           <span id="resultPageInfo">0개</span><div class="pagination-pages" id="resultPageButtons"></div>
         </nav>
         <section class="result-inspector" aria-labelledby="resultInspectorTitle">
-          <div class="result-inspector-head"><div><span class="section-index">NODE SNAPSHOT · RAW RESPONSES · FAILURES</span><h3 id="resultInspectorTitle">참여 노드와 실제 응답 검토</h3><p>실험 시작 당시의 노드·하드웨어·런타임 정보와 <code>responses.jsonl</code>을 함께 표시합니다. broadcast는 동일 논리 요청의 워커별 응답과 해시 일치 여부를 나란히 비교합니다.</p></div><span class="inspector-status" id="resultInspectorStatus">실행을 선택하세요</span></div>
+          <div class="result-inspector-head"><div><span class="section-index">NODE SNAPSHOT · RESPONSE POLICY · FAILURES</span><h3 id="resultInspectorTitle">참여 노드와 응답 저장 상태 검토</h3><p>실험 당시의 노드 환경과 저장 정책에 따라 보존된 응답 정보를 표시합니다. 원문을 저장하지 않은 실행은 빈 응답으로 표시하지 않습니다.</p></div><span class="inspector-status" id="resultInspectorStatus">실행을 선택하세요</span></div>
           <div id="resultInspector" class="result-inspector-body"><div class="empty-result"><strong>아직 선택한 실행이 없습니다.</strong><span>표의 <em>응답 보기</em>를 눌러 프롬프트, 모델별 생성 결과, 구조화된 실패를 확인하세요.</span></div></div>
         </section>
       </section>

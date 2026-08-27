@@ -14,6 +14,29 @@ def _valid_run_id(run_id: str) -> bool:
     return bool(run_id) and run_id.replace("_", "").isalnum()
 
 
+_STORAGE_STATUSES = {"stored", "hash_only", "not_persisted", "legacy_missing"}
+
+
+def normalize_response_storage(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalize legacy records and enforce the persisted disclosure boundary."""
+    value = dict(record)
+    explicit = str(value.get("response_storage_status") or "")
+    if explicit in _STORAGE_STATUSES:
+        status = explicit
+    elif any(key in value for key in ("response", "output", "text")):
+        status = "stored"
+    else:
+        status = "legacy_missing"
+    value["response_storage_status"] = status
+    if status != "stored":
+        for key in ("response", "output", "text"):
+            value.pop(key, None)
+    if status == "not_persisted":
+        for key in ("output_chars", "output_sha256"):
+            value.pop(key, None)
+    return value
+
+
 class ResultService:
     """Read and soft-delete run artifacts through injected repositories."""
 
@@ -56,12 +79,31 @@ class ResultService:
         self._check_id(run_id)
         repository = self._run_repository()
         try:
-            repository.read_summary(run_id)
+            summary = repository.read_summary(run_id)
         except FileNotFoundError as exc:
             raise DashboardServiceError(404, "Run not found") from exc
         except StorageCorruptionError as exc:
             raise DashboardServiceError(500, "Run summary is corrupted") from exc
-        return {"run_id": run_id, "responses": repository.read_responses(run_id)}
+        responses = [
+            normalize_response_storage(item)
+            for item in repository.read_responses(run_id)
+        ]
+        mode = str(summary.get("response_storage_mode") or "")
+        if responses:
+            statuses = {str(item["response_storage_status"]) for item in responses}
+            overall_status = statuses.pop() if len(statuses) == 1 else "mixed"
+        else:
+            overall_status = {
+                "full": "stored",
+                "hash_only": "hash_only",
+                "none": "not_persisted",
+            }.get(mode, "legacy_missing")
+        return {
+            "run_id": run_id,
+            "response_storage_mode": mode or None,
+            "response_storage_status": overall_status,
+            "responses": responses,
+        }
 
     def measurements(self, run_id: str) -> dict[str, Any]:
         self._check_id(run_id)
@@ -266,4 +308,4 @@ class ResultService:
         return {"ok": True, "trash_id": trash_id, "permanent": True}
 
 
-__all__ = ["ResultService"]
+__all__ = ["ResultService", "normalize_response_storage"]

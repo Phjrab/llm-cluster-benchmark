@@ -16,6 +16,8 @@
   "top_p": 0.9,
   "seed": 42,
   "warmup_requests": 1,
+  "persist_prompt": true,
+  "response_storage_mode": "full",
   "require_uniform_config": true,
   "sweep_mode": "cumulative",
   "rpc_split_mode": "layer",

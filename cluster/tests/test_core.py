@@ -419,6 +419,8 @@ class ExperimentTests(unittest.TestCase):
         self.assertNotIn("prompt", metadata)
         self.assertEqual(metadata["prompt_chars"], len(config.prompt))
         self.assertEqual(len(metadata["prompt_sha256"]), 64)
+        self.assertTrue(metadata["persist_prompt"])
+        self.assertEqual(metadata["response_storage_mode"], "full")
 
     def test_rejects_unsafe_model_path(self) -> None:
         config = ExperimentConfig(node_names=["jetson-head"], model_id="../model.gguf")
@@ -536,6 +538,7 @@ class ExperimentTests(unittest.TestCase):
                     "participant_nodes", "per_node", "physical_cluster_tokens_per_s",
                     "physical_requests", "physical_requests_per_s", "requests", "requests_per_s",
                     "result_dir", "run_id",
+                    "response_storage_mode",
                     "scenario_summaries", "schema_version", "started_at", "status", "success_rate",
                     "successful", "suite_id", "topology", "total_generated_tokens", "ttft_p50_s",
                     "ttft_p95_s", "wall_s", "warnings",

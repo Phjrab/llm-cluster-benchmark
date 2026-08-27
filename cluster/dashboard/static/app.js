@@ -820,6 +820,8 @@ function applyConfig(defaults, includeName = true) {
   if (configModels.length) state.selectedModels = configModels.filter(id => state.models.some(model => model.id === id));
   if (defaults.model_cooldown_s !== undefined) $("#modelCooldownInput").value = defaults.model_cooldown_s;
   if (defaults.continue_on_model_error !== undefined) $("#continueModelErrorInput").checked = defaults.continue_on_model_error !== false;
+  if (defaults.persist_prompt !== undefined) $("#persistPromptInput").checked = defaults.persist_prompt !== false;
+  $("#responseStorageModeSelect").value = defaults.response_storage_mode || "full";
   syncLegacyModelSelect(); renderModelPicker();
   if (Array.isArray(defaults.node_names)) {
     const available = defaults.node_names.filter(name => state.nodes.some(node => node.name === name && node.enabled));
@@ -2146,6 +2148,8 @@ function experimentPayload() {
     top_p: Number($("#topPInput").value),
     seed: Number($("#seedInput").value),
     require_uniform_config: $("#uniformInput").checked,
+    persist_prompt: $("#persistPromptInput").checked,
+    response_storage_mode: $("#responseStorageModeSelect").value,
     prompt: $("#promptInput").value,
   };
 }

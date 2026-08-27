@@ -57,6 +57,8 @@ def benchmark_parameters(config: ExperimentConfig) -> Dict[str, Any]:
         "require_uniform_config": config.require_uniform_config,
         "prompt_sha256": hashlib.sha256(config.prompt.encode("utf-8")).hexdigest(),
         "prompt_chars": len(config.prompt),
+        "persist_prompt": config.persist_prompt,
+        "response_storage_mode": config.response_storage_mode,
         "config_fingerprint_sha256": config_fingerprint(config),
     }
 
@@ -206,11 +208,11 @@ class BenchmarkRunner:
             self.sample_telemetry,
         )
         event_config = asdict(config)
-        if not config.persist_prompt:
-            event_config.pop("prompt", None)
-            event_config["prompt_sha256"] = hashlib.sha256(
-                config.prompt.encode("utf-8")
-            ).hexdigest()
+        event_config.pop("prompt", None)
+        event_config["prompt_sha256"] = hashlib.sha256(
+            config.prompt.encode("utf-8")
+        ).hexdigest()
+        event_config["prompt_chars"] = len(config.prompt)
         started_event = persistence.emit(
             "run_started",
             config=event_config,
@@ -414,6 +416,7 @@ class BenchmarkRunner:
                 "benchmark_parameters": benchmark_parameters(config),
                 "config_fingerprint_sha256": config_fingerprint(config),
                 "ignored_config_keys": config.ignored_config_keys,
+                "response_storage_mode": config.response_storage_mode,
                 "warnings": warnings,
                 "scenario_summaries": scenario_summaries,
                 "topology": topology,
@@ -490,6 +493,7 @@ class BenchmarkRunner:
                 "benchmark_parameters": benchmark_parameters(config),
                 "config_fingerprint_sha256": config_fingerprint(config),
                 "ignored_config_keys": config.ignored_config_keys,
+                "response_storage_mode": config.response_storage_mode,
                 "topology": topology,
                 "warnings": warnings,
                 "error": str(exc),
@@ -530,6 +534,7 @@ class BenchmarkRunner:
                     measurement_quality=failure["measurement_quality"],
                     power_integrity=power_summary,
                 )
+            failure = persistence.safe_artifact(failure)
             persistence.write_summary(failure)
             if cancelled:
                 persistence.emit("run_finished", summary=failure)
@@ -541,6 +546,7 @@ class BenchmarkRunner:
                 failure=structured_failure.to_dict(),
                 summary=failure,
             )
+            exc.args = tuple(persistence.safe_artifact(item) for item in exc.args)
             raise
         finally:
             instrumentation.stop_scenario()

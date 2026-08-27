@@ -165,6 +165,7 @@ class ExperimentPayload(BaseModel):
     warmup_requests: int = Field(1, ge=0, le=10)
     prompt: str = Field(min_length=1, max_length=20_000)
     persist_prompt: bool = True
+    response_storage_mode: Literal["full", "hash_only", "none"] = "full"
     require_uniform_config: bool = True
     execution_strategy: str = "replicated_round_robin"
     sweep_mode: str = "cumulative"

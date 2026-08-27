@@ -1879,17 +1879,24 @@ def save_experiment_definition(payload: ExperimentPayload) -> Dict[str, Any]:
                     "한 실험 묶음에는 하나의 실행 방식만 사용할 수 있습니다. 새 실험 묶음을 만드세요."
                 )
         now = utc_now()
+        default_config = {
+            key: value
+            for key, value in payload.model_dump().items()
+            if key not in {"experiment_id", "name"}
+        }
+        if not payload.persist_prompt:
+            prompt = str(default_config.pop("prompt", ""))
+            default_config["prompt_sha256"] = hashlib.sha256(
+                prompt.encode("utf-8")
+            ).hexdigest()
+            default_config["prompt_chars"] = len(prompt)
         definition = {
             "experiment_id": experiment_id,
             "name": payload.name,
             "created_at": existing.get("created_at", now),
             "updated_at": now,
             "archived": False,
-            "default_config": {
-                key: value
-                for key, value in payload.model_dump().items()
-                if key not in {"experiment_id", "name"}
-            },
+            "default_config": default_config,
         }
         _experiment_repository().write(experiment_id, definition)
         return definition

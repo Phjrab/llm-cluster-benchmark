@@ -12,6 +12,7 @@ from cluster.dashboard.service_layers import (
     ResultService,
     SettingsService,
 )
+from cluster.dashboard.service_layers.result_service import normalize_response_storage
 from cluster.dashboard.schemas import ClusterSettingsPayload
 
 
@@ -144,6 +145,34 @@ class ExtractedServiceTests(unittest.TestCase):
         self.assertEqual(published[0][0], "results_changed")
         with self.assertRaisesRegex(DashboardServiceError, "Invalid run id"):
             service.run("../escape")
+
+    def test_response_storage_normalization_blocks_raw_api_policy_bypass(self) -> None:
+        stored = normalize_response_storage({"request_id": 1, "response": "ok"})
+        self.assertEqual(stored["response_storage_status"], "stored")
+        self.assertEqual(stored["response"], "ok")
+        hash_only = normalize_response_storage({
+            "request_id": 2,
+            "response_storage_status": "hash_only",
+            "response": "must-not-leak",
+            "output_chars": 13,
+            "output_sha256": "a" * 64,
+        })
+        self.assertNotIn("response", hash_only)
+        self.assertEqual(hash_only["output_chars"], 13)
+        not_persisted = normalize_response_storage({
+            "request_id": 3,
+            "response_storage_status": "not_persisted",
+            "response": "must-not-leak",
+            "output_chars": 13,
+            "output_sha256": "b" * 64,
+        })
+        self.assertNotIn("response", not_persisted)
+        self.assertNotIn("output_chars", not_persisted)
+        self.assertNotIn("output_sha256", not_persisted)
+        self.assertEqual(
+            normalize_response_storage({"request_id": 4})["response_storage_status"],
+            "legacy_missing",
+        )
 
     def test_research_service_uses_injected_readers(self) -> None:
         class Campaigns:

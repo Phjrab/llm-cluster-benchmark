@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -27,6 +28,19 @@ from cluster.infrastructure.storage import FilesystemJobRepository, StorageCorru
 NONTERMINAL_JOB_STATES = frozenset({"queued", "running"})
 TERMINAL_JOB_STATES = frozenset({"completed", "failed", "cancelled", "orphaned"})
 JOB_STATES = NONTERMINAL_JOB_STATES | TERMINAL_JOB_STATES
+
+
+def scrub_terminal_prompt(value: Dict[str, Any]) -> None:
+    """Remove private recovery input once a job reaches a terminal state."""
+    config = value.get("config")
+    if not isinstance(config, dict) or config.get("persist_prompt") is not False:
+        return
+    raw_prompt = config.pop("prompt", None)
+    if raw_prompt is None:
+        return
+    prompt = str(raw_prompt)
+    config["prompt_sha256"] = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    config["prompt_chars"] = len(prompt)
 
 
 def utc_now() -> str:
@@ -319,7 +333,11 @@ class JobService:
                     continue
                 terminal = self._terminal_from_suite(job)
                 if terminal is not None:
-                    updated = self.repository.update(job_id, lambda value: value.update(terminal))
+                    def finish_recovery(value: Dict[str, Any]) -> None:
+                        value.update(terminal)
+                        scrub_terminal_prompt(value)
+
+                    updated = self.repository.update(job_id, finish_recovery)
                     recovered.append(updated)
                     continue
                 if self._live_identity_with_retry(job) is not None:
@@ -345,6 +363,7 @@ class JobService:
                             "errors": [*(value.get("errors") or []), error],
                         }
                     )
+                    scrub_terminal_prompt(value)
 
                 recovered.append(self.repository.update(job_id, orphan))
         return recovered

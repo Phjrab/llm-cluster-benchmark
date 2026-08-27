@@ -484,6 +484,8 @@ class JobProcessTests(unittest.TestCase):
             inventory = root / "nodes.csv"
             repository = FilesystemJobRepository(jobs)
             base = config()
+            base.persist_prompt = False
+            base.prompt = "private recovery prompt"
             repository.write(
                 "job_child",
                 {
@@ -537,6 +539,9 @@ class JobProcessTests(unittest.TestCase):
             self.assertEqual(saved["suite_status"], "completed")
             self.assertTrue(repository.read_events("job_child"))
             self.assertEqual(saved["process"]["pid"], __import__("os").getpid())
+            self.assertNotIn("prompt", saved["config"])
+            self.assertEqual(saved["config"]["prompt_chars"], len("private recovery prompt"))
+            self.assertEqual(len(saved["config"]["prompt_sha256"]), 64)
 
 
 if __name__ == "__main__":
