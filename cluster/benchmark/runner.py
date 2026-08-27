@@ -283,8 +283,10 @@ def main() -> int:
     parser.add_argument("--inventory", type=Path, default=runtime_paths.inventory_path)
     parser.add_argument("--results-dir", type=Path, default=runtime_paths.results_dir)
     args = parser.parse_args()
-    config = ExperimentConfig.from_dict(json.loads(args.config.read_text(encoding="utf-8")))
     try:
+        config = ExperimentConfig.from_dict(
+            json.loads(args.config.read_text(encoding="utf-8")), strict=True
+        )
         summary = run_experiment(
             config,
             inventory_path=args.inventory,

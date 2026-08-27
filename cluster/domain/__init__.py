@@ -4,7 +4,13 @@ from .controller import ControllerConfig, ControllerPlatform
 from .errors import ClusterError, DomainValidationError, ErrorCode, FailureRecord
 from .events import ClusterEvent, EventChannel
 from .failures import FAILURE_GUIDE, failure_from_exception, failure_from_message, http_status_for_failure
-from .experiment import ExperimentConfig, normalize_model_ids, validate_model_id
+from .experiment import (
+    ExperimentConfig,
+    config_fingerprint,
+    normalized_config_identity,
+    normalize_model_ids,
+    validate_model_id,
+)
 from .identifiers import validate_experiment_id, validate_node_id, validate_run_id, validate_suite_id
 from .layout import ProjectLayout
 from .model import DownloadPolicy, ModelCatalogEntry, ModelInventoryEntry, infer_quantization, recommend_models, validate_model_checksum
@@ -63,6 +69,8 @@ __all__ = [
     "WorkerNode",
     "WorkerPlatform",
     "WarningRecord",
+    "config_fingerprint",
+    "normalized_config_identity",
     "normalize_model_ids",
     "failure_from_exception",
     "failure_from_message",

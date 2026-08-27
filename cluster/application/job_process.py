@@ -149,7 +149,7 @@ def run_job(
         repository.update(job_id, apply)
 
     try:
-        base_config = ExperimentConfig.from_dict(dict(job["config"]))
+        base_config = ExperimentConfig.from_dict(dict(job["config"]), strict=True)
         base_config.validate()
         model_ids = [str(item) for item in job["model_ids"]]
         experiment_runner = ExperimentRunner(run_experiment, inventory_path, results_dir)

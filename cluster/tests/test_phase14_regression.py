@@ -122,7 +122,11 @@ class BenchmarkCompatibilityMatrixTests(unittest.TestCase):
         self.assertEqual(summary["failed"], 1)
         self.assertEqual(summary["success_rate"], round(2 / 3, 6))
         self.assertEqual(summary["requests_per_s"], 1.0)
+        self.assertEqual(summary["logical_requests_per_s"], 1.0)
+        self.assertEqual(summary["physical_requests_per_s"], 1.0)
         self.assertEqual(summary["total_generated_tokens"], 30)
+        self.assertEqual(summary["effective_user_tokens_per_s"], 15.0)
+        self.assertEqual(summary["physical_cluster_tokens_per_s"], 15.0)
         self.assertEqual(summary["cluster_tokens_per_s"], 15.0)
         self.assertAlmostEqual(summary["ttft_p50_s"], 0.2)
         self.assertAlmostEqual(summary["ttft_p95_s"], 0.29)
@@ -130,6 +134,21 @@ class BenchmarkCompatibilityMatrixTests(unittest.TestCase):
         self.assertAlmostEqual(summary["e2e_p95_s"], 1.45)
         self.assertEqual(summary["per_node"]["worker-02"]["requests"], 2)
         self.assertEqual(summary["per_node"]["worker-02"]["failed"], 1)
+
+    def test_broadcast_metrics_separate_user_effective_and_physical_work(self) -> None:
+        records = [
+            {**request_record(1, node="worker-01", ok=True, ttft_s=0.1, e2e_s=0.5, tokens=10), "logical_request_id": 1, "replica_index": 0},
+            {**request_record(2, node="worker-02", ok=True, ttft_s=0.1, e2e_s=0.5, tokens=12), "logical_request_id": 1, "replica_index": 1},
+            {**request_record(3, node="worker-01", ok=True, ttft_s=0.1, e2e_s=0.5, tokens=8), "logical_request_id": 2, "replica_index": 0},
+            {**request_record(4, node="worker-02", ok=True, ttft_s=0.1, e2e_s=0.5, tokens=9), "logical_request_id": 2, "replica_index": 1},
+        ]
+        summary = aggregate_records(records, wall_s=2.0)
+        self.assertEqual(summary["logical_requests_per_s"], 1.0)
+        self.assertEqual(summary["physical_requests_per_s"], 2.0)
+        self.assertEqual(summary["effective_user_tokens_per_s"], 9.0)
+        self.assertEqual(summary["physical_cluster_tokens_per_s"], 19.5)
+        self.assertEqual(summary["requests_per_s"], summary["physical_requests_per_s"])
+        self.assertEqual(summary["cluster_tokens_per_s"], summary["physical_cluster_tokens_per_s"])
 
     def test_run_experiment_accepts_controller_worker_only_inventory(self) -> None:
         """The Mac Controller inventory must not require a synthetic legacy head."""

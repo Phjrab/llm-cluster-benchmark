@@ -42,6 +42,8 @@ class MeasurementNormalizationTests(unittest.TestCase):
             },
         )
         self.assertEqual(measured["input_tokens"], 0)
+        self.assertEqual(measured["token_count_source"], "unavailable")
+        self.assertEqual(measured["inference_slots"], 1)
         self.assertTrue(measured["availability"]["input_tokens"]["available"])
         self.assertTrue(measured["availability"]["prefill_time_s"]["available"])
         self.assertFalse(measured["availability"]["decode_time_s"]["available"])
@@ -316,6 +318,7 @@ class TransportInstrumentationTests(unittest.TestCase):
         self.assertEqual(record["bytes_received"], sum(map(len, lines)))
         self.assertGreater(record["effective_bandwidth_bytes_s"], 0)
         self.assertIsNone(record["rtt_s"])
+        self.assertEqual(record["token_count_source"], "unavailable")
 
 
 if __name__ == "__main__":

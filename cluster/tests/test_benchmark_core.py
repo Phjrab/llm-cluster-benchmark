@@ -188,6 +188,7 @@ class ExecutorGoldenTests(unittest.TestCase):
         )
         self.assertEqual([warmup for _, warmup in calls[:2]], [True, True])
         self.assertTrue(all(item.get("warmup") is not True for item in measured))
+        self.assertTrue(all(item.get("controller_executor_queue_wait_s") is not None for item in measured))
         self.assertLessEqual(len(measured), config.concurrency)
 
     def test_worker_backend_serializes_generation_per_node(self) -> None:

@@ -57,6 +57,20 @@ def aggregate_records(records: Sequence[Dict[str, Any]], wall_s: float) -> Dict[
             (str(item.get("scenario_id") or "main"), int(item.get("logical_request_id") or item["request_id"])), []
         ).append(item)
     all_success = sum(1 for group in logical_groups.values() if group and all(item["ok"] for item in group))
+    successful_logical_groups = [
+        group for group in logical_groups.values()
+        if group and all(item["ok"] for item in group)
+    ]
+    effective_user_tokens = sum(
+        int(sorted(
+            group,
+            key=lambda item: (
+                int(item.get("replica_index") or 0),
+                int(item.get("request_id") or 0),
+            ),
+        )[0].get("generated_tokens") or 0)
+        for group in successful_logical_groups
+    )
     comparable = [group for group in logical_groups.values() if len(group) > 1 and all(item["ok"] for item in group)]
     agreement = sum(
         1 for group in comparable
@@ -71,8 +85,13 @@ def aggregate_records(records: Sequence[Dict[str, Any]], wall_s: float) -> Dict[
         "success_rate": round(len(successful) / len(records), 6) if records else 0.0,
         "wall_s": round(wall_s, 6),
         "requests_per_s": round(len(successful) / wall_s, 6) if wall_s > 0 else 0.0,
+        "logical_requests_per_s": round(all_success / wall_s, 6) if wall_s > 0 else 0.0,
+        "physical_requests_per_s": round(len(successful) / wall_s, 6) if wall_s > 0 else 0.0,
         "total_generated_tokens": total_tokens,
         "cluster_tokens_per_s": round(total_tokens / wall_s, 6) if wall_s > 0 else 0.0,
+        "effective_user_tokens": effective_user_tokens,
+        "effective_user_tokens_per_s": round(effective_user_tokens / wall_s, 6) if wall_s > 0 else 0.0,
+        "physical_cluster_tokens_per_s": round(total_tokens / wall_s, 6) if wall_s > 0 else 0.0,
         "ttft_p50_s": percentile(ttft, 0.50),
         "ttft_p95_s": percentile(ttft, 0.95),
         "e2e_p50_s": percentile(e2e, 0.50),

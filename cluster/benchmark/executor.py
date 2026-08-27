@@ -22,6 +22,17 @@ class ScenarioExecutor:
         self._stream_rpc_request = stream_rpc_request
 
     @staticmethod
+    def _invoke_with_queue_wait(
+        queued_at: float, call: Callable[..., Dict[str, Any]], *args: Any
+    ) -> Dict[str, Any]:
+        invoked_at = time.perf_counter()
+        result = call(*args)
+        result["controller_executor_queue_wait_s"] = round(
+            invoked_at - queued_at, 9
+        )
+        return result
+
+    @staticmethod
     def _failure_record(task: RequestTask, node: Any, exc: Exception) -> Dict[str, Any]:
         from .transport import utc_now
 
@@ -49,6 +60,15 @@ class ScenarioExecutor:
             "error_code": failure.code.value,
             "failure": failure.to_dict(),
             "warmup": False,
+            "token_count_source": "unavailable",
+            "inference_path": None,
+            "fallback_reason_code": None,
+            "chat_template_hash": "",
+            "template_hash": "",
+            "controller_executor_queue_wait_s": None,
+            "worker_inference_lock_wait_s": None,
+            "prompt_eval_s": None,
+            "inference_slots": 1,
         }
 
     def execute(
@@ -92,12 +112,27 @@ class ScenarioExecutor:
                 pending_by_batch[batch_id] = len(tasks)
                 for task in tasks:
                     target = nodes_by_name[task.target_node]
+                    queued_at = time.perf_counter()
                     if rpc_coordinator is not None:
                         future = pool.submit(
-                            self._stream_rpc_request, rpc_coordinator, rpc_url, config, task
+                            self._invoke_with_queue_wait,
+                            queued_at,
+                            self._stream_rpc_request,
+                            rpc_coordinator,
+                            rpc_url,
+                            config,
+                            task,
                         )
                     else:
-                        future = pool.submit(self._stream_request, target, config, task, False)
+                        future = pool.submit(
+                            self._invoke_with_queue_wait,
+                            queued_at,
+                            self._stream_request,
+                            target,
+                            config,
+                            task,
+                            False,
+                        )
                     futures[future] = (task, target, batch_id)
 
             for _ in range(batch_slots):

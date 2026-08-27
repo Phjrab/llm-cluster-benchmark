@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from cluster.benchmark.runner import normalize_model_ids
 
@@ -146,6 +146,7 @@ class ModelLicenseAcceptancePayload(BaseModel):
 
 
 class ExperimentPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
     experiment_id: str = Field("", max_length=80, pattern=r"^[a-z0-9][a-z0-9_-]*$|^$")
     name: str = "cluster-load-test"
     node_names: List[str] = Field(min_length=1)

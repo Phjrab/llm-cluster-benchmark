@@ -69,6 +69,20 @@ class DashboardBackendTests(unittest.TestCase):
         self.assertNotIn("subprocess", imported)
         self.assertNotIn("concurrent.futures", imported)
 
+    def test_dashboard_payload_preserves_unknown_key_names_for_warning(self) -> None:
+        from cluster.dashboard.schemas import ExperimentPayload
+        from cluster.domain.experiment import ExperimentConfig
+
+        payload = ExperimentPayload(
+            node_names=["worker-01"], model_id="models/a.gguf",
+            prompt="ping", future_dashboard_option=True,
+        )
+        raw = payload.model_dump()
+        for key in ("model_ids", "continue_on_model_error", "model_cooldown_s"):
+            raw.pop(key, None)
+        config = ExperimentConfig.from_dict(raw)
+        self.assertEqual(config.ignored_config_keys, ["future_dashboard_option"])
+
     def test_controller_is_not_worker_and_model_api_is_additive(self) -> None:
         from fastapi.testclient import TestClient
 

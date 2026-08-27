@@ -7,7 +7,7 @@ import hashlib
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
-from cluster.domain.experiment import ExperimentConfig
+from cluster.domain.experiment import ExperimentConfig, config_fingerprint
 from cluster.domain.events import EventChannel
 from cluster.infrastructure.storage import FilesystemRunRepository
 
@@ -30,6 +30,7 @@ class RunPersistence:
         self.progress = progress
         self.repository = FilesystemRunRepository(results_root)
         persisted_config = asdict(config)
+        persisted_config["config_fingerprint_sha256"] = config_fingerprint(config)
         if not config.persist_prompt:
             persisted_config.pop("prompt", None)
             persisted_config["prompt_sha256"] = hashlib.sha256(
@@ -101,12 +102,21 @@ class RunPersistence:
             "e2e_s": record.get("e2e_s"),
             "server_generation_s": record.get("server_generation_s"),
             "generated_tokens": record.get("generated_tokens"),
+            "token_count_source": record.get("token_count_source", "unavailable"),
             "tokens_per_s": record.get("tokens_per_s"),
             "output_sha256": record.get("output_sha256"),
             "response": response,
             "error": record.get("error", ""),
             "error_code": record.get("error_code", ""),
             "failure": record.get("failure"),
+            "inference_path": record.get("inference_path"),
+            "fallback_reason_code": record.get("fallback_reason_code"),
+            "chat_template_hash": record.get("chat_template_hash"),
+            "template_hash": record.get("template_hash"),
+            "controller_executor_queue_wait_s": record.get("controller_executor_queue_wait_s"),
+            "worker_inference_lock_wait_s": record.get("worker_inference_lock_wait_s"),
+            "prompt_eval_s": record.get("prompt_eval_s"),
+            "inference_slots": record.get("inference_slots", 1),
         }
         if self.config.persist_prompt:
             value["prompt"] = self.config.prompt

@@ -12,6 +12,7 @@ import json
 import os
 import re
 import threading
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -25,6 +26,9 @@ DEFAULT_N_GPU_LAYERS = int(os.getenv("LLM_N_GPU_LAYERS", "8"))
 DEFAULT_N_THREADS = int(os.getenv("LLM_N_THREADS", str(min(6, os.cpu_count() or 1))))
 DEFAULT_N_BATCH = int(os.getenv("LLM_N_BATCH", "256"))
 DEFAULT_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "256"))
+FALLBACK_TEMPLATE_HASH = hashlib.sha256(
+    b"llm-cluster-role-lines-assistant-suffix-v1"
+).hexdigest()
 
 
 class InferenceBackend(Protocol):
@@ -55,6 +59,7 @@ class InferenceBackend(Protocol):
         temperature: float,
         top_p: float,
         seed: Optional[int] = None,
+        trace: Optional[Dict[str, object]] = None,
     ) -> Iterable[str]: ...
 
     def tokenize(self, text: str) -> int: ...
@@ -508,6 +513,9 @@ class LlamaCppInferenceBackend:
                 "n_gpu_layers": None,
                 "n_batch": None,
             }
+        metadata = self._read_model_metadata().get(
+            self.loaded_model_path.relative_to(self.models_dir.resolve()).as_posix(), {}
+        )
         return {
             "loaded": True,
             "model_id": self.loaded_model_path.relative_to(self.models_dir.resolve()).as_posix(),
@@ -517,6 +525,7 @@ class LlamaCppInferenceBackend:
             "n_batch": self.loaded_n_batch,
             "requested_n_ctx": self.requested_n_ctx,
             "requested_n_gpu_layers": self.requested_n_gpu_layers,
+            "chat_template_hash": metadata.get("chat_template_hash", ""),
         }
 
     def set_seed(self, seed: int) -> None:
@@ -557,9 +566,23 @@ class LlamaCppInferenceBackend:
         count = self.tokenize(self._fallback_prompt(messages))
         return {
             "input_tokens": count if count > 0 else None,
-            "source": "fallback_prompt_tokenizer",
+            "source": "llama_cpp_tokenize" if count > 0 else "unavailable",
             "exact": False,
         }
+
+    @staticmethod
+    def _chat_template_fallback_reason(exc: Exception) -> Optional[str]:
+        message = str(exc).lower()
+        template_terms = ("chat template", "chat_template", "chat format", "chat_format")
+        incompatibility_terms = (
+            "missing", "not found", "unavailable", "unsupported", "not supported",
+            "no chat", "cannot", "can't", "invalid",
+        )
+        if any(term in message for term in template_terms) and any(
+            term in message for term in incompatibility_terms
+        ):
+            return "chat_template_unavailable"
+        return None
 
     @staticmethod
     def _sanitize_history(history: Sequence[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -597,14 +620,28 @@ class LlamaCppInferenceBackend:
         temperature: float,
         top_p: float,
         seed: Optional[int] = None,
+        trace: Optional[Dict[str, object]] = None,
     ) -> Iterable[str]:
-        with self.lock:
+        trace = trace if trace is not None else {}
+        trace.update({
+            "inference_slots": 1,
+            "inference_path": "chat_completion",
+            "fallback_reason_code": None,
+            "chat_template_hash": self.current_model_info().get("chat_template_hash", ""),
+        })
+        trace["template_hash"] = trace["chat_template_hash"] or None
+        lock_started = time.perf_counter()
+        self.lock.acquire()
+        lock_acquired = time.perf_counter()
+        trace["worker_inference_lock_wait_s"] = round(lock_acquired - lock_started, 9)
+        try:
             if self.llm is None:
                 raise RuntimeError("No model loaded. Select a model first.")
             if seed is not None:
                 self.set_seed(seed)
             messages = self._sanitize_history(history)
             messages.append({"role": "user", "content": message.strip()})
+            emitted = 0
             try:
                 stream = self.llm.create_chat_completion(
                     messages=messages,
@@ -616,10 +653,18 @@ class LlamaCppInferenceBackend:
                 for chunk in stream:
                     token = self._extract_token(chunk)
                     if token:
+                        if emitted == 0:
+                            trace["prompt_eval_s"] = round(time.perf_counter() - lock_acquired, 9)
+                        emitted += 1
                         yield token
                 return
-            except Exception:
-                pass
+            except Exception as exc:
+                reason = self._chat_template_fallback_reason(exc)
+                if reason is None or emitted:
+                    raise
+                trace["inference_path"] = "completion_fallback"
+                trace["fallback_reason_code"] = reason
+                trace["template_hash"] = FALLBACK_TEMPLATE_HASH
             for chunk in self.llm.create_completion(
                 prompt=self._fallback_prompt(messages),
                 max_tokens=max_tokens,
@@ -629,7 +674,14 @@ class LlamaCppInferenceBackend:
             ):
                 token = self._extract_token(chunk)
                 if token:
+                    if emitted == 0:
+                        trace["prompt_eval_s"] = round(time.perf_counter() - lock_acquired, 9)
+                    emitted += 1
                     yield token
+            if "prompt_eval_s" not in trace:
+                trace["prompt_eval_s"] = round(time.perf_counter() - lock_acquired, 9)
+        finally:
+            self.lock.release()
 
 
 class LegacyWebInferenceBackend(LlamaCppInferenceBackend):

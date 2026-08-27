@@ -15,7 +15,7 @@ from statistics import mean
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 
-MEASUREMENT_SCHEMA_VERSION = 1
+MEASUREMENT_SCHEMA_VERSION = 2
 STEADY_STATE_POLICY = "phase09-pilot-window-v1"
 STEADY_STATE_WINDOW_SAMPLES = 3
 STEADY_STATE_TEMPERATURE_SPAN_C = 1.5
@@ -51,6 +51,7 @@ def request_measurement(run_id: str, result: Mapping[str, Any]) -> Dict[str, Any
     input_tokens = result.get("input_tokens")
     total_tokens = result.get("total_tokens")
     source = str(result.get("input_token_source") or "worker_not_reported")
+    token_count_source = str(result.get("token_count_source") or "unavailable")
     prefill = result.get("prefill_time_s")
     decode = result.get("decode_time_s")
     bytes_sent = result.get("bytes_sent")
@@ -76,6 +77,15 @@ def request_measurement(run_id: str, result: Mapping[str, Any]) -> Dict[str, Any
         "decode_tokens_per_s": result.get("decode_tokens_per_s"),
         "total_tokens": total_tokens,
         "generated_tokens": generated,
+        "token_count_source": token_count_source,
+        "inference_path": result.get("inference_path"),
+        "fallback_reason_code": result.get("fallback_reason_code"),
+        "chat_template_hash": result.get("chat_template_hash"),
+        "template_hash": result.get("template_hash"),
+        "controller_executor_queue_wait_s": result.get("controller_executor_queue_wait_s"),
+        "worker_inference_lock_wait_s": result.get("worker_inference_lock_wait_s"),
+        "prompt_eval_s": result.get("prompt_eval_s"),
+        "inference_slots": result.get("inference_slots", 1),
         "connection_setup_s": result.get("connection_setup_s"),
         "rtt_s": result.get("rtt_s"),
         "bytes_sent": bytes_sent,
@@ -103,6 +113,18 @@ def request_measurement(run_id: str, result: Mapping[str, Any]) -> Dict[str, Any
                 result.get("coordinator_wait_s"),
                 source="not_exposed_by_runtime",
                 reason="coordinator_internal_wait_unavailable",
+            ),
+            "controller_executor_queue_wait_s": _available(
+                result.get("controller_executor_queue_wait_s"),
+                source="controller_thread_pool",
+            ),
+            "worker_inference_lock_wait_s": _available(
+                result.get("worker_inference_lock_wait_s"),
+                source="worker_llama_context_lock",
+            ),
+            "prompt_eval_s": _available(
+                result.get("prompt_eval_s"),
+                source="worker_backend_first_token",
             ),
         },
     }

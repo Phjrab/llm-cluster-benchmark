@@ -98,6 +98,7 @@ def mount_worker_routes(
             first_token_at: Optional[float] = None
             pieces: list[str] = []
             chunks = 0
+            inference_trace: Dict[str, object] = {}
             try:
                 input_counter = getattr(backend, "count_input_tokens", None)
                 try:
@@ -119,6 +120,7 @@ def mount_worker_routes(
                     temperature=payload.temperature,
                     top_p=payload.top_p,
                     seed=seed,
+                    trace=inference_trace,
                 ):
                     now = time.perf_counter()
                     first_token_at = first_token_at or now
@@ -127,8 +129,13 @@ def mount_worker_routes(
                     yield as_sse("token", {"text": token})
                 finished = time.perf_counter()
                 text = "".join(pieces)
-                token_count = backend.tokenize(text) if text else 0
-                token_count = token_count or chunks
+                tokenizer_count = backend.tokenize(text) if text else 0
+                token_count = tokenizer_count or chunks
+                token_count_source = (
+                    "llama_cpp_tokenize" if tokenizer_count > 0
+                    else "stream_chunk_estimate" if chunks > 0
+                    else "unavailable"
+                )
                 ttft_s = (first_token_at - started) if first_token_at else finished - started
                 decode_time_s = max(finished - (first_token_at or finished), 0.0)
                 decode_tokens = max(token_count - (1 if first_token_at else 0), 0)
@@ -146,6 +153,7 @@ def mount_worker_routes(
                             "generation_s": round(decode_time_s, 6),
                             "e2e_s": round(finished - started, 6),
                             "generated_tokens": token_count,
+                            "token_count_source": token_count_source,
                             "input_tokens": input_tokens,
                             "input_token_source": input_measurement.get("source"),
                             "input_tokens_exact": input_measurement.get("exact") is True,
@@ -164,6 +172,13 @@ def mount_worker_routes(
                             "total_tokens": total_tokens,
                             "stream_chunks": chunks,
                             "output_chars": len(text),
+                            "inference_path": inference_trace.get("inference_path"),
+                            "fallback_reason_code": inference_trace.get("fallback_reason_code"),
+                            "chat_template_hash": inference_trace.get("chat_template_hash"),
+                            "template_hash": inference_trace.get("template_hash"),
+                            "worker_inference_lock_wait_s": inference_trace.get("worker_inference_lock_wait_s"),
+                            "prompt_eval_s": inference_trace.get("prompt_eval_s"),
+                            "inference_slots": 1,
                         }
                     },
                 )
@@ -217,6 +232,7 @@ def mount_worker_routes(
                 "inference_error": inference_status.get("error"),
                 "worker_api_auth": runtime.worker_api_auth,
                 "deployment_verified": deployment.get("verified") is True,
+                "inference_slots": 1,
             },
             "worker_api_auth": runtime.worker_api_auth,
             "telemetry_version": 2,

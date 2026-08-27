@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
-from cluster.domain.experiment import ExperimentConfig
+from cluster.domain.experiment import ExperimentConfig, config_fingerprint
 from cluster.domain.failures import failure_from_exception
 from cluster.domain.errors import ErrorCode
 from cluster.domain.power import RaspberryPiPowerIntegrity, unavailable_power_integrity
@@ -57,6 +57,7 @@ def benchmark_parameters(config: ExperimentConfig) -> Dict[str, Any]:
         "require_uniform_config": config.require_uniform_config,
         "prompt_sha256": hashlib.sha256(config.prompt.encode("utf-8")).hexdigest(),
         "prompt_chars": len(config.prompt),
+        "config_fingerprint_sha256": config_fingerprint(config),
     }
 
 
@@ -204,16 +205,27 @@ class BenchmarkRunner:
             persistence.append_measurement,
             self.sample_telemetry,
         )
+        event_config = asdict(config)
+        if not config.persist_prompt:
+            event_config.pop("prompt", None)
+            event_config["prompt_sha256"] = hashlib.sha256(
+                config.prompt.encode("utf-8")
+            ).hexdigest()
         started_event = persistence.emit(
             "run_started",
-            config=asdict(config),
+            config=event_config,
+            config_fingerprint_sha256=config_fingerprint(config),
+            ignored_config_keys=config.ignored_config_keys,
             nodes=[node.name for node in nodes],
             strategy=config.execution_strategy,
             total_work_units=total_work_units,
         )
         participant_nodes = self._capture_participants(nodes)
         loaded: List[Dict[str, Any]] = []
-        warnings: List[str] = []
+        warnings: List[str] = [
+            "Ignored unknown dashboard configuration keys: "
+            + ", ".join(config.ignored_config_keys)
+        ] if config.ignored_config_keys else []
         rpc_session: Optional[RpcSession] = None
         topology: Dict[str, Any] = {}
         power = RunPowerIntegrityTracker(persistence.emit)
@@ -400,6 +412,8 @@ class BenchmarkRunner:
                 "participant_nodes": participant_nodes,
                 "actual_model_config": loaded,
                 "benchmark_parameters": benchmark_parameters(config),
+                "config_fingerprint_sha256": config_fingerprint(config),
+                "ignored_config_keys": config.ignored_config_keys,
                 "warnings": warnings,
                 "scenario_summaries": scenario_summaries,
                 "topology": topology,
@@ -474,6 +488,8 @@ class BenchmarkRunner:
                 "participant_nodes": participant_nodes,
                 "actual_model_config": loaded,
                 "benchmark_parameters": benchmark_parameters(config),
+                "config_fingerprint_sha256": config_fingerprint(config),
+                "ignored_config_keys": config.ignored_config_keys,
                 "topology": topology,
                 "warnings": warnings,
                 "error": str(exc),

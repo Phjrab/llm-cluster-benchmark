@@ -164,6 +164,8 @@ class WorkerRouteContractTests(unittest.TestCase):
         self.assertIn('"generated_tokens": 2', response.text)
         self.assertIn('"input_tokens": 3', response.text)
         self.assertIn('"total_tokens": 5', response.text)
+        self.assertIn('"token_count_source": "llama_cpp_tokenize"', response.text)
+        self.assertIn('"inference_slots": 1', response.text)
         self.assertIn('"decode_tokens_per_s"', response.text)
         self.assertEqual(backend.seed, 123)
         unloaded = client.post("/api/unload-model")
@@ -223,6 +225,7 @@ class WorkerRouteContractTests(unittest.TestCase):
         payload = health.json()
         self.assertEqual(payload["node"]["role"], "worker")
         self.assertTrue(payload["capabilities"]["inference_ready"])
+        self.assertEqual(payload["capabilities"]["inference_slots"], 1)
         self.assertTrue(payload["capabilities"]["telemetry_degraded"])
         self.assertFalse(payload["capabilities"]["telemetry_ready"])
         self.assertIsNone(payload["metrics"]["gpu_pct"])
@@ -470,6 +473,7 @@ class LlamaBackendCompatibilityTests(unittest.TestCase):
             self.assertTrue(loaded["auto_adjusted_n_gpu_layers"])
             self.assertEqual(loaded["n_gpu_layers"], 4)
             self.assertTrue(any(layers == 8 for _, layers, _ in FakeLlama.attempts))
+            trace: Dict[str, object] = {}
             self.assertEqual(
                 list(
                     backend.stream_chat(
@@ -479,12 +483,40 @@ class LlamaBackendCompatibilityTests(unittest.TestCase):
                         temperature=0.2,
                         top_p=0.9,
                         seed=7,
+                        trace=trace,
                     )
                 ),
                 ["A", "B"],
             )
             self.assertEqual(backend.tokenize("AB"), 2)
             self.assertEqual(backend.llm.seed, 7)
+            self.assertEqual(trace["inference_path"], "completion_fallback")
+            self.assertEqual(trace["fallback_reason_code"], "chat_template_unavailable")
+            self.assertEqual(len(str(trace["template_hash"])), 64)
+            self.assertEqual(trace["inference_slots"], 1)
+            self.assertIn("worker_inference_lock_wait_s", trace)
+            self.assertIn("prompt_eval_s", trace)
+
+    def test_non_template_runtime_failure_is_not_hidden_by_completion_fallback(self) -> None:
+        class BrokenLlama:
+            completion_called = False
+
+            def create_chat_completion(self, **_: Any) -> Iterable[Dict[str, object]]:
+                raise RuntimeError("failed to allocate CUDA memory")
+
+            def create_completion(self, **_: Any) -> Iterable[Dict[str, object]]:
+                self.completion_called = True
+                return iter([])
+
+        with tempfile.TemporaryDirectory() as directory:
+            backend = LlamaCppInferenceBackend(Path(directory))
+            backend.llm = BrokenLlama()
+            with self.assertRaisesRegex(RuntimeError, "allocate CUDA memory"):
+                list(backend.stream_chat(
+                    message="hello", history=[], max_tokens=1,
+                    temperature=0.0, top_p=1.0,
+                ))
+            self.assertFalse(backend.llm.completion_called)
 
 
 if __name__ == "__main__":

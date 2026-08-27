@@ -1969,6 +1969,10 @@ class ExperimentManager:
 
     def start(self, payload: ExperimentPayload) -> Dict[str, Any]:
         payload_data = payload.model_dump()
+        for dashboard_only_key in (
+            "model_ids", "continue_on_model_error", "model_cooldown_s"
+        ):
+            payload_data.pop(dashboard_only_key, None)
         config = ExperimentConfig.from_dict(payload_data)
         config.validate()
         selected = select_nodes(read_enabled_nodes(), config.node_names)
@@ -2658,7 +2662,12 @@ class DashboardFacade:
                     platform_by_name[node.name] = detected or readiness_platforms.get(node.name) or node.platform
                 coordinator = select_rpc_coordinator(selected_nodes, payload.rpc_coordinator_node, platform_by_name)
                 payload = payload.model_copy(update={"rpc_coordinator_node": coordinator.name})
-            strategy_config = ExperimentConfig.from_dict(payload.model_dump())
+            strategy_payload = payload.model_dump()
+            for dashboard_only_key in (
+                "model_ids", "continue_on_model_error", "model_cooldown_s"
+            ):
+                strategy_payload.pop(dashboard_only_key, None)
+            strategy_config = ExperimentConfig.from_dict(strategy_payload)
             validate_strategy(selected_nodes, strategy_config)
             validate_experiment_environment(
                 selected_nodes, status_by_name, payload.model_ids, payload.execution_strategy,

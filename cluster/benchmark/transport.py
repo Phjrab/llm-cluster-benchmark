@@ -111,6 +111,7 @@ def stream_worker_request(
         "server_ttft_s": server_metrics.get("ttft_s"),
         "server_generation_s": server_metrics.get("generation_s"),
         "generated_tokens": generated_tokens,
+        "token_count_source": str(server_metrics.get("token_count_source") or "unavailable"),
         "tokens_per_s": round(generated_tokens / generation_s, 6) if generation_s > 0 else None,
         "output_chars": len(output),
         "output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest() if ok else "",
@@ -137,6 +138,13 @@ def stream_worker_request(
         "bytes_received": bytes_received,
         "effective_bandwidth_bytes_s": round(bandwidth, 6) if bandwidth is not None else None,
         "coordinator_wait_s": None,
+        "inference_path": server_metrics.get("inference_path"),
+        "fallback_reason_code": server_metrics.get("fallback_reason_code"),
+        "chat_template_hash": server_metrics.get("chat_template_hash"),
+        "template_hash": server_metrics.get("template_hash"),
+        "worker_inference_lock_wait_s": server_metrics.get("worker_inference_lock_wait_s"),
+        "prompt_eval_s": server_metrics.get("prompt_eval_s"),
+        "inference_slots": server_metrics.get("inference_slots", 1),
     }
 
 
@@ -166,6 +174,7 @@ def stream_rpc_request(
     first_token_at: Optional[float] = None
     output_parts: List[str] = []
     generated_tokens = 0
+    completion_usage_reported = False
     input_tokens: Optional[int] = None
     error = ""
     error_code = ""
@@ -188,6 +197,7 @@ def stream_rpc_request(
                     input_tokens = int(usage["prompt_tokens"])
                 if usage.get("completion_tokens") is not None:
                     generated_tokens = int(usage["completion_tokens"])
+                    completion_usage_reported = True
                 choices = event.get("choices") or []
                 if choices:
                     delta = choices[0].get("delta") or {}
@@ -237,7 +247,11 @@ def stream_rpc_request(
         "error_code": failure.code.value if failure else error_code,
         "failure": failure.to_dict() if failure else None,
         "warmup": False,
-        "token_count_source": "server_usage" if generated_tokens and generated_tokens != len(output_parts) else "stream_chunk_estimate",
+        "token_count_source": (
+            "server_usage" if completion_usage_reported
+            else "stream_chunk_estimate" if output_parts
+            else "unavailable"
+        ),
         "monotonic_started_s": round(started, 9),
         "monotonic_finished_s": round(finished, 9),
         "input_tokens": input_tokens,
@@ -261,6 +275,13 @@ def stream_rpc_request(
         "bytes_received": bytes_received,
         "effective_bandwidth_bytes_s": round(bandwidth, 6) if bandwidth is not None else None,
         "coordinator_wait_s": None,
+        "inference_path": "chat_completion",
+        "fallback_reason_code": None,
+        "chat_template_hash": "",
+        "template_hash": "",
+        "worker_inference_lock_wait_s": None,
+        "prompt_eval_s": round(ttft_s, 6) if ttft_s is not None else None,
+        "inference_slots": 1,
     }
 
 

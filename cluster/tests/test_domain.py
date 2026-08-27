@@ -22,6 +22,8 @@ from cluster.domain.controller import ControllerConfig, ControllerPlatform
 from cluster.domain.errors import DomainValidationError, ErrorCode, FailureRecord
 from cluster.domain.experiment import (
     ExperimentConfig,
+    config_fingerprint,
+    normalized_config_identity,
     normalize_model_ids,
     validate_model_id,
 )
@@ -373,6 +375,29 @@ class ExperimentConfigTests(unittest.TestCase):
         self.assertEqual(config.model_index, 1)
         self.assertEqual(config.model_count, 1)
         self.assertEqual(config.rpc_coordinator_node, None)
+        self.assertEqual(config.ignored_config_keys, ["legacy_future_field"])
+
+    def test_strict_config_rejects_unknown_keys(self) -> None:
+        with self.assertRaisesRegex(
+            DomainValidationError, "Unknown experiment configuration keys: typo"
+        ):
+            ExperimentConfig.from_dict(
+                {"node_names": ["jetson-01"], "typo": 1}, strict=True
+            )
+
+    def test_config_fingerprint_is_canonical_and_does_not_expose_prompt(self) -> None:
+        first = ExperimentConfig.from_dict(
+            {"node_names": ["jetson-01"], "prompt": "private prompt"}, strict=True
+        )
+        second = ExperimentConfig.from_dict(
+            {"prompt": "private prompt", "node_names": ["jetson-01"]}, strict=True
+        )
+        identity = normalized_config_identity(first)
+        self.assertNotIn("prompt", identity)
+        self.assertEqual(len(identity["prompt_sha256"]), 64)
+        self.assertEqual(config_fingerprint(first), config_fingerprint(second))
+        second.prompt = "different prompt"
+        self.assertNotEqual(config_fingerprint(first), config_fingerprint(second))
 
     def test_config_serializes_strategy_as_the_existing_json_string(self) -> None:
         config = ExperimentConfig.from_dict(

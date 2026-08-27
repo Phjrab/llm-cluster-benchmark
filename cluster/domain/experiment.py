@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 from .errors import DomainValidationError
@@ -75,11 +78,26 @@ class ExperimentConfig:
     pilot_cell_id: str = ""
     pilot_repeat_index: int = 0
     pilot_order_index: int = 0
+    ignored_config_keys: List[str] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, raw: Dict[str, Any]) -> "ExperimentConfig":
+    def from_dict(
+        cls, raw: Dict[str, Any], *, strict: bool = False
+    ) -> "ExperimentConfig":
         known = {item.name for item in cls.__dataclass_fields__.values()}
-        return cls(**{key: value for key, value in raw.items() if key in known})
+        unknown = sorted(str(key) for key in raw if key not in known)
+        if strict and unknown:
+            raise DomainValidationError(
+                "Unknown experiment configuration keys: " + ", ".join(unknown)
+            )
+        values = {key: value for key, value in raw.items() if key in known}
+        recorded = values.get("ignored_config_keys", [])
+        if recorded and not isinstance(recorded, list):
+            raise DomainValidationError("ignored_config_keys must be a list")
+        values["ignored_config_keys"] = sorted(
+            set(str(item) for item in recorded) | set(unknown)
+        )
+        return cls(**values)
 
     def validate(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -130,6 +148,11 @@ class ExperimentConfig:
             raise DomainValidationError("require_uniform_config must be a boolean")
         if not isinstance(self.acknowledge_experimental_rpc, bool):
             raise DomainValidationError("acknowledge_experimental_rpc must be a boolean")
+        if (
+            not isinstance(self.ignored_config_keys, list)
+            or any(not isinstance(item, str) or not item for item in self.ignored_config_keys)
+        ):
+            raise DomainValidationError("ignored_config_keys must contain non-empty strings")
 
         formal_research_values = (
             self.experiment_type,
@@ -266,6 +289,32 @@ class ExperimentConfig:
         self.rpc_coordinator_node = coordinator
 
 
+def normalized_config_identity(config: ExperimentConfig) -> Dict[str, Any]:
+    """Return the deterministic, privacy-safe execution identity."""
+    identity: Dict[str, Any] = {}
+    for name in sorted(config.__dataclass_fields__):
+        if name in {"prompt", "ignored_config_keys"}:
+            continue
+        value = getattr(config, name)
+        if isinstance(value, Enum):
+            value = value.value
+        identity[name] = value
+    identity["prompt_sha256"] = hashlib.sha256(
+        config.prompt.encode("utf-8")
+    ).hexdigest()
+    return identity
+
+
+def config_fingerprint(config: ExperimentConfig) -> str:
+    """Hash canonical JSON so dict order and prompt persistence cannot alter identity."""
+    canonical = json.dumps(
+        normalized_config_identity(config),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
 def normalize_model_ids(model_id: str, model_ids: Sequence[str]) -> List[str]:
     """Normalize legacy single-model and suite payloads without ambiguity."""
     normalized = list(model_ids) if model_ids else ([model_id] if model_id else [])
@@ -278,4 +327,10 @@ def normalize_model_ids(model_id: str, model_ids: Sequence[str]) -> List[str]:
     return normalized
 
 
-__all__ = ["ExperimentConfig", "normalize_model_ids", "validate_model_id"]
+__all__ = [
+    "ExperimentConfig",
+    "config_fingerprint",
+    "normalized_config_identity",
+    "normalize_model_ids",
+    "validate_model_id",
+]

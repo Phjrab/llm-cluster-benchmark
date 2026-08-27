@@ -527,10 +527,15 @@ class ExperimentTests(unittest.TestCase):
                 set(summary),
                 {
                     "actual_model_config", "all_replicas_success_rate", "answer_agreement_rate",
-                    "benchmark_parameters", "cluster_tokens_per_s", "e2e_p50_s", "e2e_p95_s",
+                    "benchmark_parameters", "cluster_tokens_per_s", "config_fingerprint_sha256",
+                    "e2e_p50_s", "e2e_p95_s", "effective_user_tokens",
+                    "effective_user_tokens_per_s",
                     "execution_strategy", "experiment_id", "failed", "finished_at", "logical_requests",
                     "model_count", "model_id", "model_index", "model_placement", "name", "nodes",
-                    "measurement_instrumentation", "participant_nodes", "per_node", "physical_requests", "requests", "requests_per_s", "result_dir", "run_id",
+                    "ignored_config_keys", "logical_requests_per_s", "measurement_instrumentation",
+                    "participant_nodes", "per_node", "physical_cluster_tokens_per_s",
+                    "physical_requests", "physical_requests_per_s", "requests", "requests_per_s",
+                    "result_dir", "run_id",
                     "scenario_summaries", "schema_version", "started_at", "status", "success_rate",
                     "successful", "suite_id", "topology", "total_generated_tokens", "ttft_p50_s",
                     "ttft_p95_s", "wall_s", "warnings",
@@ -540,7 +545,7 @@ class ExperimentTests(unittest.TestCase):
             self.assertEqual(summary["participant_nodes"][0]["hostname"], "jetson-a")
             self.assertEqual(summary["participant_nodes"][0]["runtime_backend"]["kind"], "cuda")
             self.assertEqual(summary["participant_nodes"][0]["capture_status"], "captured")
-            self.assertEqual(summary["measurement_instrumentation"]["schema_version"], 1)
+            self.assertEqual(summary["measurement_instrumentation"]["schema_version"], 2)
             requests_header = (Path(summary["result_dir"]) / "requests.csv").read_text(
                 encoding="utf-8"
             ).splitlines()[0]
