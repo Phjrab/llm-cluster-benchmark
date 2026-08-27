@@ -32,6 +32,14 @@
   "current_source_compatibility": {
     "compatible_for_formal_execution": false,
     "compared_source_ref": "workstream/ws-08-operations-research-docs@c1322d6f41bcf8ae3baa00e7488a8b972a102f79",
+    "planned_revalidation": {
+      "pilot_id": "formal-study-v1-current-source-revalidation-v6",
+      "plan_path": "config/research/pilot_plan.v6.json",
+      "planned_observations": 28,
+      "calibration_observations": 8,
+      "variance_observations": 20,
+      "status": "predeclared_not_started"
+    },
     "post_pilot_behavior_changes": [
       "85b4225: benchmark execution and measurement tracing",
       "004076f: energy-efficiency provenance",

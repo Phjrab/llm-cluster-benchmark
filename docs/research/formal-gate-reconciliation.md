@@ -52,6 +52,15 @@ RUNTIME_SOURCE_RELOCK
 The Dashboard and campaign builder both treat `formal_execution_allowed=false`
 as authoritative even when `blocking_phases` is empty.
 
+## Predeclared current-source pilot
+
+[`pilot_plan.v6.json`](../../config/research/pilot_plan.v6.json) is the
+separated current-source revalidation plan. It preserves the v5 workload and
+selection policy, but has its own durable pilot ID and result directory. It
+contains 28 serialized observations: eight thermal calibration observations and
+twenty independent variance observations. It is not a formal campaign and does
+not pool its records with v5 or formal results.
+
 ## Work intentionally not performed
 
 - no model load or inference request;
