@@ -50,6 +50,16 @@ class HostedWorkflowTests(unittest.TestCase):
         self.assertIn("test_packaging", text)
         self.assertIn("macos_controller_gate.py", text)
         self.assertIn("npm test", text)
+        self.assertIn('"workstream/**"', text)
+        self.assertIn(".artifacts/playwright", text)
+        self.assertNotIn("\n            playwright-report", text)
+        for filename in (
+            "wheel-build.log",
+            "wheel-install.log",
+            "shell-validation.log",
+            "macos-compatibility.log",
+        ):
+            self.assertIn(filename, text)
 
     def test_node_scripts_pin_playwright_and_run_all_browser_layers(self) -> None:
         package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))

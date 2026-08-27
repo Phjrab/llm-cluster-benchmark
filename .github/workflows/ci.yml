@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - "codex/**"
+      - "workstream/**"
   workflow_dispatch:
 
 permissions:
@@ -41,17 +42,21 @@ jobs:
         run: python -m compileall -q cluster scripts/ci
       - name: Build and install wheel in isolation
         run: |
-          python -m build --wheel --no-isolation
-          python -m unittest cluster.tests.test_packaging -v
+          set -o pipefail
+          python -m build --wheel --no-isolation 2>&1 | tee .artifacts/ci/wheel-build.log
+          python -m unittest cluster.tests.test_packaging -v 2>&1 | tee .artifacts/ci/wheel-install.log
       - name: Validate JSON, scientific locks, workflows, and security invariants
-        run: python scripts/ci/validate_repository.py | tee .artifacts/ci/repository-validation.log
+        run: |
+          set -o pipefail
+          python scripts/ci/validate_repository.py 2>&1 | tee .artifacts/ci/repository-validation.log
       - name: Validate shell scripts
         run: |
+          set -o pipefail
           mapfile -t scripts < <(find . -type f -name '*.sh' \
             -not -path './.git/*' -not -path './.venv/*' -not -path './build/*' \
             -not -path './dist/*' -not -path './node_modules/*' -print)
-          for script in "${scripts[@]}"; do bash -n "$script"; done
-          shellcheck "${scripts[@]}"
+          { for script in "${scripts[@]}"; do bash -n "$script"; done
+            shellcheck "${scripts[@]}"; } 2>&1 | tee .artifacts/ci/shell-validation.log
       - name: Preserve Linux evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -85,7 +90,9 @@ jobs:
           set -o pipefail
           .venv/bin/python scripts/ci/macos_controller_gate.py 2>&1 | tee .artifacts/ci/macos-controller.log
       - name: Exercise stale-PID and CLI compatibility tests
-        run: .venv/bin/python -m unittest cluster.tests.test_launcher cluster.tests.test_process_guard cluster.tests.test_phase14_regression -v
+        run: |
+          set -o pipefail
+          .venv/bin/python -m unittest cluster.tests.test_launcher cluster.tests.test_process_guard cluster.tests.test_phase14_regression -v 2>&1 | tee .artifacts/ci/macos-compatibility.log
       - name: Preserve macOS evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -134,7 +141,6 @@ jobs:
           name: browser-e2e-evidence
           path: |
             .artifacts/ci
-            playwright-report
-            test-results
+            .artifacts/playwright
           if-no-files-found: warn
           retention-days: 14
