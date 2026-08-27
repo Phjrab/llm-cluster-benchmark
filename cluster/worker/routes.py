@@ -184,9 +184,14 @@ def mount_worker_routes(
                 )
             except Exception as exc:
                 failure = failure_from_exception(exc, stage="inference")
+                public_failure = failure.to_dict()
+                public_failure["message"] = "Worker inference failed"
+                public_failure["evidence"] = {
+                    "exception_type": type(exc).__name__,
+                }
                 yield as_sse(
                     "error",
-                    {"message": str(exc), "failure": failure.to_dict()},
+                    {"message": "Worker inference failed", "failure": public_failure},
                 )
 
         return StreamingResponse(
@@ -289,9 +294,13 @@ def mount_worker_routes(
     @app.post("/cluster/models/install")
     async def install_model(payload: InstallModelRequest) -> Dict[str, Any]:
         try:
-            if payload.metadata:
+            if payload.metadata or payload.expected_size_bytes:
                 model = backend.install_model(
-                    payload.model_id, payload.source_url, payload.expected_sha256, payload.metadata
+                    payload.model_id,
+                    payload.source_url,
+                    payload.expected_sha256,
+                    payload.metadata,
+                    payload.expected_size_bytes,
                 )
             else:
                 # Preserve the Phase 05 custom backend contract for callers

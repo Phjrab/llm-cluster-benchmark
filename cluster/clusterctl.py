@@ -1486,10 +1486,12 @@ def command_prepare(nodes: Sequence[Node], args: argparse.Namespace) -> int:
     return 0
 
 
-def _rpc_runtime_command(node: Node, action: str, timeout: int) -> Dict[str, Any]:
+def _rpc_runtime_command(
+    node: Node, action: str, timeout: int, *arguments: str
+) -> Dict[str, Any]:
     script = f"{node.project_dir}/cluster/rpc/runtime.sh"
     try:
-        process = run_on_node(node, [script, action], timeout=timeout)
+        process = run_on_node(node, [script, action, *arguments], timeout=timeout)
         return {
             "name": node.name,
             "ok": process.returncode == 0,
@@ -1544,6 +1546,26 @@ def command_prepare_rpc(nodes: Sequence[Node], _args: argparse.Namespace) -> int
             print(result["stderr"], file=sys.stderr)
             return 1
     return 0
+
+
+def command_rpc_cleanup_check(nodes: Sequence[Node], _args: argparse.Namespace) -> int:
+    """Verify that the two fixed experiment RPC listeners are absent."""
+    results: List[Dict[str, Any]] = []
+    for node in nodes:
+        worker = _rpc_runtime_command(node, "assert-stopped-worker", 30, "50052")
+        coordinator = _rpc_runtime_command(
+            node, "assert-stopped-coordinator", 30, "18080"
+        )
+        results.append(
+            {
+                "name": node.name,
+                "ok": worker["ok"] and coordinator["ok"],
+                "worker": worker,
+                "coordinator": coordinator,
+            }
+        )
+    print(json.dumps(results, ensure_ascii=False, indent=2))
+    return 0 if results and all(item["ok"] for item in results) else 1
 
 
 def _power_control_one(node: Node, action: str, mode_id: Optional[int] = None) -> Dict[str, Any]:
@@ -1619,7 +1641,7 @@ def _lifecycle_one(node: Node, action: str) -> Dict[str, Any]:
     env_command = [
         "env",
         f"PORT={node.api_port}",
-        "HOST=0.0.0.0",
+        f"HOST={node.host}",
         f"CLUSTER_NODE_NAME={node.name}",
         f"CLUSTER_NODE_ROLE={node.role}",
         f"CLUSTER_PLATFORM={node.platform}",
@@ -1839,6 +1861,7 @@ def install_model_url_one(node: Node, model_id: str, source_url: str, expected_s
                 "model_id": model_id,
                 "source_url": source_url,
                 "expected_sha256": expected_sha256,
+                "expected_size_bytes": expected_size_bytes,
                 "metadata": metadata or {},
             },
             timeout=7200.0,
@@ -2135,6 +2158,10 @@ def build_parser() -> argparse.ArgumentParser:
         "prepare-rpc",
         help="Build the pinned native llama.cpp RPC model-parallel runtime",
     )
+    subparsers.add_parser(
+        "rpc-cleanup-check",
+        help="Verify fixed RPC ports and managed processes are stopped",
+    )
 
     subparsers.add_parser("power-status", help="Read Jetson nvpmodel modes through SSH")
     power_set_parser = subparsers.add_parser(
@@ -2202,6 +2229,8 @@ def main() -> int:
         return command_prepare(nodes, args)
     if args.command == "prepare-rpc":
         return command_prepare_rpc(nodes, args)
+    if args.command == "rpc-cleanup-check":
+        return command_rpc_cleanup_check(nodes, args)
     if args.command == "power-status":
         return command_power_status(nodes, args)
     if args.command == "power-set":

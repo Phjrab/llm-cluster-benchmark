@@ -181,7 +181,7 @@ class WorkerRpcBackend:
                 started_devices.append(device)
                 device_started = time.perf_counter()
                 started = self.runtime_command(
-                    device, "start-worker", str(RPC_SERVER_PORT), timeout=60
+                    device, "start-worker", str(RPC_SERVER_PORT), device.host, timeout=60
                 )
                 device_start_s[device.name] = round(time.perf_counter() - device_started, 6)
                 if not started["ok"]:
@@ -260,7 +260,7 @@ class WorkerRpcBackend:
                 endpoints_csv,
                 str(config.rpc_split_mode),
                 split_csv,
-                "0.0.0.0",
+                coordinator.host,
                 timeout=900,
             )
             if not started["ok"]:

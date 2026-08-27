@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import threading
 import time
 import urllib.parse
@@ -29,6 +30,8 @@ DEFAULT_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "256"))
 FALLBACK_TEMPLATE_HASH = hashlib.sha256(
     b"llm-cluster-role-lines-assistant-suffix-v1"
 ).hexdigest()
+DEFAULT_MAX_MODEL_DOWNLOAD_BYTES = 128 * 1024**3
+DEFAULT_MODEL_DOWNLOAD_RESERVE_BYTES = 512 * 1024**2
 
 
 class InferenceBackend(Protocol):
@@ -42,7 +45,7 @@ class InferenceBackend(Protocol):
 
     def delete_model(self, model_id: str) -> Dict[str, object]: ...
 
-    def install_model(self, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]: ...
+    def install_model(self, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None, expected_size_bytes: int = 0) -> Dict[str, object]: ...
 
     def current_model_info(self) -> Dict[str, object]: ...
 
@@ -132,6 +135,46 @@ class LlamaCppInferenceBackend:
             elif isinstance(value, str) and value.strip() and len(value) <= 256:
                 cleaned[key] = value.strip()
         return cleaned
+
+    @staticmethod
+    def _download_limit(name: str, default: int) -> int:
+        raw = os.getenv(name, "").strip()
+        if not raw:
+            return default
+        if not raw.isascii() or not raw.isdigit() or int(raw) < 1:
+            raise ValueError(f"{name} must be a positive byte count")
+        return int(raw)
+
+    @staticmethod
+    def _allowed_download_hosts() -> tuple[str, ...]:
+        raw = os.getenv("CLUSTER_MODEL_DOWNLOAD_ALLOWED_DOMAINS", "")
+        return tuple(
+            sorted(
+                {
+                    item.strip().lower().rstrip(".")
+                    for item in raw.split(",")
+                    if item.strip()
+                }
+            )
+        )
+
+    @classmethod
+    def _validate_download_url(cls, source_url: str, *, allow_query: bool = False) -> str:
+        parsed = urllib.parse.urlparse(source_url)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or (parsed.query and not allow_query)
+            or parsed.fragment
+        ):
+            raise ValueError("Model source_url must be a credential-free http(s) URL without query data")
+        host = parsed.hostname.lower().rstrip(".")
+        allowed = cls._allowed_download_hosts()
+        if allowed and not any(host == item or host.endswith(f".{item}") for item in allowed):
+            raise ValueError("Model download host is not in the configured allowlist")
+        return host
 
     @staticmethod
     def _verified_model_metadata(
@@ -326,7 +369,7 @@ class LlamaCppInferenceBackend:
                 self._write_model_metadata(metadata)
             return {"id": model_id, "filename": path.name, "size_bytes": size_bytes, "deleted": True}
 
-    def install_model(self, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]:
+    def install_model(self, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None, expected_size_bytes: int = 0) -> Dict[str, object]:
         """Download directly to this Worker and atomically verify before READY."""
         from cluster.domain.experiment import validate_model_id
 
@@ -335,9 +378,18 @@ class LlamaCppInferenceBackend:
         if not re.fullmatch(r"[0-9a-f]{64}", expected):
             raise ValueError("A 64-character expected_sha256 is required for direct model installation")
         install_metadata = self._safe_install_metadata(metadata)
-        parsed = urllib.parse.urlparse(source_url)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
-            raise ValueError("Model source_url must be a credential-free http(s) URL")
+        self._validate_download_url(source_url)
+        if (
+            isinstance(expected_size_bytes, bool)
+            or not isinstance(expected_size_bytes, int)
+            or expected_size_bytes < 0
+        ):
+            raise ValueError("expected_size_bytes must be a non-negative integer")
+        max_download_bytes = self._download_limit(
+            "CLUSTER_MODEL_DOWNLOAD_MAX_BYTES", DEFAULT_MAX_MODEL_DOWNLOAD_BYTES
+        )
+        if expected_size_bytes > max_download_bytes:
+            raise ValueError("Expected model size exceeds the Worker download limit")
         with self.lock:
             target = self.models_dir / model_id
             resolved_root = self.models_dir.resolve()
@@ -350,9 +402,24 @@ class LlamaCppInferenceBackend:
             if self.loaded_model_path is not None and target.resolve() == self.loaded_model_path:
                 raise RuntimeError("Unload the selected model before replacing it")
             target.parent.mkdir(parents=True, exist_ok=True)
-            if target.is_file() and self._cached_sha256(target) == expected:
+            if (
+                target.is_file()
+                and (not expected_size_bytes or target.stat().st_size == expected_size_bytes)
+                and self._cached_sha256(target) == expected
+            ):
                 self._persist_verified_metadata(model_id, target, install_metadata)
                 return {**self._verify_model_locked(model_id, expected), "downloaded_bytes": 0, "already_present": True}
+            reserve_bytes = self._download_limit(
+                "CLUSTER_MODEL_DOWNLOAD_RESERVE_BYTES",
+                DEFAULT_MODEL_DOWNLOAD_RESERVE_BYTES,
+            )
+            required_free = (
+                int(expected_size_bytes * 1.15) + reserve_bytes
+                if expected_size_bytes
+                else reserve_bytes
+            )
+            if shutil.disk_usage(target.parent).free < required_free:
+                raise OSError("Worker storage is insufficient for the verified model download")
             temporary = target.with_name(target.name + ".part")
             temporary.unlink(missing_ok=True)
             downloaded = 0
@@ -360,15 +427,33 @@ class LlamaCppInferenceBackend:
             try:
                 request = urllib.request.Request(source_url, headers={"User-Agent": "llm-cluster-worker/1"})
                 with urllib.request.urlopen(request, timeout=30) as response, temporary.open("wb") as handle:
+                    final_url = response.geturl() if callable(getattr(response, "geturl", None)) else source_url
+                    self._validate_download_url(final_url, allow_query=True)
+                    headers = getattr(response, "headers", None)
+                    content_length = headers.get("Content-Length") if headers is not None else None
+                    if content_length:
+                        if not str(content_length).isascii() or not str(content_length).isdigit():
+                            raise ValueError("Model download Content-Length is invalid")
+                        declared = int(content_length)
+                        if declared > max_download_bytes:
+                            raise ValueError("Model download exceeds the Worker download limit")
+                        if expected_size_bytes and declared != expected_size_bytes:
+                            raise ValueError("Model download size does not match the catalog lock")
                     while True:
                         chunk = response.read(1024 * 1024)
                         if not chunk:
                             break
+                        downloaded += len(chunk)
+                        if downloaded > max_download_bytes or (
+                            expected_size_bytes and downloaded > expected_size_bytes
+                        ):
+                            raise ValueError("Model download exceeded its verified byte limit")
                         handle.write(chunk)
                         digest.update(chunk)
-                        downloaded += len(chunk)
                     handle.flush()
                     os.fsync(handle.fileno())
+                if expected_size_bytes and downloaded != expected_size_bytes:
+                    raise ValueError("Model download size does not match the catalog lock")
                 if digest.hexdigest() != expected:
                     raise ValueError(f"Model checksum mismatch: {model_id}")
                 verified_metadata = self._verified_model_metadata(temporary, install_metadata)

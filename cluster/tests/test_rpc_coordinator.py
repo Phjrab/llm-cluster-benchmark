@@ -172,7 +172,12 @@ class WorkerRpcBackendTests(unittest.TestCase):
             args for name, action, args in commands
             if name == "jetson-1" and action == "start-coordinator"
         )
-        self.assertEqual(coordinator_start[-1], "0.0.0.0")
+        self.assertEqual(coordinator_start[-1], "192.168.10.11")
+        device_start = next(
+            args for name, action, args in commands
+            if name == "pi-1" and action == "start-worker"
+        )
+        self.assertEqual(device_start[-1], "192.168.10.21")
         self.assertNotIn("127.0.0.1:18080", session.url)
         session.close()
 

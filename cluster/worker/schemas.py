@@ -36,6 +36,7 @@ class InstallModelRequest(BaseModel):
     model_id: str = Field(..., description="Relative GGUF path from the worker models directory")
     source_url: str = Field(..., min_length=8, max_length=2048)
     expected_sha256: str = Field(..., min_length=64, max_length=64)
+    expected_size_bytes: int = Field(0, ge=0)
     metadata: Dict[str, object] = Field(default_factory=dict, description="Pinned source and accepted-license metadata")
 
 

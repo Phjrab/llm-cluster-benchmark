@@ -172,6 +172,25 @@ class WorkerRouteContractTests(unittest.TestCase):
         self.assertEqual(unloaded.status_code, 200)
         self.assertFalse(unloaded.json()["current"]["loaded"])
 
+    def test_inference_error_does_not_echo_prompt_or_backend_output(self) -> None:
+        client, backend, _ = self.make_client()
+        backend.loaded = "tiny.gguf"
+        secret_prompt = "private-patient-prompt-123"
+
+        def fail(**_kwargs: Any) -> Iterable[str]:
+            raise RuntimeError(f"native output included {secret_prompt}")
+            yield "unreachable"
+
+        backend.stream_chat = fail  # type: ignore[method-assign]
+        response = client.post(
+            "/cluster/chat/stream",
+            json={"message": secret_prompt, "max_tokens": 4, "seed": 123},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Worker inference failed", response.text)
+        self.assertNotIn(secret_prompt, response.text)
+        self.assertNotIn("native output", response.text)
+
     def test_cluster_inventory_verify_and_delete_contract(self) -> None:
         client, backend, _ = self.make_client()
         inventory = client.get("/cluster/models")

@@ -290,6 +290,31 @@ stop_recorded_service() {
   esac
 }
 
+assert_stopped_service() {
+  local pid_file=$1 identity_file=$2 executable=$3 port=$4 label=$5
+  local guard_status
+  require_lifecycle_tools
+  require_readiness_tools
+  if [[ -e "$identity_file" || -L "$identity_file" ]]; then
+    configure_recorded_guard "$pid_file" "$identity_file" "$executable"
+    set +e
+    guard_call status >/dev/null
+    guard_status=$?
+    set -e
+    case "$guard_status" in
+      0) die "$label managed process is still running on port $port" ;;
+      3) ;;
+      *) die "$label process metadata is unsafe or unverifiable" ;;
+    esac
+  elif [[ -e "$pid_file" || -L "$pid_file" ]]; then
+    die "$label PID has no exact argv identity"
+  fi
+  if ss -ltnH 2>/dev/null | grep -Eq "(^|[[:space:]])[^[:space:]]*:${port}[[:space:]]"; then
+    die "$label port $port still has a listener"
+  fi
+  echo "[OK] $label stopped port=$port"
+}
+
 platform_kind() {
   if [[ -f /etc/nv_tegra_release ]] || command -v nvpmodel >/dev/null 2>&1; then
     printf 'jetson'
@@ -486,5 +511,19 @@ case "$action" in
       "$llama_server_bin" \
       "$RUN_DIR/rpc_coordinator_${2}.lock"
     ;;
-  *) die "usage: runtime.sh prepare|check|start-worker|stop-worker|start-coordinator|stop-coordinator" ;;
+  assert-stopped-worker)
+    validate_port "${2:?port required}"
+    assert_stopped_service \
+      "$RUN_DIR/rpc_worker_${2}.pid" \
+      "$RUN_DIR/rpc_worker_${2}.identity.json" \
+      "$rpc_server_bin" "${2}" "RPC Worker"
+    ;;
+  assert-stopped-coordinator)
+    validate_port "${2:?port required}"
+    assert_stopped_service \
+      "$RUN_DIR/rpc_coordinator_${2}.pid" \
+      "$RUN_DIR/rpc_coordinator_${2}.identity.json" \
+      "$llama_server_bin" "${2}" "RPC coordinator"
+    ;;
+  *) die "usage: runtime.sh prepare|check|start-worker|stop-worker|start-coordinator|stop-coordinator|assert-stopped-worker|assert-stopped-coordinator" ;;
 esac
