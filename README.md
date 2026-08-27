@@ -45,6 +45,8 @@ Raspberry Pi 5는 OpenBLAS backend를 검증하며 pinned native llama.cpp RPC r
 ## Documentation
 
 - [Cluster operation guide](cluster/README.md)
+- [Security policy](SECURITY.md)
+- [Contributing and test guide](CONTRIBUTING.md)
 - [Refactor and acceptance reports](docs/refactor/)
 - [Formal experiment identity lock](docs/research/experiment-identity-lock.md)
 - [Locked research configuration](config/research/)
