@@ -41,11 +41,20 @@ def approved_model_lock() -> dict:
     lock = read_lock("model_lock.json")
     model = lock["models"][0]
     expected = model["binary"]["sha256"]
+    expected_size = model["binary"]["size_bytes"]
     model["verification"].update(
         {
             "status": "approved",
-            "verified_workers": ["worker-a"],
-            "observed_worker_checksums": {"worker-a": expected},
+            "verified_workers": [*model["verification"]["verified_workers"], "worker-a"],
+            "observed_worker_checksums": {
+                **model["verification"]["observed_worker_checksums"],
+                "worker-a": expected,
+            },
+            "observed_worker_sizes": {
+                **model["verification"]["observed_worker_sizes"],
+                "worker-a": expected_size,
+            },
+            "observed_identity_matches_expected": True,
         }
     )
     model["runtime_contract"]["chat_template_hash"] = "a" * 64
@@ -141,6 +150,11 @@ class ModelLockValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(LockValidationError, "license"):
             validate_model_lock(self.lock)
 
+    def test_positive_binary_size_is_required(self) -> None:
+        self.lock["models"][0]["binary"]["size_bytes"] = 0
+        with self.assertRaisesRegex(LockValidationError, "size_bytes"):
+            validate_model_lock(self.lock)
+
     def test_community_binary_requires_converter_provenance(self) -> None:
         model = self.lock["models"][0]
         model["source"]["official_gguf"] = False
@@ -152,6 +166,16 @@ class ModelLockValidationTests(unittest.TestCase):
         lock = approved_model_lock()
         lock["models"][0]["verification"]["observed_worker_checksums"]["worker-a"] = "0" * 64
         with self.assertRaisesRegex(LockValidationError, "checksum mismatch"):
+            validate_model_lock(lock)
+
+    def test_approved_model_requires_worker_size_and_identity_match(self) -> None:
+        lock = approved_model_lock()
+        lock["models"][0]["verification"]["observed_worker_sizes"]["worker-a"] = 1
+        with self.assertRaisesRegex(LockValidationError, "size mismatch"):
+            validate_model_lock(lock)
+        lock = approved_model_lock()
+        lock["models"][0]["verification"]["observed_identity_matches_expected"] = False
+        with self.assertRaisesRegex(LockValidationError, "identity is not verified"):
             validate_model_lock(lock)
 
     def test_complete_approved_model_contract_is_accepted(self) -> None:
@@ -297,6 +321,59 @@ class RuntimeAndEligibilityTests(unittest.TestCase):
         )
         self.assertFalse(result["eligible"])
         self.assertIn("MODEL_SHA_MISMATCH", {item["code"] for item in result["blocking_issues"]})
+
+    def test_selected_worker_must_have_approved_checksum_evidence(self) -> None:
+        lock = approved_model_lock()
+        model = lock["models"][0]
+        model["verification"]["verified_workers"].remove("pi-worker-04")
+        model["verification"]["observed_worker_checksums"].pop("pi-worker-04")
+        model["verification"]["observed_worker_sizes"].pop("pi-worker-04")
+        result = assess_formal_eligibility(
+            experiment_config=formal_config(),
+            experiment_conditions=read_lock("experiment_conditions.json"),
+            model_lock=lock,
+            prompt_lock=read_lock("prompt_set.json"),
+            runtime_lock=verified_runtime_lock(),
+            model_key="qwen2.5-1.5b-instruct-q4-k-m-official",
+            prompt_ids=["general-ko-001"],
+            selected_workers=["pi-worker-04"],
+        )
+        self.assertFalse(result["eligible"])
+        self.assertIn(
+            "MODEL_WORKER_NOT_VERIFIED",
+            {item["code"] for item in result["blocking_issues"]},
+        )
+
+    def test_live_model_checksum_is_required_when_preflight_is_supplied(self) -> None:
+        worker = next(
+            item for item in verified_runtime_lock()["workers"]
+            if item["node"] == "pi-worker-04"
+        )
+        result = assess_formal_eligibility(
+            experiment_config=formal_config(),
+            experiment_conditions=read_lock("experiment_conditions.json"),
+            model_lock=approved_model_lock(),
+            prompt_lock=read_lock("prompt_set.json"),
+            runtime_lock=verified_runtime_lock(),
+            model_key="qwen2.5-1.5b-instruct-q4-k-m-official",
+            prompt_ids=["general-ko-001"],
+            selected_workers=["pi-worker-04"],
+            live_preflight_snapshot={
+                "pi-worker-04": {
+                    "deployment": {
+                        "verified": True,
+                        "source_commit": worker["deployment"]["git_commit"],
+                        "source_tree_sha256": "a" * 64,
+                        "deployment_manifest_sha256": "b" * 64,
+                        "runtime_fingerprint": worker["runtime"]["runtime_fingerprint"],
+                        "llama_cpp_python_version": worker["runtime"]["llama_cpp_python"],
+                        "rpc_commit": PINNED_RPC_COMMIT,
+                    }
+                }
+            },
+        )
+        self.assertFalse(result["eligible"])
+        self.assertIn("MODEL_SHA_MISSING", {item["code"] for item in result["blocking_issues"]})
 
     def test_unapproved_shipped_model_is_blocked(self) -> None:
         model_key = "granite-3.3-8b-instruct-q4-k-m-official"

@@ -119,6 +119,13 @@ def validate_model_lock(lock: Mapping[str, Any]) -> None:
         sha256 = _require_nonempty(binary.get("sha256"), f"{key}.binary.sha256")
         if not HEX_64.fullmatch(sha256):
             raise LockValidationError(f"{key} binary SHA-256 is invalid")
+        size_bytes = binary.get("size_bytes")
+        if (
+            isinstance(size_bytes, bool)
+            or not isinstance(size_bytes, int)
+            or size_bytes < 1
+        ):
+            raise LockValidationError(f"{key} binary size_bytes must be a positive integer")
         _require_nonempty(binary.get("quantization"), f"{key}.binary.quantization")
         _require_nonempty(license_record.get("spdx_or_name"), f"{key}.license.spdx_or_name")
         _require_nonempty(
@@ -146,11 +153,22 @@ def validate_model_lock(lock: Mapping[str, Any]) -> None:
                     raise LockValidationError(f"{key} approved runtime metadata is not locked")
             workers = verification.get("verified_workers")
             observed = verification.get("observed_worker_checksums")
-            if not isinstance(workers, list) or not workers or not isinstance(observed, Mapping):
+            observed_sizes = verification.get("observed_worker_sizes")
+            if (
+                not isinstance(workers, list)
+                or not workers
+                or len(set(workers)) != len(workers)
+                or not isinstance(observed, Mapping)
+                or not isinstance(observed_sizes, Mapping)
+            ):
                 raise LockValidationError(f"{key} approved model lacks Worker verification")
             for worker in workers:
                 if observed.get(worker) != sha256:
                     raise LockValidationError(f"{key} Worker checksum mismatch on {worker}")
+                if observed_sizes.get(worker) != size_bytes:
+                    raise LockValidationError(f"{key} Worker size mismatch on {worker}")
+            if verification.get("observed_identity_matches_expected") is not True:
+                raise LockValidationError(f"{key} approved model identity is not verified")
 
 
 def validate_prompt_lock(lock: Mapping[str, Any]) -> None:
@@ -375,6 +393,15 @@ def assess_formal_eligibility(
     model = models.get(model_key)
     if model is None or model["verification"]["status"] != "approved":
         blocking.append(_issue("MODEL_NOT_APPROVED", model_key=model_key))
+    elif any(
+        node not in set(model["verification"].get("verified_workers") or [])
+        for node in selected_workers
+    ):
+        for node in selected_workers:
+            if node not in set(model["verification"].get("verified_workers") or []):
+                blocking.append(
+                    _issue("MODEL_WORKER_NOT_VERIFIED", node=node, model_key=model_key)
+                )
     locked_prompts = {item["prompt_id"] for item in prompt_lock["prompts"]}
     for prompt_id in prompt_ids:
         if prompt_id not in locked_prompts:
@@ -423,7 +450,9 @@ def assess_formal_eligibility(
         expected = model["binary"]["sha256"]
         for node in selected_workers:
             observed = live_preflight_snapshot.get(node, {}).get("model_sha256")
-            if observed is not None and observed != expected:
+            if observed is None:
+                blocking.append(_issue("MODEL_SHA_MISSING", node=node, model_key=model_key))
+            elif observed != expected:
                 blocking.append(_issue("MODEL_SHA_MISMATCH", node=node, model_key=model_key))
         blocking.extend(
             deployment_identity_issues(
