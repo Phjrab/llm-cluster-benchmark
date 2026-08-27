@@ -219,14 +219,20 @@ class FormalManifestTests(unittest.TestCase):
             "experiment_conditions": read_json("experiment_conditions.json"),
         }
 
-    def test_shipped_formal_campaign_is_blocked_until_phase_09_pilot(self) -> None:
+    def test_shipped_formal_campaign_preserves_frozen_pilot_decision_but_blocks_source_drift(self) -> None:
         values = self.inputs()
-        self.assertEqual(values["matrix"]["execution_gate"]["blocking_phases"], [9])
-        with self.assertRaisesRegex(CampaignValidationError, r"phase\(s\) 9"):
+        repeat = values["matrix"]["repeat_axis"]
+        self.assertEqual(repeat["selected_count"], 15)
+        self.assertEqual(values["matrix"]["execution_gate"]["blocking_phases"], [])
+        self.assertIn(
+            "CURRENT_SOURCE_PILOT_REVALIDATION",
+            values["matrix"]["execution_gate"]["blocking_requirements"],
+        )
+        with self.assertRaisesRegex(CampaignValidationError, "CURRENT_SOURCE_PILOT_REVALIDATION"):
             build_campaign_manifest(
                 campaign_id="formal-v1-test",
-                repeat_count=10,
-                repeat_count_decision_evidence="not-yet-frozen",
+                repeat_count=15,
+                repeat_count_decision_evidence=repeat["decision_evidence"],
                 model_ids=FORMAL_MODEL_IDS,
                 **values,
             )
@@ -248,19 +254,41 @@ class FormalManifestTests(unittest.TestCase):
         )
         manifest = build_campaign_manifest(
             campaign_id="formal-v1-test",
-            repeat_count=10,
-            repeat_count_decision_evidence="phase-09-pilot-report:fixture",
+            repeat_count=15,
+            repeat_count_decision_evidence=values["matrix"]["repeat_axis"]["decision_evidence"],
             model_ids=FORMAL_MODEL_IDS,
             created_at=FIXED.isoformat(),
             **values,
         )
-        self.assertEqual(len(manifest["cells"]), 720)
-        self.assertEqual(manifest["coverage"]["pending"], 720)
+        self.assertEqual(len(manifest["cells"]), 1080)
+        self.assertEqual(manifest["coverage"]["pending"], 1080)
         self.assertEqual(manifest["coverage"]["completed"], 0)
-        self.assertEqual(manifest["estimates"]["runs"], 720)
+        self.assertEqual(manifest["estimates"]["runs"], 1080)
         self.assertEqual(manifest["order_policy"], "randomized")
         self.assertFalse(manifest["retry_policy"]["automatic"])
-        self.assertEqual(len({item["campaign_cell_id"] for item in manifest["cells"]}), 720)
+        self.assertEqual(len({item["campaign_cell_id"] for item in manifest["cells"]}), 1080)
+
+    def test_open_gate_rejects_repeat_or_evidence_drift(self) -> None:
+        values = self.inputs()
+        values["matrix"] = copy.deepcopy(values["matrix"])
+        values["matrix"]["execution_gate"]["formal_execution_allowed"] = True
+        values["matrix"]["execution_gate"]["blocking_requirements"] = []
+        with self.assertRaisesRegex(CampaignValidationError, "pilot-frozen selected count"):
+            build_campaign_manifest(
+                campaign_id="formal-v1-test",
+                repeat_count=14,
+                repeat_count_decision_evidence=values["matrix"]["repeat_axis"]["decision_evidence"],
+                model_ids=FORMAL_MODEL_IDS,
+                **values,
+            )
+        with self.assertRaisesRegex(CampaignValidationError, "pilot freeze decision"):
+            build_campaign_manifest(
+                campaign_id="formal-v1-test",
+                repeat_count=15,
+                repeat_count_decision_evidence="operator-override",
+                model_ids=FORMAL_MODEL_IDS,
+                **values,
+            )
 
 
 class RepositoryTests(unittest.TestCase):

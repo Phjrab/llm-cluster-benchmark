@@ -2,7 +2,7 @@
   "schema_version": 1,
   "matrix_version": 1,
   "matrix_id": "formal-study-v1-matrix-v1",
-  "status": "planned_pending_phase_09_pilot",
+  "status": "pilot_frozen_pending_current_source_revalidation",
   "created_at": "2026-08-23T00:00:00Z",
   "lock_ref": {
     "lock_id": "formal-study-v1",
@@ -29,7 +29,10 @@
     "minimum": 10,
     "maximum": 30,
     "final_count_source": "phase-09-pilot",
-    "freeze_required_before_formal_execution": true
+    "freeze_required_before_formal_execution": true,
+    "selected_count": 15,
+    "selection_frozen": true,
+    "decision_evidence": "formal-study-v1-phase09-pilot-v5:analysis-sha256:cf7d914fba1afc58031166fb43544cccf122b7aebcc1d1c3e82cd8fe81523e1a"
   },
   "workload": {
     "requests_per_run": 20,
@@ -210,7 +213,7 @@
   ],
   "planning_assumptions": {
     "nominal_successful_run_s": 300,
-    "nominal_runtime_source": "provisional planning value; Phase 09 pilot replaces it",
+    "nominal_runtime_source": "conservative planning value; Phase 09 v5 observed median successful request run was 511.771813 s and campaign cooldown is accounted separately",
     "timeout_envelope_formula": "(ceil(requests_per_run/logical_concurrency)+warmup_requests_per_node)*request_timeout_s+model_cooldown_s",
     "bytes_per_physical_request": 16384,
     "bytes_per_run_metadata": 65536,
@@ -243,9 +246,25 @@
     "estimated_storage_bytes_minimum": 335544320,
     "estimated_storage_bytes_maximum": 1006632960
   },
+  "selected_volume": {
+    "repeat_count": 15,
+    "runs": 1080,
+    "logical_requests": 21600,
+    "physical_requests": 26400,
+    "warmup_requests": 1680,
+    "model_loads": 1080,
+    "model_unloads": 1080,
+    "minimum_cooldown_s_between_runs": 180,
+    "decision_evidence": "formal-study-v1-phase09-pilot-v5"
+  },
   "execution_gate": {
     "formal_execution_allowed": false,
-    "blocking_phases": [9],
-    "reason": "pilot-derived repeat count and cooldown/thermal policy are not frozen"
+    "blocking_phases": [],
+    "blocking_requirements": [
+      "CURRENT_SOURCE_PILOT_REVALIDATION",
+      "RUNTIME_SOURCE_RELOCK"
+    ],
+    "pilot_decision_frozen": true,
+    "reason": "Phase 09 v5 froze 15 repeats and a 180 s cooldown, but its Worker evidence used source 7aeb9fe; later measurement, energy, admission, and LAN-safety changes require a bounded current-source pilot revalidation and runtime/source re-lock before formal execution"
   }
 }

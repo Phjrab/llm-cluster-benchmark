@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "decision_version": 1,
+  "decision_id": "formal-study-v1-phase09-v5-freeze-v1",
+  "status": "historical_pilot_decision_frozen_pending_current_source_revalidation",
+  "pilot_id": "formal-study-v1-phase09-pilot-v5",
+  "pilot_plan": {
+    "path": "config/research/pilot_plan.v5.json",
+    "pilot_version": 5,
+    "canonical_plan_sha256": "90d3393ee77f9578c9698bf700af0b551f28b936e8d441379ef2e86772ffc02a",
+    "file_sha256": "9fdd5de46b425d55905295af4d9e1d5faa042ef07da46663b86c13da190e7ad2"
+  },
+  "runtime_evidence": {
+    "manifest_sha256": "796aa9fb5963d9c7f18039ffcb6549b6a3402a5b97fbfb5ac66c3bcff12922b0",
+    "analysis_sha256": "cf7d914fba1afc58031166fb43544cccf122b7aebcc1d1c3e82cd8fe81523e1a",
+    "observed_worker_source_commits": [
+      "7aeb9fedf7ade0ecefa5fe799cfaef31e1c5401f"
+    ],
+    "attempts": 29,
+    "successful_observations": 28,
+    "expected_observations": 28,
+    "freeze_ready": true
+  },
+  "frozen_decision": {
+    "selected_formal_repeats": 15,
+    "selected_minimum_cooldown_s": 180,
+    "maximum_worker_collection_overhead_fraction_observed": 0.047984985256483446,
+    "maximum_worker_collection_overhead_fraction_allowed": 0.05,
+    "precision_limited_metrics": [],
+    "blocking_pilot_findings": []
+  },
+  "current_source_compatibility": {
+    "compatible_for_formal_execution": false,
+    "compared_source_ref": "workstream/ws-08-operations-research-docs@c1322d6f41bcf8ae3baa00e7488a8b972a102f79",
+    "post_pilot_behavior_changes": [
+      "85b4225: benchmark execution and measurement tracing",
+      "004076f: energy-efficiency provenance",
+      "cd22eeb: formal model admission",
+      "0207829: private-LAN runtime boundaries"
+    ],
+    "required_before_formal_execution": [
+      "bounded current-source pilot revalidation of affected primary metrics and collection overhead",
+      "Controller and Worker source/deployment re-lock",
+      "runtime lock and formal lock fingerprint refresh",
+      "explicit execution-gate review"
+    ]
+  },
+  "formal_campaign_started": false
+}

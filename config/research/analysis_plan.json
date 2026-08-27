@@ -3,7 +3,16 @@
   "analysis_plan_version": 1,
   "analysis_plan_id": "formal-study-v1-analysis-v1",
   "matrix_id": "formal-study-v1-matrix-v1",
-  "status": "preregistered_draft_pending_phase_09_precision_values",
+  "status": "phase_09_v5_decision_frozen_pending_current_source_revalidation",
+  "pilot_freeze_decision": {
+    "decision_id": "formal-study-v1-phase09-v5-freeze-v1",
+    "pilot_id": "formal-study-v1-phase09-pilot-v5",
+    "selected_formal_repeats": 15,
+    "selected_minimum_cooldown_s": 180,
+    "freeze_ready": true,
+    "historical_evidence_only_until_current_source_revalidated": true,
+    "analysis_sha256": "cf7d914fba1afc58031166fb43544cccf122b7aebcc1d1c3e82cd8fe81523e1a"
+  },
   "analysis_units": {
     "independent_inference_unit": "run",
     "request_level_role": "nested_descriptive_only",
@@ -31,7 +40,7 @@
     "resampling_unit": "run",
     "seed": 20260823,
     "stratify_by": ["cell_id"],
-    "pilot_precision_target": "to_be_frozen_in_phase_09_before_formal_execution"
+    "pilot_precision_target": "frozen by formal-study-v1-phase09-pilot-v5 at 15 independent runs; current-source revalidation remains required"
   },
   "primary_contrasts": [
     {

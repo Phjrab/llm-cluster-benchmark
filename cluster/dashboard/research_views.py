@@ -339,6 +339,8 @@ def research_readiness(
         )
     execution_gate = matrix.get("execution_gate") if isinstance(matrix.get("execution_gate"), Mapping) else {}
     blocking_phases = list(execution_gate.get("blocking_phases") or [])
+    blocking_requirements = list(execution_gate.get("blocking_requirements") or [])
+    formal_execution_allowed = execution_gate.get("formal_execution_allowed") is True
     worker_blockers = [
         {"node": item["node"], "code": "WORKER_NOT_FORMALLY_READY"}
         for item in workers
@@ -353,7 +355,14 @@ def research_readiness(
         "observed_commit": controller_commit,
         "status": "match" if controller_commit == controller_expected else "drift",
     }
-    eligible = not blocking_phases and not license_blockers and not worker_blockers and controller_source["status"] == "match"
+    eligible = (
+        formal_execution_allowed
+        and not blocking_phases
+        and not blocking_requirements
+        and not license_blockers
+        and not worker_blockers
+        and controller_source["status"] == "match"
+    )
     return {
         "schema_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -372,13 +381,19 @@ def research_readiness(
         "controller_source": controller_source,
         "workers": workers,
         "execution_gate": {
-            "formal_execution_allowed": execution_gate.get("formal_execution_allowed") is True,
+            "formal_execution_allowed": formal_execution_allowed,
             "blocking_phases": blocking_phases,
+            "blocking_requirements": blocking_requirements,
             "reason": execution_gate.get("reason"),
         },
         "blocking_issues": worker_blockers
         + [{"code": "LICENSE_ACCEPTANCE_REQUIRED", **item} for item in license_blockers]
         + ([{"code": "FORMAL_PHASE_GATE", "phases": blocking_phases}] if blocking_phases else [])
+        + ([{
+            "code": "FORMAL_EXECUTION_GATE",
+            "requirements": blocking_requirements,
+            "reason": execution_gate.get("reason"),
+        }] if not formal_execution_allowed else [])
         + ([{"code": "CONTROLLER_SOURCE_DRIFT"}] if controller_source["status"] != "match" else []),
     }
 

@@ -45,7 +45,8 @@ class ShippedMatrixTests(unittest.TestCase):
         self.assertEqual(volume, matrix["expected_volume"])
 
     def test_exact_workload_budget_separates_logical_and_physical_requests(self) -> None:
-        volume = compute_matrix_volume(read_json("formal_experiment_matrix.json"))
+        matrix = read_json("formal_experiment_matrix.json")
+        volume = compute_matrix_volume(matrix)
         self.assertEqual(volume["runs_minimum"], 720)
         self.assertEqual(volume["runs_maximum"], 2160)
         self.assertEqual(volume["logical_requests_per_matrix_repeat"], 1440)
@@ -53,6 +54,10 @@ class ShippedMatrixTests(unittest.TestCase):
         self.assertEqual(volume["warmup_requests_per_matrix_repeat"], 112)
         self.assertEqual(volume["estimated_storage_bytes_minimum"], 320 * 1024 * 1024)
         self.assertEqual(volume["estimated_storage_bytes_maximum"], 960 * 1024 * 1024)
+        self.assertEqual(matrix["repeat_axis"]["selected_count"], 15)
+        self.assertTrue(matrix["repeat_axis"]["selection_frozen"])
+        self.assertEqual(matrix["selected_volume"]["runs"], 1080)
+        self.assertEqual(matrix["selected_volume"]["physical_requests"], 26400)
 
     def test_every_active_cell_is_formal_and_controller_free(self) -> None:
         matrix = read_json("formal_experiment_matrix.json")
@@ -137,6 +142,11 @@ class MatrixFailureTests(unittest.TestCase):
         with self.assertRaisesRegex(MatrixValidationError, "unlocked platform_profile"):
             validate(self.matrix)
 
+    def test_repeat_selection_drift_is_rejected(self) -> None:
+        self.matrix["repeat_axis"]["selected_count"] = 31
+        with self.assertRaisesRegex(MatrixValidationError, "selected_count"):
+            validate(self.matrix)
+
 
 class ProtocolAndAnalysisTests(unittest.TestCase):
     def test_shipped_protocol_and_analysis_validate(self) -> None:
@@ -147,6 +157,10 @@ class ProtocolAndAnalysisTests(unittest.TestCase):
         protocol = read_json("experiment_protocol.json")
         self.assertEqual(protocol["repeat_policy"]["independent_unit"], "run")
         self.assertEqual(protocol["repeat_policy"]["final_count_source"], "phase-09-pilot")
+        self.assertEqual(protocol["repeat_policy"]["selected_count"], 15)
+        self.assertTrue(protocol["repeat_policy"]["selection_frozen"])
+        self.assertEqual(protocol["thermal_policy"]["minimum_cooldown_s"], 180)
+        self.assertFalse(protocol["thermal_policy"]["formal_start_blocked_until_frozen"])
         self.assertEqual(protocol["execution_order"]["seed"], 20260823)
         self.assertFalse(protocol["parallel_formal_runs"])
 

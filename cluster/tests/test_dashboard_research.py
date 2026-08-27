@@ -309,7 +309,26 @@ class ResearchReadinessTests(unittest.TestCase):
         self.assertEqual(worker["runtime_identity"], "drift")
         self.assertEqual(worker["power_identity"], "drift")
         self.assertIn(9, value["execution_gate"]["blocking_phases"])
+        self.assertTrue(any(item["code"] == "FORMAL_EXECUTION_GATE" for item in value["blocking_issues"]))
         self.assertFalse(value["eligible"])
+
+    def test_non_phase_formal_requirement_cannot_appear_eligible(self) -> None:
+        values = self.inputs()
+        values["model_lock"]["models"] = [values["model_lock"]["models"][0]]
+        values["matrix"]["execution_gate"] = {
+            "formal_execution_allowed": False,
+            "blocking_phases": [],
+            "blocking_requirements": ["CURRENT_SOURCE_PILOT_REVALIDATION"],
+            "reason": "pilot evidence predates measurement changes",
+        }
+        value = research_readiness(**values)
+        self.assertFalse(value["eligible"])
+        self.assertEqual(
+            value["execution_gate"]["blocking_requirements"],
+            ["CURRENT_SOURCE_PILOT_REVALIDATION"],
+        )
+        issue = next(item for item in value["blocking_issues"] if item["code"] == "FORMAL_EXECUTION_GATE")
+        self.assertEqual(issue["requirements"], ["CURRENT_SOURCE_PILOT_REVALIDATION"])
 
 
 @unittest.skipUnless(

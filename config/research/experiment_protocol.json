@@ -3,7 +3,7 @@
   "protocol_version": 1,
   "protocol_id": "formal-study-v1-protocol-v1",
   "matrix_id": "formal-study-v1-matrix-v1",
-  "status": "planned_pending_pilot",
+  "status": "pilot_frozen_pending_current_source_revalidation",
   "experiment_type_separation": {
     "types": ["smoke", "pilot", "formal"],
     "mixing_allowed": false,
@@ -16,6 +16,9 @@
     "minimum": 10,
     "maximum": 30,
     "final_count_source": "phase-09-pilot",
+    "selected_count": 15,
+    "selection_frozen": true,
+    "decision_evidence": "formal-study-v1-phase09-pilot-v5:analysis-sha256:cf7d914fba1afc58031166fb43544cccf122b7aebcc1d1c3e82cd8fe81523e1a",
     "decision_rule": "choose the smallest count meeting the predeclared primary-metric CI half-width target, capped at 30; if unmet at 30 report precision limitation without optional stopping",
     "result_peeking_for_early_significance": false
   },
@@ -95,9 +98,10 @@
     "no_selective_deletion": true
   },
   "thermal_policy": {
-    "minimum_cooldown_s": 3,
-    "final_stabilization_rule_source": "phase-09-pilot",
-    "formal_start_blocked_until_frozen": true,
+    "minimum_cooldown_s": 180,
+    "final_stabilization_rule_source": "formal-study-v1-phase09-pilot-v5",
+    "formal_start_blocked_until_frozen": false,
+    "decision_evidence": "analysis-sha256:cf7d914fba1afc58031166fb43544cccf122b7aebcc1d1c3e82cd8fe81523e1a",
     "temperature_and_throttling_state_recorded_at_boundaries": true
   },
   "stop_conditions": [
@@ -108,5 +112,11 @@
     "instrumentation failure affecting a primary outcome",
     "cleanup failure leaving model or RPC processes active",
     "critical product defect requiring a code change"
-  ]
+  ],
+  "formal_execution_preconditions": {
+    "pilot_decision_frozen": true,
+    "current_source_pilot_revalidation_required": true,
+    "runtime_source_relock_required": true,
+    "campaign_execution_authorized": false
+  }
 }

@@ -208,6 +208,18 @@ def validate_formal_matrix(
     if common_fingerprint != lock_ref.get("lock_sha256"):
         raise MatrixValidationError("matrix lock fingerprint mismatch")
 
+    repeat_axis = _mapping(matrix.get("repeat_axis"), "repeat_axis")
+    repeat_minimum = _positive_int(repeat_axis.get("minimum"), "repeat_axis.minimum")
+    repeat_maximum = _positive_int(repeat_axis.get("maximum"), "repeat_axis.maximum")
+    selected_count = _positive_int(
+        repeat_axis.get("selected_count"), "repeat_axis.selected_count"
+    )
+    if not repeat_minimum <= selected_count <= repeat_maximum:
+        raise MatrixValidationError("repeat_axis.selected_count must be within the frozen range")
+    if repeat_axis.get("selection_frozen") is not True:
+        raise MatrixValidationError("repeat_axis selection must be frozen")
+    _text(repeat_axis.get("decision_evidence"), "repeat_axis.decision_evidence")
+
     approved_models = {
         item["model_key"]
         for item in model_lock.get("models", [])
@@ -327,6 +339,12 @@ def validate_experiment_protocol(protocol: Mapping[str, Any]) -> None:
     repeat = _mapping(protocol.get("repeat_policy"), "repeat_policy")
     if repeat.get("independent_unit") != "run" or repeat.get("final_count_source") != "phase-09-pilot":
         raise MatrixValidationError("the independent repeat must be a run selected by the pilot")
+    minimum = _positive_int(repeat.get("minimum"), "repeat_policy.minimum")
+    maximum = _positive_int(repeat.get("maximum"), "repeat_policy.maximum")
+    selected = _positive_int(repeat.get("selected_count"), "repeat_policy.selected_count")
+    if not minimum <= selected <= maximum or repeat.get("selection_frozen") is not True:
+        raise MatrixValidationError("the pilot-selected repeat count must be frozen within range")
+    _text(repeat.get("decision_evidence"), "repeat_policy.decision_evidence")
     ordering = _mapping(protocol.get("execution_order"), "execution_order")
     _positive_int(ordering.get("seed"), "execution_order.seed")
     if ordering.get("algorithm") != "seeded_randomized_blocks":
@@ -336,6 +354,17 @@ def validate_experiment_protocol(protocol: Mapping[str, Any]) -> None:
         raise MatrixValidationError("download and model load must remain outside measurement timing")
     if protocol.get("parallel_formal_runs") is not False:
         raise MatrixValidationError("formal runs must be serialized for the frozen protocol")
+    thermal = _mapping(protocol.get("thermal_policy"), "thermal_policy")
+    if thermal.get("formal_start_blocked_until_frozen") is not False:
+        raise MatrixValidationError("the pilot-derived thermal policy must be frozen")
+    if _nonnegative_number(
+        thermal.get("minimum_cooldown_s"), "thermal_policy.minimum_cooldown_s"
+    ) <= 0:
+        raise MatrixValidationError("thermal_policy.minimum_cooldown_s must be positive")
+    _text(
+        thermal.get("final_stabilization_rule_source"),
+        "thermal_policy.final_stabilization_rule_source",
+    )
 
 
 def validate_analysis_plan(plan: Mapping[str, Any]) -> None:

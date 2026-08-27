@@ -244,8 +244,16 @@
     const blockers = document.querySelector("#researchBlockers");
     if (blockers) {
       const issues = value.blocking_issues || [];
+      const executionAllowed = value.execution_gate?.formal_execution_allowed === true;
+      const phaseBlockers = value.execution_gate?.blocking_phases || [];
+      const requirementBlockers = value.execution_gate?.blocking_requirements || [];
+      const gateDetail = requirementBlockers.length
+        ? requirementBlockers.join(", ")
+        : phaseBlockers.length
+          ? `phase ${phaseBlockers.join(", ")}`
+          : executionAllowed ? "open" : "closed";
       blockers.className = `research-blockers ${issues.length ? "blocked" : "ready"}`;
-      blockers.innerHTML = `<div><span>${issues.length ? "FORMAL EXECUTION BLOCKERS" : "FORMAL GATE"}</span><strong>${issues.length ? `${issues.length}개 조치 필요` : "현재 blocker 없음"}</strong><small>Controller source ${esc(value.controller_source.status)} · phase gate ${(value.execution_gate.blocking_phases || []).join(", ") || "open"}</small></div>${issues.length ? `<ul>${issues.map(issue => `<li><code>${esc(issue.code)}</code>${issue.node ? `<span>${esc(issue.node)}</span>` : ""}${issue.model_key ? `<span>${esc(issue.model_key)}</span>` : ""}</li>`).join("")}</ul>` : ""}`;
+      blockers.innerHTML = `<div><span>${issues.length ? "FORMAL EXECUTION BLOCKERS" : "FORMAL GATE"}</span><strong>${issues.length ? `${issues.length}개 조치 필요` : "현재 blocker 없음"}</strong><small>Controller source ${esc(value.controller_source.status)} · execution ${executionAllowed ? "open" : "blocked"} · ${esc(gateDetail)}</small></div>${issues.length ? `<ul>${issues.map(issue => `<li><code>${esc(issue.code)}</code>${issue.node ? `<span>${esc(issue.node)}</span>` : ""}${issue.model_key ? `<span>${esc(issue.model_key)}</span>` : ""}</li>`).join("")}</ul>` : ""}`;
     }
   }
 

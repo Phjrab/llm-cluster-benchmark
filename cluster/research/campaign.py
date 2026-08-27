@@ -334,14 +334,27 @@ def build_campaign_manifest(
         or repeat_count > int(repeat_axis.get("maximum") or 0)
     ):
         raise CampaignValidationError("repeat_count must be within the frozen matrix range")
-    if not isinstance(repeat_count_decision_evidence, str) or not repeat_count_decision_evidence.strip():
-        raise CampaignValidationError("pilot-derived repeat count evidence is required")
+    frozen_repeat_count = repeat_axis.get("selected_count")
+    if repeat_count != frozen_repeat_count:
+        raise CampaignValidationError("repeat_count must equal the pilot-frozen selected count")
+    frozen_repeat_evidence = str(repeat_axis.get("decision_evidence") or "").strip()
+    if (
+        not isinstance(repeat_count_decision_evidence, str)
+        or repeat_count_decision_evidence.strip() != frozen_repeat_evidence
+    ):
+        raise CampaignValidationError("repeat-count evidence must match the pilot freeze decision")
     execution_gate = matrix.get("execution_gate") or {}
     if execution_gate.get("formal_execution_allowed") is not True:
         phases = ", ".join(str(item) for item in execution_gate.get("blocking_phases") or [])
-        raise CampaignValidationError(
-            "formal campaign remains blocked" + (f" by phase(s) {phases}" if phases else "")
+        requirements = ", ".join(
+            str(item) for item in execution_gate.get("blocking_requirements") or []
         )
+        suffix = (
+            f" by phase(s) {phases}" if phases
+            else f" by requirement(s) {requirements}" if requirements
+            else ""
+        )
+        raise CampaignValidationError("formal campaign remains blocked" + suffix)
     thermal = protocol.get("thermal_policy") or {}
     if thermal.get("formal_start_blocked_until_frozen") is not False:
         raise CampaignValidationError("pilot-derived cooldown and thermal policy is not frozen")
