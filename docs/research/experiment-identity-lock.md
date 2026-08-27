@@ -107,6 +107,12 @@ Fixed identity가 달라진 run은 같은 Matrix cell에 합치지 않는다.
 
 Qwen2.5 3B와 Granite 3.3 8B는 별도 후속 후보로 계속 `source_locked`이며 승인된 두 모델의 실행을 막지 않는다. Pi 02의 power history는 non-blocking warning이다.
 
+Phase 09 v5는 15회 반복과 180초 cooldown을 동결했지만, 관측 Worker
+source `7aeb9fe` 이후 측정 관련 코드가 변경되었다. 따라서 현재 formal
+execution은 `CURRENT_SOURCE_PILOT_REVALIDATION`과 `RUNTIME_SOURCE_RELOCK`이
+끝날 때까지 별도로 차단된다. 이 상태는 모델·cohort 적격성과 캠페인
+실행 허가를 구분한다.
+
 ## 13. Remaining unresolved identities
 
 - Qwen 3B와 Granite 8B의 controlled installation 및 runtime metadata 검증(후속 후보)

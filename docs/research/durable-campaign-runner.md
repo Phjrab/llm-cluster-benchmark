@@ -4,8 +4,9 @@
 
 Roadmap Phase 06 adds the durable execution layer for the frozen formal matrix.
 It does not choose the final repeat count, change any research lock, or start a
-formal campaign. Phase 09 pilot evidence must first freeze the repeat count and
-cooldown/thermal stabilization rule.
+formal campaign. Phase 09 v5 subsequently froze 15 repeats and a 180-second
+minimum cooldown; current-source pilot revalidation and runtime/source re-lock
+still precede any formal manifest.
 
 ## Deterministic order
 
@@ -129,11 +130,13 @@ The shipped matrix currently remains:
 
 ```text
 formal_execution_allowed = false
-blocking_phases = [9]
+blocking_phases = []
+blocking_requirements = [CURRENT_SOURCE_PILOT_REVALIDATION, RUNTIME_SOURCE_RELOCK]
 ```
 
 Manifest construction therefore fails before writing or starting anything.
-Phase 09 must provide the pilot-derived repeat-count evidence, freeze the
-cooldown/thermal rule, refresh the final runtime/source lock as required, and
-open the execution gate. A caller cannot use the Phase 06 API to bypass this
-state.
+The historical pilot decision is frozen, but its Worker source predates later
+measurement, energy, admission, and LAN-safety changes. A bounded current-source
+pilot must revalidate affected primary metrics and instrumentation overhead;
+the refreshed runtime/source lock and an explicit gate review must then open
+the gate. A caller cannot use the Phase 06 API to bypass this state.

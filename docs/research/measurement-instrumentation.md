@@ -103,7 +103,7 @@ its energy fields are null with reason `raspberry_pi_power_sensor_unavailable`.
 | `end_temperature_c` | °C | Maximum sensor value in the final valid sample |
 | `throttling_sample_count` | samples | Count of active Raspberry Pi firmware fault samples; null on platforms without this signal |
 | `frequency_samples` | MHz + monotonic s | Raw CPU frequency observations, not an inferred average |
-| `steady_state_start` | — | Null until Phase 09 freezes a pilot-derived steady-state rule |
+| `steady_state_start` | — | Null unless a versioned pilot-derived steady-state rule is available for the current source |
 
 No thermal or throttling value is fabricated for Jetson/Pi sensors that do not
 expose it. Pi historical fault bits remain in the existing independent
@@ -157,5 +157,6 @@ inside a mode 0700 run directory and contain no prompt or response text.
 - Pi has no board power sensor in the current stack, so energy is normally
   unavailable even though undervoltage/throttling integrity remains visible.
 - RTT and internal RPC coordinator wait remain unavailable.
-- Phase 09 must freeze the steady-state rule and decide whether the sampling
-  interval is sufficient before Phase 10 formal execution.
+- Phase 09 v5 accepted the sampling overhead and froze a 180-second cooldown.
+  Because measurement code changed afterward, current-source pilot
+  revalidation remains required before formal execution.

@@ -1,7 +1,7 @@
 # Formal Analysis Plan v1
 
-Status: preregistered draft; Phase 09 must fill the CI precision target before
-formal execution.
+Status: Phase 09 v5 decision frozen; formal execution remains blocked pending
+current-source pilot revalidation and runtime/source re-lock.
 
 ## Analysis hierarchy
 
@@ -34,10 +34,12 @@ Every applicable output reports count, mean, median, standard deviation, IQR,
 minimum, maximum, p50, p95, 95% CI, coefficient of variation, and failure rate.
 
 The default interval is a percentile bootstrap with 10,000 resamples, fixed
-seed `20260823`, and run-level resampling within a matrix cell. Phase 09 fixes
-the target half-width and final repeat count before formal collection. Families
-of declared primary contrasts use Holm adjustment; unadjusted effect sizes and
-confidence intervals remain visible.
+seed `20260823`, and run-level resampling within a matrix cell. Phase 09 v5
+froze 15 independent repeats and a minimum 180-second cooldown. That decision
+is preserved as historical pilot evidence; because measurement-affecting code
+changed afterward, it does not by itself authorize the formal campaign.
+Families of declared primary contrasts use Holm adjustment; unadjusted effect
+sizes and confidence intervals remain visible.
 
 ## Primary and sensitivity sets
 

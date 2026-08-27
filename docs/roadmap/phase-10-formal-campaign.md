@@ -141,3 +141,18 @@ all of the following are versioned and frozen together:
 Development that does not claim formal results may continue. Phase 11 can only
 develop analysis/export tooling against fixtures and separated pilot data; it
 must not label the incomplete pilot as formal evidence.
+
+## 8. Later evidence reconciliation (2026-08-28)
+
+Sections 1–7 are the historical Phase 10 entry report and remain unchanged as
+an audit record. Phase 09 later completed a v5 pilot with 28 of 28 successful
+observations and `freeze_ready=true`. That evidence froze 15 repeats and a
+180-second minimum cooldown; see
+[`formal-gate-reconciliation.md`](../research/formal-gate-reconciliation.md).
+
+Formal execution is still not admitted. The v5 Worker evidence used source
+`7aeb9fedf7ade0ecefa5fe799cfaef31e1c5401f`, which predates later measurement,
+energy, admission, and LAN-safety changes. The stale `blocking_phases=[9]`
+representation has therefore been replaced by
+`CURRENT_SOURCE_PILOT_REVALIDATION` and `RUNTIME_SOURCE_RELOCK`. No formal
+campaign was created during this reconciliation.

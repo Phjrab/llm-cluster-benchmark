@@ -1,6 +1,7 @@
 # Formal Experiment Matrix v1
 
-Status: planned, not executable until Phase 05 instrumentation and the Phase 09 pilot are complete
+Status: Phase 09 v5 decision frozen; not executable until current-source pilot
+revalidation and runtime/source re-lock are complete
 
 ## Locked inputs
 
@@ -67,8 +68,10 @@ deferred questions with unlock conditions in the machine-readable matrix.
 
 ## Workload size
 
-The repeat count is not guessed. Phase 09 selects an integer from 10 through 30
-using pilot run-level variance and a predeclared CI half-width target.
+The repeat count is not guessed. Phase 09 v5 selected 15 from the preregistered
+10–30 range using pilot run-level variance and the predeclared CI half-width
+target. The selected volume is 1,080 runs, 21,600 logical requests, and 26,400
+physical requests.
 
 | Quantity | Per full matrix repeat | 10 repeats | 30 repeats |
 |---|---:|---:|---:|
@@ -83,10 +86,11 @@ run. It must never be reported as 60 independent user requests.
 
 ## Runtime and storage planning
 
-Phase 09 replaces the provisional five-minute successful-run assumption. Under
-that planning value, the matrix requires about 60 hours at 10 repeats or 180
-hours at 30 repeats. The request-timeout envelope is deliberately much larger:
-approximately 720.6 or 2,161.8 hours respectively. It is a failure envelope,
+The five-minute successful-run value remains a conservative matrix planning
+assumption; Phase 09 v5 observed a 511.77-second median successful request run,
+and the frozen 180-second campaign cooldown is accounted separately. At the
+selected 15 repeats, base run time alone is approximately 90 hours. The
+request-timeout envelope is deliberately much larger and is a failure envelope,
 not an expected duration.
 
 The raw-response allowance is 16 KiB per physical request plus 64 KiB per run.

@@ -3,9 +3,9 @@
 ## Scope and freeze boundary
 
 This protocol defines how a future formal campaign is executed. It does not
-authorize a run. Formal execution remains blocked until Phase 05 supplies all
-required instrumentation and Phase 09 freezes repeat count, cooldown, and
-precision targets.
+authorize a run. Phase 09 v5 froze the pilot-derived repeat count and cooldown,
+but formal execution remains blocked until the affected measurements are
+revalidated on current source and the runtime/source identities are re-locked.
 
 Smoke, pilot, and formal results use different campaign IDs and result
 directories. Pilot observations may determine the formal repeat count, but
@@ -20,8 +20,8 @@ they never enter formal estimates.
   strategy.
 - The same fixed prompt and seed are repeated for the 20 logical requests in
   that run.
-- Repeat indices start at 1. Phase 09 selects 10–30 repeats before any formal
-  result is observed.
+- Repeat indices start at 1. The frozen count is 15, selected within the
+  preregistered 10–30 range before any formal result was observed.
 
 ## Seeded execution order
 
@@ -96,3 +96,10 @@ estimates.
 A critical product defect stops the campaign. A repair requires a new commit,
 updated identity locks if affected, and a repeated pilot before formal execution
 resumes.
+
+## Current admission state
+
+The checked-in execution gate is closed. `CURRENT_SOURCE_PILOT_REVALIDATION`
+and `RUNTIME_SOURCE_RELOCK` must both be cleared by versioned evidence before a
+manifest can be created. No operator or Dashboard action may treat an empty
+phase-number list as permission to start.
