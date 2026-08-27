@@ -49,6 +49,7 @@
     "created_at": {"type": "string", "format": "date-time"},
     "updated_at": {"type": "string", "format": "date-time"},
     "order_seed": {"const": 20260823},
+    "order_policy": {"const": "randomized"},
     "repeat_count": {"type": "integer", "minimum": 10, "maximum": 30},
     "repeat_count_decision_evidence": {"type": "string", "minLength": 1},
     "controller_participant_policy": {"const": "forbidden"},

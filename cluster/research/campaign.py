@@ -403,6 +403,7 @@ def build_campaign_manifest(
         "created_at": timestamp,
         "updated_at": timestamp,
         "order_seed": seed,
+        "order_policy": "randomized",
         "repeat_count": repeat_count,
         "repeat_count_decision_evidence": repeat_count_decision_evidence.strip(),
         "controller_participant_policy": "forbidden",

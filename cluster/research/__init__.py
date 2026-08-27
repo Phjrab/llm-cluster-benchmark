@@ -20,7 +20,18 @@ from .campaign import (
     validate_campaign_manifest,
 )
 from .eligibility import DRIFT_CODES, assess_campaign_cell
-from .scheduler import coverage_from_cells, seeded_randomized_block_order
+from .scheduler import (
+    ORDER_POLICIES,
+    coverage_from_cells,
+    schedule_condition_order,
+    seeded_randomized_block_order,
+)
+from .statistical_campaign import (
+    StatisticalCampaignError,
+    aggregate_campaign_attempts,
+    aggregate_run_summaries,
+    describe_samples,
+)
 
 __all__ = [
     "PINNED_RPC_COMMIT",
@@ -41,5 +52,11 @@ __all__ = [
     "DRIFT_CODES",
     "assess_campaign_cell",
     "coverage_from_cells",
+    "ORDER_POLICIES",
+    "schedule_condition_order",
     "seeded_randomized_block_order",
+    "StatisticalCampaignError",
+    "aggregate_campaign_attempts",
+    "aggregate_run_summaries",
+    "describe_samples",
 ]

@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Phjrab/llm-cluster-benchmark/schemas/statistical-campaign-aggregate-v1.json",
+  "title": "LLM Cluster Statistical Campaign Aggregate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "seed",
+    "bootstrap_resamples",
+    "attempt_count",
+    "condition_count",
+    "conditions"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "artifact_type": {"const": "statistical_campaign_aggregate"},
+    "seed": {"type": "integer"},
+    "bootstrap_resamples": {"type": "integer", "minimum": 100},
+    "attempt_count": {"type": "integer", "minimum": 1},
+    "condition_count": {"type": "integer", "minimum": 1},
+    "conditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/condition"}
+    }
+  },
+  "$defs": {
+    "nullableNumber": {"type": ["number", "null"]},
+    "exclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_id", "run_id", "status", "reason", "measurement_quality"],
+      "properties": {
+        "attempt_id": {"type": "string", "minLength": 1},
+        "run_id": {"type": ["string", "null"]},
+        "status": {"enum": ["completed", "failed", "cancelled", "excluded"]},
+        "reason": {"type": "string", "minLength": 1},
+        "measurement_quality": {"type": ["string", "null"]}
+      }
+    },
+    "missingMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_id", "run_id", "reason", "measurement_quality"],
+      "properties": {
+        "attempt_id": {"type": "string", "minLength": 1},
+        "run_id": {"type": ["string", "null"]},
+        "reason": {"type": "string", "minLength": 1},
+        "measurement_quality": {"type": ["string", "null"]}
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "mean",
+        "median",
+        "standard_deviation",
+        "iqr",
+        "bootstrap_ci95",
+        "excluded_measurements"
+      ],
+      "properties": {
+        "count": {"type": "integer", "minimum": 0},
+        "mean": {"$ref": "#/$defs/nullableNumber"},
+        "median": {"$ref": "#/$defs/nullableNumber"},
+        "standard_deviation": {"$ref": "#/$defs/nullableNumber"},
+        "iqr": {"$ref": "#/$defs/nullableNumber"},
+        "bootstrap_ci95": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {"$ref": "#/$defs/nullableNumber"}
+        },
+        "excluded_measurements": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/missingMetric"}
+        }
+      }
+    },
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "condition_id",
+        "attempt_count",
+        "successful_repeat_count",
+        "failed_repeat_count",
+        "excluded_repeat_count",
+        "exclusions",
+        "platform_families",
+        "comparison_class",
+        "formal_comparison_eligible",
+        "metrics"
+      ],
+      "properties": {
+        "condition_id": {"type": "string", "minLength": 1},
+        "attempt_count": {"type": "integer", "minimum": 1},
+        "successful_repeat_count": {"type": "integer", "minimum": 0},
+        "failed_repeat_count": {"type": "integer", "minimum": 0},
+        "excluded_repeat_count": {"type": "integer", "minimum": 0},
+        "exclusions": {"type": "array", "items": {"$ref": "#/$defs/exclusion"}},
+        "platform_families": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "comparison_class": {"enum": ["homogeneous", "exploratory"]},
+        "formal_comparison_eligible": {"type": "boolean"},
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/statistics"}
+        }
+      }
+    }
+  }
+}

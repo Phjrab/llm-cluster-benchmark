@@ -258,6 +258,7 @@ class FormalManifestTests(unittest.TestCase):
         self.assertEqual(manifest["coverage"]["pending"], 720)
         self.assertEqual(manifest["coverage"]["completed"], 0)
         self.assertEqual(manifest["estimates"]["runs"], 720)
+        self.assertEqual(manifest["order_policy"], "randomized")
         self.assertFalse(manifest["retry_policy"]["automatic"])
         self.assertEqual(len({item["campaign_cell_id"] for item in manifest["cells"]}), 720)
 
