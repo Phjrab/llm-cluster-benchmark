@@ -62,6 +62,8 @@ class MeasurementNormalizationTests(unittest.TestCase):
             raw={
                 "metrics": {
                     "sampled_at": "2026-08-23T00:00:00+00:00",
+                    "telemetry_provider": "jtop+psutil",
+                    "telemetry_degraded": False,
                     "power": {"total_w": 12.5},
                     "temperatures_c": {"soc": 51.0},
                     "cpu": {"frequency_mhz": 1728},
@@ -85,6 +87,9 @@ class MeasurementNormalizationTests(unittest.TestCase):
         self.assertEqual(sample["worker_collection_overhead_s"], 0.004)
         self.assertEqual(sample["platform_kind"], None)
         self.assertEqual(sample["power_w"], 12.5)
+        self.assertEqual(sample["power_provider"], "jtop")
+        self.assertEqual(sample["telemetry_provider"], "jtop+psutil")
+        self.assertFalse(sample["telemetry_degraded"])
         self.assertFalse(sample["throttled"])
         self.assertTrue(sample["throttling_supported"])
 
@@ -124,6 +129,9 @@ class MeasurementSummaryTests(unittest.TestCase):
             },
             {
                 "node": "pi-02", "sample_kind": "measurement", "power_w": 10.0,
+                "power_provider": "jtop", "telemetry_provider": "jtop+psutil",
+                "platform_kind": "jetson", "power_mode": "MAXN",
+                "jetson_clocks": False,
                 "monotonic_elapsed_s": 0.0, "temperatures_c": {"soc": 50.0},
                 "cpu_frequency_mhz": 1800, "network_bytes_sent": 100,
                 "network_bytes_received": 200, "throttling_supported": True,
@@ -131,6 +139,9 @@ class MeasurementSummaryTests(unittest.TestCase):
             },
             {
                 "node": "pi-02", "sample_kind": "measurement", "power_w": 20.0,
+                "power_provider": "jtop", "telemetry_provider": "jtop+psutil",
+                "platform_kind": "jetson", "power_mode": "MAXN",
+                "jetson_clocks": False,
                 "monotonic_elapsed_s": 2.0, "temperatures_c": {"soc": 60.0},
                 "cpu_frequency_mhz": 1600, "network_bytes_sent": 500,
                 "network_bytes_received": 1000, "throttling_supported": True,
@@ -147,8 +158,20 @@ class MeasurementSummaryTests(unittest.TestCase):
         self.assertEqual(node["average_power_w"], 15.0)
         self.assertEqual(node["peak_power_w"], 20.0)
         self.assertEqual(node["energy_j"], 30.0)
+        self.assertEqual(node["measurement_energy_j"], 30.0)
+        self.assertEqual(node["joules_per_request"], 15.0)
+        self.assertEqual(node["joules_per_generated_token"], round(30 / 45, 9))
+        self.assertEqual(node["tokens_per_joule"], 1.5)
+        self.assertEqual(node["tokens_per_second_per_watt"], 1.5)
         self.assertEqual(node["generated_tokens_per_j"], 1.5)
         self.assertEqual(node["requests_per_j"], round(2 / 30, 9))
+        self.assertEqual(node["power_provider"], "jtop")
+        self.assertEqual(node["telemetry_provider"], "jtop+psutil")
+        self.assertEqual(node["power_mode"], "MAXN")
+        self.assertFalse(node["jetson_clocks"])
+        self.assertEqual(summary["overall"]["measurement_energy_j"], 30.0)
+        self.assertEqual(summary["overall"]["joules_per_request"], 15.0)
+        self.assertEqual(summary["overall"]["tokens_per_joule"], 1.5)
         self.assertEqual(node["start_temperature_c"], 50.0)
         self.assertEqual(node["mean_temperature_c"], 55.0)
         self.assertEqual(node["peak_temperature_c"], 60.0)
@@ -188,6 +211,53 @@ class MeasurementSummaryTests(unittest.TestCase):
         self.assertIsNone(node["energy_j"])
         self.assertIsNone(node["generated_tokens_per_j"])
         self.assertFalse(node["availability"]["energy_j"]["available"])
+
+    def test_pi_power_is_not_estimated_and_degraded_provider_reason_is_explicit(self) -> None:
+        pi = summarize_measurements(
+            [
+                {
+                    "node": "pi-02",
+                    "scenario_id": "single",
+                    "sample_kind": "measurement",
+                    "platform_kind": "raspberry-pi",
+                    "telemetry_provider": "psutil",
+                    "power_w": None,
+                    "monotonic_elapsed_s": 0.0,
+                }
+            ],
+            [{"node": "pi-02", "ok": True, "generated_tokens": 5}],
+        )["nodes"]["pi-02"]
+        self.assertIsNone(pi["measurement_energy_j"])
+        self.assertIsNone(pi["joules_per_generated_token"])
+        self.assertEqual(
+            pi["availability"]["energy_j"]["reason"],
+            "raspberry_pi_power_sensor_unavailable",
+        )
+
+        degraded = summarize_measurements(
+            [
+                {
+                    "node": "jetson-01",
+                    "scenario_id": "single",
+                    "sample_kind": "measurement",
+                    "platform_kind": "jetson",
+                    "telemetry_provider": "psutil",
+                    "telemetry_degraded": True,
+                    "telemetry_error": "jtop client/service mismatch",
+                    "power_w": None,
+                    "monotonic_elapsed_s": 0.0,
+                }
+            ],
+            [],
+        )["nodes"]["jetson-01"]
+        self.assertTrue(degraded["telemetry_degraded"])
+        self.assertEqual(
+            degraded["availability"]["energy_j"]["reason"],
+            "telemetry_provider_degraded",
+        )
+        self.assertEqual(
+            degraded["telemetry_errors"], ["jtop client/service mismatch"]
+        )
 
     def test_energy_does_not_integrate_unsampled_gap_between_scenarios(self) -> None:
         samples = [

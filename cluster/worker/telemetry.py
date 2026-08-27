@@ -451,7 +451,11 @@ class TelemetryService:
         with self._lock:
             cached = copy.deepcopy(self._snapshot_cache)
         snapshot = cached if cached is not None else self.provider.snapshot()
+        status = self.provider.status()
         snapshot.setdefault("telemetry_collection_interval_s", self.collection_interval_s)
+        snapshot["telemetry_provider"] = status.get("provider")
+        snapshot["telemetry_degraded"] = bool(status.get("degraded"))
+        snapshot["telemetry_error"] = status.get("error")
         return snapshot
 
     def status(self) -> Dict[str, Any]:

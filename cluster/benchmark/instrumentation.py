@@ -15,7 +15,7 @@ from statistics import mean
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 
-MEASUREMENT_SCHEMA_VERSION = 2
+MEASUREMENT_SCHEMA_VERSION = 3
 STEADY_STATE_POLICY = "phase09-pilot-window-v1"
 STEADY_STATE_WINDOW_SAMPLES = 3
 STEADY_STATE_TEMPERATURE_SPAN_C = 1.5
@@ -189,6 +189,19 @@ def normalize_telemetry_sample(
     power_w = _number(metrics.get("power_w"))
     if power_w is None:
         power_w = _number(power.get("total_w"))
+    telemetry_provider = str(metrics.get("telemetry_provider") or "unknown")
+    telemetry_degraded = bool(
+        metrics.get("telemetry_degraded") or raw.get("probe_error")
+    )
+    telemetry_error = str(
+        metrics.get("telemetry_error") or raw.get("probe_error") or ""
+    )
+    if power_w is not None and "jtop" in telemetry_provider:
+        power_provider = "jtop"
+    elif power_w is not None:
+        power_provider = telemetry_provider
+    else:
+        power_provider = None
     frequency = _number(cpu.get("frequency_mhz"))
     current_faults = (
         power_integrity.get("current_fault_bits")
@@ -231,6 +244,12 @@ def normalize_telemetry_sample(
         ),
         "worker_collection_sequence": metrics.get("telemetry_collection_sequence"),
         "power_w": power_w,
+        "power_provider": power_provider,
+        "telemetry_provider": telemetry_provider,
+        "telemetry_degraded": telemetry_degraded,
+        "telemetry_error": telemetry_error,
+        "power_mode": power.get("mode"),
+        "jetson_clocks": power.get("jetson_clocks"),
         "temperatures_c": temperatures,
         "cpu_frequency_mhz": frequency,
         "network_bytes_sent": network.get("bytes_sent"),
@@ -241,8 +260,12 @@ def normalize_telemetry_sample(
         "availability": {
             "power_w": _available(
                 power_w,
-                source="worker_telemetry",
-                reason="power_sensor_unavailable",
+                source=power_provider or telemetry_provider,
+                reason=(
+                    "telemetry_provider_degraded"
+                    if telemetry_degraded
+                    else "power_sensor_unavailable"
+                ),
             ),
             "temperature": _available(
                 max(
@@ -440,18 +463,85 @@ def summarize_measurements(
             for item in node_samples
             if isinstance(item.get("platform_kind"), str) and item.get("platform_kind")
         })
+        power_providers = sorted({
+            str(item.get("power_provider"))
+            for item in measured
+            if isinstance(item.get("power_provider"), str)
+            and item.get("power_provider")
+        })
+        telemetry_providers = sorted({
+            str(item.get("telemetry_provider"))
+            for item in node_samples
+            if isinstance(item.get("telemetry_provider"), str)
+            and item.get("telemetry_provider")
+        })
+        telemetry_degraded = any(bool(item.get("telemetry_degraded")) for item in node_samples)
+        telemetry_errors = sorted({
+            str(item.get("telemetry_error"))
+            for item in node_samples
+            if isinstance(item.get("telemetry_error"), str)
+            and item.get("telemetry_error")
+        })
+        power_modes = sorted({
+            str(item.get("power_mode"))
+            for item in measured
+            if item.get("power_mode") not in {None, ""}
+        })
+        jetson_clock_values = {
+            item.get("jetson_clocks")
+            for item in measured
+            if item.get("jetson_clocks") is not None
+        }
+        average_power_w = (
+            round(energy_j / power_duration_s, 6)
+            if energy_j is not None and power_duration_s and power_duration_s > 0
+            else None
+        )
+        joules_per_request = (
+            round(energy_j / successful, 9)
+            if energy_j is not None and successful > 0
+            else None
+        )
+        joules_per_token = (
+            round(energy_j / generated, 9)
+            if energy_j is not None and generated > 0
+            else None
+        )
+        tokens_per_joule = (
+            round(generated / energy_j, 9)
+            if energy_j is not None and energy_j > 0
+            else None
+        )
+        power_unavailable_reason = (
+            "raspberry_pi_power_sensor_unavailable"
+            if platforms == ["raspberry-pi"] and not power_providers
+            else "telemetry_provider_degraded"
+            if telemetry_degraded
+            else "fewer_than_two_power_samples"
+        )
         per_node[node] = {
             "sample_count": len(measured),
             "idle_power_w": round(mean(idle_powers), 6) if idle_powers else None,
-            "average_power_w": (
-                round(energy_j / power_duration_s, 6)
-                if energy_j is not None and power_duration_s and power_duration_s > 0
-                else None
-            ),
+            "average_power_w": average_power_w,
             "peak_power_w": round(max(powers), 6) if powers else None,
             "energy_j": energy_j,
-            "generated_tokens_per_j": round(generated / energy_j, 9) if energy_j and energy_j > 0 else None,
+            "measurement_energy_j": energy_j,
+            "joules_per_request": joules_per_request,
+            "joules_per_generated_token": joules_per_token,
+            "tokens_per_joule": tokens_per_joule,
+            "tokens_per_second_per_watt": tokens_per_joule,
+            "generated_tokens_per_j": tokens_per_joule,
             "requests_per_j": round(successful / energy_j, 9) if energy_j and energy_j > 0 else None,
+            "power_provider": power_providers[0] if len(power_providers) == 1 else None,
+            "telemetry_provider": telemetry_providers[0] if len(telemetry_providers) == 1 else None,
+            "telemetry_degraded": telemetry_degraded,
+            "telemetry_errors": telemetry_errors,
+            "power_mode": power_modes[0] if len(power_modes) == 1 else None,
+            "jetson_clocks": (
+                next(iter(jetson_clock_values))
+                if len(jetson_clock_values) == 1
+                else None
+            ),
             "start_temperature_c": temperatures[0] if temperatures else None,
             "mean_temperature_c": round(mean(temperatures), 6) if temperatures else None,
             "peak_temperature_c": max(temperatures) if temperatures else None,
@@ -493,7 +583,7 @@ def summarize_measurements(
                 "energy_j": _available(
                     energy_j,
                     source="trapezoidal_power_integration",
-                    reason="fewer_than_two_power_samples",
+                    reason=power_unavailable_reason,
                 ),
                 "thermal": _available(
                     temperatures[0] if temperatures else None,
@@ -524,6 +614,26 @@ def summarize_measurements(
     all_idle_available = bool(per_node) and len(idle_values) == len(per_node)
     all_average_available = bool(per_node) and len(average_values) == len(per_node)
     all_peak_available = bool(per_node) and len(peak_values) == len(per_node)
+    unavailable_node_reasons = {
+        node: value["availability"]["energy_j"]["reason"]
+        for node, value in per_node.items()
+        if not value["availability"]["energy_j"]["available"]
+    }
+    overall_joules_per_request = (
+        round(overall_energy / successful_requests, 9)
+        if overall_energy is not None and successful_requests > 0
+        else None
+    )
+    overall_joules_per_token = (
+        round(overall_energy / total_generated, 9)
+        if overall_energy is not None and total_generated > 0
+        else None
+    )
+    overall_tokens_per_joule = (
+        round(total_generated / overall_energy, 9)
+        if overall_energy is not None and overall_energy > 0
+        else None
+    )
     topology = dict(rpc_topology or {})
     rpc = {
         "model_load_distribution_s": (
@@ -554,14 +664,17 @@ def summarize_measurements(
             "average_power_w": round(sum(average_values), 6) if all_average_available else None,
             "peak_power_w": round(sum(peak_values), 6) if all_peak_available else None,
             "energy_j": overall_energy,
-            "generated_tokens_per_j": (
-                round(total_generated / overall_energy, 9)
-                if overall_energy and overall_energy > 0 else None
-            ),
+            "measurement_energy_j": overall_energy,
+            "joules_per_request": overall_joules_per_request,
+            "joules_per_generated_token": overall_joules_per_token,
+            "tokens_per_joule": overall_tokens_per_joule,
+            "tokens_per_second_per_watt": overall_tokens_per_joule,
+            "generated_tokens_per_j": overall_tokens_per_joule,
             "requests_per_j": (
                 round(successful_requests / overall_energy, 9)
                 if overall_energy and overall_energy > 0 else None
             ),
+            "unavailable_node_reasons": unavailable_node_reasons,
             "availability": {
                 "energy_j": _available(
                     overall_energy,

@@ -297,6 +297,8 @@ class WorkerTelemetryTests(unittest.TestCase):
         second_power = service.power_integrity()
         service.stop()
         self.assertEqual(first, second)
+        self.assertEqual(first["telemetry_provider"], "fake")
+        self.assertFalse(first["telemetry_degraded"])
         self.assertEqual(first_power, second_power)
         self.assertEqual(provider.snapshots, 1)
         self.assertEqual(provider.power_reads, 1)

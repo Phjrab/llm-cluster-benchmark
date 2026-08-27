@@ -548,7 +548,7 @@ class ExperimentTests(unittest.TestCase):
             self.assertEqual(summary["participant_nodes"][0]["hostname"], "jetson-a")
             self.assertEqual(summary["participant_nodes"][0]["runtime_backend"]["kind"], "cuda")
             self.assertEqual(summary["participant_nodes"][0]["capture_status"], "captured")
-            self.assertEqual(summary["measurement_instrumentation"]["schema_version"], 2)
+            self.assertEqual(summary["measurement_instrumentation"]["schema_version"], 3)
             requests_header = (Path(summary["result_dir"]) / "requests.csv").read_text(
                 encoding="utf-8"
             ).splitlines()[0]
