@@ -97,6 +97,7 @@ def validate_pilot_plan(
             "WORKER_LLAMA_CONTEXT_RACE",
             "TELEMETRY_INTRUSION",
             "THERMAL_RECOVERY_RANGE",
+            "HARDWARE_SCOPE_CHANGE",
         }:
             raise PilotValidationError("revised pilot reason_code is not an approved pilot remediation")
         evidence_run_id = supersedes.get("evidence_run_id") or supersedes.get("failed_run_id")

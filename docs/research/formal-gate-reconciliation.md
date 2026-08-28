@@ -61,6 +61,21 @@ contains 28 serialized observations: eight thermal calibration observations and
 twenty independent variance observations. It is not a formal campaign and does
 not pool its records with v5 or formal results.
 
+## Raspberry Pi-only follow-up
+
+At the operator's request, v6 was stopped after 13 completed observations,
+during the cooldown before its next Raspberry Pi run. Its manifest and every
+completed result remain immutable evidence. It is not a completed
+current-source revalidation.
+
+[`pilot_plan.v7_pi_only.json`](../../config/research/pilot_plan.v7_pi_only.json)
+is a separately preregistered 19-observation Raspberry Pi-only follow-up: four
+Pi thermal calibration observations and fifteen independent variance
+observations across Pi 02, Pi 02–03 round-robin, and Pi 02–03–04 broadcast
+cells. Jetson Worker 02 is not a participant. The `HARDWARE_SCOPE_CHANGE`
+reason makes this scope reduction explicit; v7 cannot replace Jetson evidence,
+does not pool with v6, and leaves the formal execution gate closed.
+
 ## Work intentionally not performed
 
 - no model load or inference request;

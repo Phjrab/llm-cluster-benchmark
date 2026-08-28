@@ -113,6 +113,8 @@ class PilotPlanTests(unittest.TestCase):
         self.assertEqual(revised["supersedes"]["reason_code"], "TELEMETRY_INTRUSION")
         thermal_revision = read_json("pilot_plan.v5.json")
         validate(thermal_revision)
+        pi_only_revision = read_json("pilot_plan.v7_pi_only.json")
+        validate(pi_only_revision)
         self.assertEqual(thermal_revision["supersedes"]["reason_code"], "THERMAL_RECOVERY_RANGE")
         self.assertEqual(
             thermal_revision["thermal_policy"]["calibration_cooldown_candidates_s"],
@@ -126,6 +128,9 @@ class PilotPlanTests(unittest.TestCase):
             revised["telemetry_policy"]["worker_collection_interval_s_by_platform"],
             {"jetson": 1.0, "raspberry-pi": 10.0},
         )
+        self.assertEqual(pi_only_revision["supersedes"]["reason_code"], "HARDWARE_SCOPE_CHANGE")
+        self.assertEqual(len(expand_pilot_plan(pi_only_revision, self.matrix)), 19)
+        self.assertTrue(all("jetson" not in item["node_set_id"] for item in pi_only_revision["variance_cells"]))
 
     def test_order_has_eight_calibration_and_twenty_variance_runs(self) -> None:
         first = expand_pilot_plan(self.plan, self.matrix)

@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "pilot_version": 7,
+  "pilot_id": "formal-study-v1-pi-only-revalidation-v7",
+  "experiment_type": "pilot",
+  "status": "predeclared",
+  "created_at": "2026-08-28T13:02:00+09:00",
+  "matrix_id": "formal-study-v1-matrix-v1",
+  "supersedes": {
+    "pilot_id": "formal-study-v1-current-source-revalidation-v6",
+    "reason_code": "HARDWARE_SCOPE_CHANGE",
+    "evidence_run_id": "formal-study-v1-current-source-revalidation-v6",
+    "preregistered_parent_commit": "4c2b1899dc3584d662992b3e3344f661a268b110",
+    "note": "The v6 plan was stopped during a Raspberry Pi-only cooldown after 13 completed observations at the operator's request to remove Jetson Worker 02. v7 is a separately preregistered Raspberry Pi-only pilot; v6 records are preserved and neither pilot may be pooled into formal estimates."
+  },
+  "lock_ref": {
+    "lock_id": "formal-study-v1",
+    "lock_sha256": "3d5c7f2429c42d02db60ab635a263db6edd86fb4527078eb8d5ff80fc30744a5"
+  },
+  "separation": {
+    "formal_pooling_allowed": false,
+    "result_directory": ".run/controller/pilots/formal-study-v1-pi-only-revalidation-v7/results",
+    "selective_deletion_allowed": false
+  },
+  "workload": {
+    "requests": 20,
+    "concurrency": 4,
+    "max_tokens": 128,
+    "warmup_requests_per_node": 1,
+    "n_ctx": 4096,
+    "temperature": 0.0,
+    "top_p": 0.9,
+    "seed": 42,
+    "request_timeout_s": 600.0
+  },
+  "precision_policy": {
+    "confidence_level": 0.95,
+    "independent_unit": "run",
+    "minimum_formal_repeats": 10,
+    "maximum_formal_repeats": 30,
+    "minimum_successful_pilot_repeats_per_cell": 5,
+    "relative_half_width_targets": {
+      "cluster_tokens_per_s": 0.10,
+      "requests_per_s": 0.10,
+      "ttft_p50_s": 0.15,
+      "e2e_p50_s": 0.15
+    },
+    "decision_rule": "smallest integer meeting every target using run-level sample CV and z=1.959963984540054, clamped to 10..30; unmet precision at 30 is reported, not hidden"
+  },
+  "thermal_policy": {
+    "calibration_cooldown_candidates_s": [60, 180, 300],
+    "variance_stage_fallback_cooldown_s": 300,
+    "temperature_recovery_tolerance_c": 2.0,
+    "steady_state_window_samples": 3,
+    "steady_state_temperature_span_c": 1.5,
+    "maximum_temperature_c": 80.0,
+    "active_throttling_allowed": false
+  },
+  "telemetry_policy": {
+    "maximum_worker_collection_overhead_fraction": 0.05,
+    "minimum_measurement_samples_per_node": 2,
+    "primary_metrics_must_be_available": true,
+    "energy_is_descriptive_when_power_sensor_is_available": true,
+    "controller_probe_elapsed_is_descriptive_only": true,
+    "worker_collection_interval_s_by_platform": {
+      "jetson": 1.0,
+      "raspberry-pi": 10.0
+    },
+    "duplicate_controller_cache_reads_count_as_new_worker_samples": false
+  },
+  "failure_policy": {
+    "maximum_attempt_failure_rate": 0.05,
+    "minimum_request_success_rate_per_run": 0.95,
+    "failed_attempts_and_requests_are_preserved": true,
+    "retry_is_a_distinct_attempt": true
+  },
+  "calibration_cells": [
+    {
+      "pilot_cell_id": "calibration-pi-02-single-qwen-ko",
+      "template_id": "pi5-single-node",
+      "node_set_id": "pi-02",
+      "model_lock_key": "qwen2.5-1.5b-instruct-q4-k-m-official",
+      "prompt_id": "general-ko-001",
+      "runs": 4
+    }
+  ],
+  "variance_cells": [
+    {
+      "pilot_cell_id": "variance-pi-02-single-qwen-ko",
+      "template_id": "pi5-single-node",
+      "node_set_id": "pi-02",
+      "model_lock_key": "qwen2.5-1.5b-instruct-q4-k-m-official",
+      "prompt_id": "general-ko-001",
+      "runs": 5
+    },
+    {
+      "pilot_cell_id": "variance-pi-02-03-round-robin-qwen-ko",
+      "template_id": "pi5-round-robin-scaling",
+      "node_set_id": "pi-02-03",
+      "model_lock_key": "qwen2.5-1.5b-instruct-q4-k-m-official",
+      "prompt_id": "general-ko-001",
+      "runs": 5
+    },
+    {
+      "pilot_cell_id": "variance-pi-02-03-04-broadcast-qwen-ko",
+      "template_id": "pi5-broadcast-agreement",
+      "node_set_id": "pi-02-03-04",
+      "model_lock_key": "qwen2.5-1.5b-instruct-q4-k-m-official",
+      "prompt_id": "general-ko-001",
+      "runs": 5
+    }
+  ],
+  "execution": {
+    "serialized": true,
+    "seed": 20260828,
+    "continue_after_run_failure": true,
+    "stop_after_cleanup_failure": true,
+    "downloads_during_pilot": false
+  }
+}
