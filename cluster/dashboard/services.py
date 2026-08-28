@@ -1110,20 +1110,16 @@ def probe_node(node: Node) -> Dict[str, Any]:
         result["ssh"] = True
         result["project"] = True
     except Exception as exc:
-        discovery = discover_node(node, timeout=8)
-        result["ssh"] = discovery["ssh"]
-        result["project"] = discovery["project"]
-        result["discovery"] = discovery
-        if node.platform == "raspberry-pi" or discovery.get("platform_kind") == "raspberry-pi":
+        # This function runs every five seconds.  Never fall back to the SSH
+        # discovery probe here: that explicit probe validates python3-venv by
+        # creating a temporary environment and can materially load a Worker
+        # whose API is offline or busy.  SSH discovery remains available only
+        # through user-triggered onboarding and environment actions.
+        if node.platform == "raspberry-pi":
             result["power_integrity"] = unavailable_power_integrity(
                 observed_at=utc_now()
             ).to_dict()
-        if not discovery["ssh"]:
-            result["error"] = "SSH key authentication failed or the host is unreachable"
-        elif not discovery["project"]:
-            result["error"] = "SSH connected; project is not installed yet"
-        else:
-            result["error"] = f"Worker API is offline: {exc}"
+        result["error"] = f"Worker API is offline: {exc}"
     return result
 
 

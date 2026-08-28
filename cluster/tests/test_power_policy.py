@@ -551,6 +551,22 @@ class ControllerPowerPolicyTests(unittest.TestCase):
         self.assertEqual(legacy["power_integrity"]["status"], "unavailable")
         self.assertFalse(legacy["power_integrity"]["blocking"])
 
+    def test_periodic_probe_never_falls_back_to_ssh_discovery(self) -> None:
+        from cluster.dashboard import services
+
+        node = self.node()
+        with mock.patch.object(
+            services, "request_json", side_effect=TimeoutError("busy")
+        ), mock.patch.object(services, "discover_node") as discovery:
+            result = services.probe_node(node)
+
+        discovery.assert_not_called()
+        self.assertFalse(result["api"])
+        self.assertFalse(result["ssh"])
+        self.assertFalse(result["project"])
+        self.assertEqual(result["power_integrity"]["status"], "unavailable")
+        self.assertIn("Worker API is offline", result["error"])
+
 
 if __name__ == "__main__":
     unittest.main()

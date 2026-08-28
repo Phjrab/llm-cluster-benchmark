@@ -51,6 +51,11 @@ llm-cluster logs
 자동 시작용 systemd/launchd unit은 만들지 않는다. 위 명령은 Controller Dashboard만
 관리하며 원격 Worker 프로세스를 임의로 종료하지 않는다.
 
+Controller의 5초 주기 상태 감시는 Worker HTTP API만 조회한다. API가 오프라인이거나
+부하로 응답하지 않아도 SSH `cluster-discovery`로 자동 전환하지 않는다. 임시 Python
+venv를 만드는 SSH 환경 점검은 사용자가 워커 등록, `SSH 환경 확인`, `다시 점검` 또는
+`자동 구성`을 명시적으로 실행했을 때만 수행한다.
+
 ## Worker 연결과 환경 구성
 
 대시보드의 `+ 워커 연결`은 Controller가 붙은 RFC1918 사설 LAN에서 SSH 포트가 열린
