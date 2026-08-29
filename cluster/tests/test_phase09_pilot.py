@@ -21,6 +21,7 @@ from scripts.research.phase09_pilot import (
     initial_manifest,
     manifest_execution_order,
     parser as pilot_parser,
+    reconcile_interrupted_runs,
     reconcile_pre_run_failures,
 )
 
@@ -224,6 +225,30 @@ class PilotPlanTests(unittest.TestCase):
         )
         self.assertEqual(len(manifest["runs"]), 29)
         self.assertEqual(manifest["runs"][-1]["retry_of_order_index"], 21)
+
+    def test_interrupted_attempt_is_preserved_with_one_distinct_retry(self) -> None:
+        plan = read_json("pilot_plan.v7_pi_only.json")
+        manifest = initial_manifest(plan, self.matrix)
+        interrupted = next(
+            item for item in manifest["runs"] if item["pilot_order_index"] == 8
+        )
+        interrupted.update({
+            "status": "running",
+            "started_at": "2026-08-28T06:04:04+00:00",
+            "run_id": "partial-run",
+        })
+
+        self.assertTrue(reconcile_interrupted_runs(manifest))
+        self.assertFalse(reconcile_interrupted_runs(manifest))
+
+        self.assertEqual(interrupted["status"], "interrupted")
+        self.assertEqual(interrupted["error_code"], "PILOT_INTERRUPTED")
+        self.assertEqual(manifest["observations"][-1]["run_id"], "partial-run")
+        self.assertEqual(len(manifest["runs"]), 20)
+        retry = manifest["runs"][-1]
+        self.assertEqual(retry["status"], "pending")
+        self.assertEqual(retry["retry_of_order_index"], 8)
+        self.assertEqual(retry["pilot_order_index"], 20)
 
 
 class PilotIdentityTests(unittest.TestCase):

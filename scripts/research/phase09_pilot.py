@@ -190,7 +190,7 @@ def find_run(manifest: Mapping[str, Any], item: Mapping[str, Any]) -> dict[str, 
 
 
 def append_retry_run(manifest: dict[str, Any], item: Mapping[str, Any]) -> dict[str, Any]:
-    """Append one distinct retry attempt without changing the failed attempt."""
+    """Append one distinct retry attempt without changing the original attempt."""
     runs = manifest.setdefault("runs", [])
     original_order = int(item["pilot_order_index"])
     for run in runs:
@@ -253,6 +253,42 @@ def reconcile_pre_run_failures(manifest: dict[str, Any]) -> bool:
     return changed
 
 
+def reconcile_interrupted_runs(manifest: dict[str, Any]) -> bool:
+    """Preserve an orphaned running attempt and append one durable retry."""
+    identities = {
+        (item.get("pilot_cell_id"), item.get("pilot_repeat_index"))
+        for item in manifest.get("observations") or []
+    }
+    changed = False
+    for run in list(manifest.get("runs") or []):
+        if run.get("status") != "running":
+            continue
+        run.update({
+            "status": "interrupted",
+            "finished_at": utc_now(),
+            "error_code": "PILOT_INTERRUPTED",
+        })
+        identity = (run.get("pilot_cell_id"), run.get("pilot_repeat_index"))
+        if identity not in identities:
+            manifest.setdefault("observations", []).append({
+                "pilot_cell_id": run.get("pilot_cell_id"),
+                "pilot_stage": run.get("pilot_stage"),
+                "pilot_repeat_index": run.get("pilot_repeat_index"),
+                "pilot_order_index": run.get("pilot_order_index"),
+                "cooldown_before_s": float(run.get("cooldown_before_s") or 0.0),
+                "status": "interrupted",
+                "run_id": run.get("run_id"),
+                "summary_path": run.get("summary_path"),
+                "error_code": "PILOT_INTERRUPTED",
+                "cleanup_errors": [],
+                "total_elapsed_s": None,
+            })
+            identities.add(identity)
+        append_retry_run(manifest, run)
+        changed = True
+    return changed
+
+
 def manifest_execution_order(
     declared_order: list[dict[str, Any]], manifest: Mapping[str, Any]
 ) -> list[dict[str, Any]]:
@@ -309,10 +345,8 @@ def execute(args: argparse.Namespace) -> int:
     with exclusive_lock(directory):
         manifest = ensure_manifest(directory, plan, matrix)
         reconcile_pre_run_failures(manifest)
+        reconcile_interrupted_runs(manifest)
         order = manifest_execution_order(declared_order, manifest)
-        for run in manifest.get("runs") or []:
-            if run.get("status") == "running":
-                run.update({"status": "interrupted", "error_code": "PILOT_INTERRUPTED"})
         manifest.update({"status": "running", "phase": "executing"})
         persist_manifest(directory, manifest)
         for item in order:
@@ -370,7 +404,11 @@ def execute(args: argparse.Namespace) -> int:
             def progress(event: dict[str, Any]) -> None:
                 nonlocal captured_run_id
                 if event.get("run_id"):
-                    captured_run_id = str(event["run_id"])
+                    event_run_id = str(event["run_id"])
+                    if captured_run_id != event_run_id:
+                        captured_run_id = event_run_id
+                        run["run_id"] = event_run_id
+                        persist_manifest(directory, manifest)
 
             try:
                 summary = run_experiment(
