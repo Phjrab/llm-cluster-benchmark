@@ -250,6 +250,35 @@ class PilotPlanTests(unittest.TestCase):
         self.assertEqual(retry["retry_of_order_index"], 8)
         self.assertEqual(retry["pilot_order_index"], 20)
 
+    def test_post_run_cleanup_failure_gets_a_distinct_retry(self) -> None:
+        plan = read_json("pilot_plan.v7_pi_only.json")
+        manifest = initial_manifest(plan, self.matrix)
+        failed = next(
+            item for item in manifest["runs"] if item["pilot_order_index"] == 10
+        )
+        failed.update({
+            "status": "failed",
+            "error_code": "CLEANUP_FAILED",
+            "cleanup_errors": ["pi-worker-02: network unreachable"],
+            "run_id": "failed-cleanup-run",
+            "finished_at": "2026-08-30T00:21:33+00:00",
+            "total_elapsed_s": 772.0,
+        })
+        manifest["observations"].append({
+            **failed,
+            "summary_path": "/tmp/preserved-summary.json",
+        })
+
+        self.assertTrue(reconcile_pre_run_failures(manifest))
+        self.assertFalse(reconcile_pre_run_failures(manifest))
+
+        self.assertEqual(len(manifest["observations"]), 1)
+        self.assertEqual(len(manifest["runs"]), 20)
+        retry = manifest["runs"][-1]
+        self.assertEqual(retry["status"], "pending")
+        self.assertEqual(retry["retry_of_order_index"], 10)
+        self.assertEqual(retry["pilot_order_index"], 20)
+
 
 class PilotIdentityTests(unittest.TestCase):
     def test_pilot_identity_is_additive_and_separate_from_formal_campaign(self) -> None:

@@ -218,7 +218,7 @@ def append_retry_run(manifest: dict[str, Any], item: Mapping[str, Any]) -> dict[
 
 
 def reconcile_pre_run_failures(manifest: dict[str, Any]) -> bool:
-    """Upgrade already-preserved cleanup failures to observations plus retries."""
+    """Preserve cleanup failures and append one distinct retry attempt."""
     identities = {
         (item.get("pilot_cell_id"), item.get("pilot_repeat_index"))
         for item in manifest.get("observations") or []
@@ -227,7 +227,10 @@ def reconcile_pre_run_failures(manifest: dict[str, Any]) -> bool:
     for run in list(manifest.get("runs") or []):
         if (
             run.get("status") != "failed"
-            or run.get("error_code") != "PRE_RUN_CLEANUP_FAILED"
+            or run.get("error_code") not in {
+                "PRE_RUN_CLEANUP_FAILED",
+                "CLEANUP_FAILED",
+            }
         ):
             continue
         identity = (run.get("pilot_cell_id"), run.get("pilot_repeat_index"))
@@ -241,7 +244,7 @@ def reconcile_pre_run_failures(manifest: dict[str, Any]) -> bool:
                 "status": "failed",
                 "run_id": run.get("run_id"),
                 "summary_path": run.get("summary_path"),
-                "error_code": "PRE_RUN_CLEANUP_FAILED",
+                "error_code": run.get("error_code"),
                 "cleanup_errors": list(run.get("cleanup_errors") or []),
                 "total_elapsed_s": float(run.get("total_elapsed_s") or 0.0),
             })
