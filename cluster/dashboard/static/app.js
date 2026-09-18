@@ -2162,6 +2162,40 @@ function candidatePayload() {
   };
 }
 
+function suggestedWorkerProjectDir(platform, user) {
+  const normalizedUser = String(user || "").trim();
+  if (!/^[a-z_][A-Za-z0-9_-]*$/.test(normalizedUser)) return "";
+  if (["raspberry-pi", "jetson", "auto"].includes(platform)) return `/home/${normalizedUser}/llm-cluster-benchmark-worker`;
+  return "";
+}
+
+function applySuggestedWorkerProjectDir({ force = false } = {}) {
+  const input = $("#nodeProjectDir");
+  const suggested = suggestedWorkerProjectDir($("#nodePlatform").value, $("#nodeUser").value);
+  if (!suggested) return;
+  const current = input.value.trim();
+  const previousSuggestion = input.dataset.autoProjectDir || "";
+  if (force || !current || current === previousSuggestion) {
+    input.value = suggested;
+    input.dataset.autoProjectDir = suggested;
+  }
+}
+
+function loadWorkerProjectDir(value, platform, user) {
+  const input = $("#nodeProjectDir");
+  const suggested = suggestedWorkerProjectDir(platform, user);
+  const legacyDefault = (
+    (platform === "raspberry-pi" && value === "/home/pi/llm-cluster-benchmark")
+    || (["jetson", "auto"].includes(platform) && [
+      `/home/${user}/project/llm/llm-cluster-benchmark-worker`,
+      "/home/jetson_orin_nano/project/llm/local_llm_bench",
+    ].includes(value))
+  );
+  input.value = legacyDefault ? suggested : value;
+  if (input.value === suggested) input.dataset.autoProjectDir = suggested;
+  else delete input.dataset.autoProjectDir;
+}
+
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\"'\"'")}'`;
 }
@@ -2234,8 +2268,8 @@ function renderDevices(scan) {
         $("#nodeUser").value = known.user;
         $("#nodeSshPort").value = known.ssh_port;
         $("#nodeApiPort").value = known.api_port;
-        $("#nodeProjectDir").value = known.project_dir;
         $("#nodePlatform").value = known.platform || "auto";
+        loadWorkerProjectDir(known.project_dir, known.platform || "auto", known.user);
       }
     }
     else if (!$("#nodeName").value) {
@@ -2300,12 +2334,11 @@ function resetNodeForm(preferredPlatform = "auto") {
   $("#nodeForm").reset();
   if (preferredPlatform === "raspberry-pi") {
     $("#nodeUser").value = "pi";
-    $("#nodeProjectDir").value = "/home/pi/llm-cluster-benchmark";
   } else {
     $("#nodeUser").value = "jetson_orin_nano";
-    $("#nodeProjectDir").value = "/home/jetson_orin_nano/project/llm/local_llm_bench";
   }
   $("#nodePlatform").value = ["jetson", "raspberry-pi"].includes(preferredPlatform) ? preferredPlatform : "auto";
+  applySuggestedWorkerProjectDir({ force: true });
   $("#probeResult").hidden = true;
   state.onboardingProbe = null;
   renderOnboardingKey();
@@ -2454,7 +2487,16 @@ function bindEvents() {
     }
   });
   $("#scanNetworkButton").addEventListener("click", () => scanNetwork(true));
-  ["#nodeHost", "#nodeUser"].forEach(selector => $(selector).addEventListener("input", renderOnboardingKey));
+  $("#nodeHost").addEventListener("input", renderOnboardingKey);
+  $("#nodeUser").addEventListener("input", () => {
+    applySuggestedWorkerProjectDir();
+    renderOnboardingKey();
+  });
+  $("#nodePlatform").addEventListener("change", () => applySuggestedWorkerProjectDir());
+  $("#nodeProjectDir").addEventListener("input", () => {
+    const input = $("#nodeProjectDir");
+    if (input.value.trim() !== input.dataset.autoProjectDir) delete input.dataset.autoProjectDir;
+  });
   $("#createKeyButton").addEventListener("click", async () => {
     try {
       $("#createKeyButton").disabled = true;

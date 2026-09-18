@@ -86,6 +86,13 @@ class NodePayload(BaseModel):
             raise ValueError("platform must be auto, jetson or raspberry-pi")
         return value
 
+    @model_validator(mode="after")
+    def validate_home_owner(self) -> "NodePayload":
+        parts = Path(self.project_dir).parts
+        if len(parts) >= 3 and parts[1] == "home" and parts[2] != self.user:
+            raise ValueError("project_dir below /home must belong to the SSH user")
+        return self
+
 
 class NodeRenamePayload(BaseModel):
     new_name: str = Field(min_length=1, max_length=40, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")

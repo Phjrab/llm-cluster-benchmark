@@ -83,6 +83,24 @@ class DashboardBackendTests(unittest.TestCase):
         config = ExperimentConfig.from_dict(raw)
         self.assertEqual(config.ignored_config_keys, ["future_dashboard_option"])
 
+    def test_node_payload_requires_matching_home_owner(self) -> None:
+        from cluster.dashboard.schemas import NodePayload
+
+        values = {
+            "name": "pi-worker-01",
+            "host": "192.168.0.104",
+            "user": "pi1",
+            "project_dir": "/home/pi1/llm-cluster-benchmark-worker",
+            "platform": "raspberry-pi",
+        }
+        self.assertEqual(NodePayload(**values).project_dir, values["project_dir"])
+        with self.assertRaisesRegex(ValueError, "must belong to the SSH user"):
+            NodePayload(**{**values, "project_dir": "/home/pi/llm-cluster-benchmark"})
+        self.assertEqual(
+            NodePayload(**{**values, "project_dir": "/opt/llm-cluster-benchmark"}).project_dir,
+            "/opt/llm-cluster-benchmark",
+        )
+
     def test_controller_is_not_worker_and_model_api_is_additive(self) -> None:
         from fastapi.testclient import TestClient
 

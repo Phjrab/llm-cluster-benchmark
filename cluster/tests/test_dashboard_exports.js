@@ -124,7 +124,7 @@ assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*p
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
 assert.match(template, /styles\.css\?v=20260826\.4/);
 assert.match(template, /models\.js\?v=20260826\.5/);
-assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260826\.3/);
+assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260918\.1/);
 assert.match(template, /results\.js\?v=20260824\.1/);
 assert.match(template, /research\.js\?v=20260828\.1/);
 const researchSource = fs.readFileSync(path.join(dashboardRoot, "static/js/research.js"), "utf8");
@@ -147,6 +147,15 @@ assert.match(workerRegistrationCommand, /^umask 077; mkdir -p ~\/\.ssh/);
 assert.match(workerRegistrationCommand, /grep -qxF "\$KEY"/);
 assert.match(workerRegistrationCommand, /chmod 600 ~\/\.ssh\/authorized_keys$/);
 assert.doesNotMatch(workerRegistrationCommand, /\| ssh /);
+assert.equal(
+  vm.runInContext(`suggestedWorkerProjectDir("raspberry-pi", "pi1")`, context),
+  "/home/pi1/llm-cluster-benchmark-worker",
+);
+assert.equal(
+  vm.runInContext(`suggestedWorkerProjectDir("jetson", "jetson2")`, context),
+  "/home/jetson2/llm-cluster-benchmark-worker",
+);
+assert.equal(vm.runInContext(`suggestedWorkerProjectDir("jetson", "bad user")`, context), "");
 assert.match(fs.readFileSync(path.join(dashboardRoot, "static/js/results.js"), "utf8"), /output_sha256/);
 const participantHtml = vm.runInContext(`ClusterDashboard.results.renderParticipantNodes({
   participant_nodes: [{
