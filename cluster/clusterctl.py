@@ -1490,8 +1490,11 @@ def _rpc_runtime_command(
     node: Node, action: str, timeout: int, *arguments: str
 ) -> Dict[str, Any]:
     script = f"{node.project_dir}/cluster/rpc/runtime.sh"
+    command = [script, action, *arguments]
+    if action == "prepare" and node.platform == "raspberry-pi":
+        command = ["env", "RPC_BUILD_JOBS=1", *command]
     try:
-        process = run_on_node(node, [script, action, *arguments], timeout=timeout)
+        process = run_on_node(node, command, timeout=timeout)
         return {
             "name": node.name,
             "ok": process.returncode == 0,

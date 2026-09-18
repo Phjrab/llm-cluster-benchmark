@@ -379,6 +379,33 @@ class EnvironmentReadinessTests(unittest.TestCase):
         self.assertIn("built", result["stdout"])
         self.assertIn("verified", result["stdout"])
 
+    def test_raspberry_pi_rpc_build_uses_single_job(self) -> None:
+        worker = Node(
+            "pi-worker-01",
+            "worker",
+            "192.168.50.101",
+            "pi1",
+            22,
+            8000,
+            "/home/pi1/llm-cluster-benchmark-worker",
+            True,
+            platform="raspberry-pi",
+        )
+        completed = subprocess.CompletedProcess([], 0, stdout="ready", stderr="")
+        with mock.patch.object(clusterctl, "run_on_node", return_value=completed) as remote:
+            result = clusterctl._prepare_rpc_one(worker)
+        self.assertTrue(result["ok"])
+        remote.assert_called_once_with(
+            worker,
+            [
+                "env",
+                "RPC_BUILD_JOBS=1",
+                f"{worker.project_dir}/cluster/rpc/runtime.sh",
+                "prepare",
+            ],
+            timeout=7200,
+        )
+
     def test_legacy_success_without_structured_marker_is_not_ready(self) -> None:
         discovery = {
             "ssh": True,

@@ -360,7 +360,9 @@ prepare_runtime() {
     jobs="${RPC_BUILD_JOBS:-6}"
   else
     cmake "${common[@]}" -DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS
-    jobs="${RPC_BUILD_JOBS:-4}"
+    # A full four-core build can brown out marginal Pi supplies. Reliability
+    # matters more than build speed because this is a one-time cached runtime.
+    jobs="${RPC_BUILD_JOBS:-1}"
   fi
   cmake --build "$BUILD_DIR" --config Release --target rpc-server llama-server -j "$jobs"
   check_runtime
