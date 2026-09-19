@@ -51,6 +51,12 @@ assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.packPreviewDa
 assert.equal(vm.runInContext(`typeof ClusterDashboard.setSelectedModels`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.copyText`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.paginateItems`, context), "function");
+assert.equal(vm.runInContext(`ClusterDashboard.nodeActionPresentation({action:"prepare",status:"running"}).label`, context), "LLM 런타임 준비");
+assert.equal(vm.runInContext(`ClusterDashboard.nodeActionPresentation({action:"prepare",status:"running"}).statusLabel`, context), "진행 중");
+assert.equal(vm.runInContext(`ClusterDashboard.nodeActionPresentation({action:"custom-action",status:"unexpected"}).status`, context), "unknown");
+const nodeActionDetail = vm.runInContext(`ClusterDashboard.renderNodeActionDetail({action:"prepare",status:"running",log:["[jetson-worker-03] checking/installing runtime"]},{user:"jetson3",host:"192.168.50.12",project_dir:"/home/jetson3/llm-cluster-benchmark-worker"})`, context);
+assert.match(nodeActionDetail, /LATEST NODE OPERATION[\s\S]*LLM 런타임 준비[\s\S]*진행 중/);
+assert.match(nodeActionDetail, /TARGET[\s\S]*jetson3@192\.168\.50\.12[\s\S]*WORKSPACE[\s\S]*llm-cluster-benchmark-worker[\s\S]*LIVE LOG/);
 const secondPage = vm.runInContext(`ClusterDashboard.paginateItems(Array.from({length: 23}, (_, index) => index + 1), 2, 10)`, context);
 assert.deepEqual([...secondPage.items], [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
 assert.equal(secondPage.totalPages, 3);
@@ -122,9 +128,9 @@ assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/events.j
 assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js"), "utf8"), /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260919\.1/);
+assert.match(template, /styles\.css\?v=20260919\.2/);
 assert.match(template, /models\.js\?v=20260826\.5/);
-assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260919\.1/);
+assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260919\.2/);
 assert.match(template, /results\.js\?v=20260824\.1/);
 assert.match(template, /research\.js\?v=20260828\.1/);
 const researchSource = fs.readFileSync(path.join(dashboardRoot, "static/js/research.js"), "utf8");

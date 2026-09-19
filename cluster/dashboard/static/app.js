@@ -1621,10 +1621,9 @@ function renderNodeDetail() {
   const fans = metrics.fans || {};
   const environment = environmentFor(node.name);
   const latestAction = state.actions.find(action => (action.nodes || []).includes(node.name));
-  const failureLines = latestAction?.status === "failed" ? (latestAction.log || []).filter(line => !String(line).startsWith("CLUSTER_ENVIRONMENT_JSON=")) : [];
   const powerIntegrity = window.ClusterDashboard?.power?.nodeIntegrity(node, live);
   $("#nodeDetailContent").innerHTML = `
-    ${latestAction ? `<section class="node-action-detail ${latestAction.status === "failed" ? "failed" : ""}"><strong>${escapeHtml(actionName(latestAction))} · ${escapeHtml(latestAction.status)}</strong><p>${escapeHtml(node.user)}@${escapeHtml(node.host)} · ${escapeHtml(node.project_dir)}</p>${failureLines.length ? `<pre>${escapeHtml(failureLines.join("\n"))}</pre>` : `<p>${escapeHtml((latestAction.log || []).filter(line => !String(line).startsWith("CLUSTER_ENVIRONMENT_JSON=")).slice(-1)[0] || "작업 준비 중")}</p>`}</section>` : ""}
+    ${latestAction ? renderNodeActionDetail(latestAction, node) : ""}
     <div class="detail-identity">
       <div><span>PLATFORM</span><strong>${escapeHtml(platformName(kind))}</strong><small>${escapeHtml(profile.board_model || "미확인")}</small></div>
       <div><span>OS / KERNEL</span><strong>${escapeHtml(profile.os || "—")}</strong><small>${escapeHtml(profile.l4t || profile.kernel || "")}</small></div>
@@ -1665,6 +1664,60 @@ function renderNodeDetail() {
     applyJetsonPower(button.dataset.jetsonPowerApply);
   }));
   requestAnimationFrame(drawTelemetryChart);
+}
+
+function nodeActionPresentation(action) {
+  const name = actionName(action) || "node-action";
+  const status = ["queued", "running", "completed", "failed", "cancelled"].includes(String(action?.status || "").toLowerCase())
+    ? String(action.status).toLowerCase()
+    : "unknown";
+  const actionLabels = {
+    setup: "워커 기본 구성",
+    prepare: "LLM 런타임 준비",
+    "prepare-rpc": "RPC 런타임 준비",
+    "environment-check": "LLM 환경 점검",
+    "environment-install": "LLM 환경 자동 구성",
+    "sync-models": "모델 동기화",
+    "delete-models": "모델 삭제",
+    "install-model-url": "모델 다운로드",
+    "install-model-cache": "모델 캐시 설치",
+    "power-set": "Jetson 전력 모드 변경",
+  };
+  const statusLabels = {
+    queued: "대기 중",
+    running: "진행 중",
+    completed: "완료",
+    failed: "실패",
+    cancelled: "취소됨",
+    unknown: "상태 확인 중",
+  };
+  return {
+    name,
+    label: actionLabels[name] || name,
+    status,
+    statusLabel: statusLabels[status],
+  };
+}
+
+function renderNodeActionDetail(action, node) {
+  const presentation = nodeActionPresentation(action);
+  const logLines = (action.log || []).filter(line => !String(line).startsWith("CLUSTER_ENVIRONMENT_JSON="));
+  const failed = presentation.status === "failed";
+  const logLabel = failed ? "FAILURE LOG" : ["queued", "running"].includes(presentation.status) ? "LIVE LOG" : "LAST LOG";
+  const logContent = failed
+    ? `<pre>${escapeHtml(logLines.join("\n") || "실패 원인을 확인하는 중입니다.")}</pre>`
+    : `<p><code>${escapeHtml(logLines.slice(-1)[0] || "작업 시작을 기다리는 중입니다.")}</code></p>`;
+  return `<section class="node-action-detail ${presentation.status}" aria-label="최근 노드 작업" aria-live="polite">
+    <header class="node-action-head">
+      <div><span>LATEST NODE OPERATION</span><strong>${escapeHtml(presentation.label)}</strong><small>${escapeHtml(presentation.name)}</small></div>
+      <span class="node-action-state ${presentation.status}"><i aria-hidden="true"></i>${escapeHtml(presentation.statusLabel)}</span>
+    </header>
+    <div class="node-action-meta">
+      <div><span>TARGET</span><strong>${escapeHtml(node.user)}@${escapeHtml(node.host)}</strong></div>
+      <div><span>WORKSPACE</span><code title="${escapeHtml(node.project_dir)}">${escapeHtml(node.project_dir)}</code></div>
+    </div>
+    <div class="node-action-log ${failed ? "failed" : ""}"><span>${logLabel}</span>${logContent}</div>
+  </section>`;
 }
 
 function drawTelemetryChart() {
@@ -2699,6 +2752,7 @@ globalThis.ClusterDashboard = Object.assign(globalThis.ClusterDashboard || {}, {
   topologyNodes, renderNodes, renderModels, renderRuns,
   runActionOnNodes, refreshExperimentData, selectedModelIds, setSelectedModels,
   copyText, orbitWorkerState, paginateItems, paginationPages,
+  nodeActionPresentation, renderNodeActionDetail,
 });
 
 document.addEventListener("DOMContentLoaded", () => {

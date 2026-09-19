@@ -55,7 +55,7 @@ function fixtureState() {
     actual_model_config: nodes.map(node => ({ node: node.name, model_id: MODEL_ID, n_ctx: 4096, n_gpu_layers: node.platform === "jetson" ? 30 : 0, n_batch: 512 })),
     per_node: nodes.map((node, index) => ({ node: node.name, tokens_per_s: index ? 7.5 : 10.75, requests: 1 })),
   };
-  return { nodes, status, model, run, deletedRuns: new Set(), restoredRuns: new Set(), activeExperiment: null, deletePayload: null, experimentPayload: null };
+  return { nodes, status, model, run, actions: [], deletedRuns: new Set(), restoredRuns: new Set(), activeExperiment: null, deletePayload: null, experimentPayload: null };
 }
 
 function bootstrapPayload(fixture) {
@@ -68,7 +68,7 @@ function bootstrapPayload(fixture) {
     },
     model_starter_packs: [{ id: "minimal_smoke", label_ko: "Minimal Smoke Pack", model_ids: [MODEL_ID, "missing-model/catalog.gguf"] }], model_catalog_policy: {}, runs: visibleRuns, suites: [],
     experiment_groups: [{ experiment_id: "e2e-experiment", name: "browser-e2e", run_count: visibleRuns.length, runs: visibleRuns, latest_run: visibleRuns[0] || null, default_config: { execution_strategy: "replicated_round_robin", node_names: fixture.nodes.map(node => node.name), model_ids: [MODEL_ID] } }],
-    actions: [], environment: fixture.nodes.map(node => ({ node: node.name, status: "ready", backend: { kind: node.platform === "jetson" ? "cuda" : "openblas", verified: true }, checked_at: "2026-08-24T10:00:00Z", checks: [] })),
+    actions: fixture.actions, environment: fixture.nodes.map(node => ({ node: node.name, status: "ready", backend: { kind: node.platform === "jetson" ? "cuda" : "openblas", verified: true }, checked_at: "2026-08-24T10:00:00Z", checks: [] })),
     settings: { worker_api_auth: false, dashboard_token_auth: false }, onboarding: {}, active_experiment: fixture.activeExperiment,
     defaults: { name: "browser-e2e", execution_strategy: "replicated_round_robin", node_names: fixture.nodes.map(node => node.name), model_id: MODEL_ID, model_ids: [MODEL_ID], requests: 2, concurrency: 1, max_tokens: 16, n_ctx: 4096, n_gpu_layers: 30, warmup_requests: 0, temperature: 0, top_p: 0.9, seed: 42, require_uniform_config: false, model_cooldown_s: 0, continue_on_model_error: true, sweep_mode: "cumulative", rpc_split_mode: "layer", rpc_split_policy: "auto", rpc_tensor_split: [], acknowledge_experimental_rpc: false, prompt: "엣지 LLM 장점을 설명해줘." },
   };
@@ -83,6 +83,7 @@ async function installApiFixture(page, fixture) {
     if (path === "/api/events") return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": fixture\n\n" });
     if (path === "/api/controller/status") return json({ role: "controller", inference_enabled: false, dashboard: { healthy: true } });
     if (path === "/api/bootstrap") return json(bootstrapPayload(fixture));
+    if (path === "/api/actions") return json({ actions: fixture.actions });
     if (path === "/api/campaigns") return json({ campaigns: [] });
     if (path === "/api/research/compare") return json({ rows: [], filters: {} });
     if (path === "/api/research/readiness") return json({ ready: false, checks: [] });
@@ -220,4 +221,27 @@ test("Result responses, private trash deletion, and safe worker disconnect remai
   await page.locator("#confirmNodeDeleteButton").click();
   await expect.poll(() => fixture.deletePayload?.remove_worker_files).toBe(false);
   await expect(page.locator('[data-node-card="pi-worker-02"]')).toHaveCount(0);
+});
+
+test("Node detail presents a running runtime preparation as a structured operation card", async ({ page }) => {
+  const fixture = fixtureState();
+  fixture.actions = [{
+    id: "prepare-jetson-01",
+    action: "prepare",
+    status: "running",
+    nodes: ["jetson-worker-01"],
+    log: ["[jetson-worker-01] checking/installing runtime"],
+  }];
+  await installApiFixture(page, fixture);
+  await page.goto("/#nodes");
+
+  await page.locator('[data-node-card="jetson-worker-01"] .node-detail-button').click();
+  const card = page.locator(".node-action-detail");
+  await expect(card).toBeVisible();
+  await expect(card).toHaveClass(/running/);
+  await expect(card.locator(".node-action-head")).toContainText("LLM 런타임 준비");
+  await expect(card.locator(".node-action-state")).toHaveText("진행 중");
+  await expect(card.locator(".node-action-meta")).toContainText("jetson@192.168.0.26");
+  await expect(card.locator(".node-action-meta")).toContainText("/home/jetson/llm-cluster-benchmark");
+  await expect(card.locator(".node-action-log")).toContainText("[jetson-worker-01] checking/installing runtime");
 });
