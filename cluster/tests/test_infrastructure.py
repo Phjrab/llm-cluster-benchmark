@@ -54,6 +54,8 @@ class InfrastructureTests(unittest.TestCase):
             is_local = False
         command = build_ssh_command(Target())
         self.assertIn("BatchMode=yes", command)
+        self.assertIn("ServerAliveInterval=5", command)
+        self.assertIn("ServerAliveCountMax=36", command)
         self.assertEqual(command[-1], "edge@192.168.0.26")
 
     def test_identity_mismatch_refuses_signal(self) -> None:

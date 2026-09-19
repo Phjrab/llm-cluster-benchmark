@@ -35,7 +35,17 @@ def build_ssh_command(
 ) -> list[str]:
     if require_pinned and known_hosts_file is None:
         raise ValueError("Pinned SSH mode requires a managed known_hosts file")
-    command = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=5"]
+    command = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=8",
+        "-o",
+        "ServerAliveInterval=5",
+        "-o",
+        "ServerAliveCountMax=36",
+    ]
     if require_pinned:
         command.extend([
             "-o", "StrictHostKeyChecking=yes",
