@@ -6,6 +6,28 @@ S01 — Software COMPLETE (domain/compiler scope only).
 Hardware: NOT RUN — user-operated. CI: NOT CHECKED.
 S02 and later development phases have not been started.
 
+## Current-source review — 2026-09-19
+
+The user explicitly authorized an S01 review together with subsequent S03 work.
+This review used parent `678c046f41e97acf8867d55d872f1e200b769c0e` on
+`codex/current-source-pilot-v6`. The working tree was clean, the feature remote
+matched the parent, no applicable AGENTS.md exists, and CONTRIBUTING.md was
+reviewed. This section supersedes older statements about later-phase authorization.
+
+The immutable records, strict boundary parsing, budget-before-materialization,
+semantic hashes, import recompilation, workload accounting and RPC ordinary-GPU
+guard remain consistent with the S01 contract. No S01 product correction was
+needed. The S03 implementation may extend resolution evidence additively, while
+the compiler remains side-effect-free and every plan retains the global
+`SWEEP_EXECUTION_NOT_IMPLEMENTED` blocker.
+
+With temporary runtime/results, a header-only inventory and bytecode disabled,
+the focused S01/domain/strategy/model regression completed **166 tests, OK,
+1.818s**. The four-byte model progress messages came from an existing mocked
+fixture; no network transfer, Worker connection, model load, inference or RPC
+occurred. This review changes documentation only. Hardware: NOT RUN. CI: NOT
+CHECKED. S03 is handled as a separate checkpoint and S04 is not authorized.
+
 ## S01 review fix — 2026-09-19
 
 This entry supersedes the historical scope statements below. The original S01
