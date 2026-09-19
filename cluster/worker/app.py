@@ -29,6 +29,7 @@ from cluster.infrastructure.deployment import deployment_status
 from .inference import InferenceBackend, LlamaCppInferenceBackend
 from .routes import WorkerRuntimeInfo, mount_worker_routes
 from .telemetry import TelemetryService, read_text
+from .ownership import WorkerOwnershipRegistry
 
 
 PROJECT_ROOT = default_project_layout().root
@@ -183,6 +184,9 @@ def create_app(
         profile=system_profile(resolved_root, platform_kind, backend_profile),
         worker_api_auth=auth_enabled,
     )
+    ownership = WorkerOwnershipRegistry(
+        resolved_root / ".run" / "cluster" / "worker-resource-owner.json"
+    )
     telemetry_running = False
     if telemetry is not None:
         # Preserve the injectable service contract used by existing callers;
@@ -224,10 +228,12 @@ def create_app(
         telemetry=selected_telemetry,
         runtime=runtime,
         deployment_provider=lambda: deployment_status(resolved_root),
+        ownership=ownership,
     )
     app.state.inference_backend = selected_backend
     app.state.telemetry = selected_telemetry
     app.state.worker_runtime = runtime
+    app.state.resource_ownership = ownership
     return app
 
 

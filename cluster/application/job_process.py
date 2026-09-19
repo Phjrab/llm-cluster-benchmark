@@ -8,6 +8,7 @@ import concurrent.futures
 import os
 import signal
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
@@ -17,6 +18,7 @@ from cluster.benchmark.runner import ExperimentConfig, run_experiment
 from cluster.clusterctl import Node, load_nodes, request_json, select_nodes
 from cluster.infrastructure.process import PsutilProcessInspector
 from cluster.infrastructure.storage import FilesystemJobRepository
+from cluster.application.resources import FilesystemResourceCoordinator, ResourceConflictError
 
 
 def unload_models(node_names: Sequence[str], inventory_path: Path) -> List[str]:
@@ -46,6 +48,65 @@ def unload_models(node_names: Sequence[str], inventory_path: Path) -> List[str]:
     return errors
 
 
+def claim_worker_ownership(
+    node_names: Sequence[str], inventory_path: Path, reservation: Dict[str, Any]
+) -> List[Node]:
+    nodes = select_nodes(load_nodes(inventory_path, require_legacy_head=False), node_names)
+    if len(nodes) != len(node_names):
+        raise RuntimeError("RESOURCE_OWNERSHIP_WORKER_UNAVAILABLE")
+    payload = {
+        "owner_id": str(reservation["owner_job_id"]),
+        "lease_id": str(reservation["lease_id"]),
+        "fencing_epoch": int(reservation["fencing_epoch"]),
+        "cleanup_verified": False,
+    }
+    claimed: List[Node] = []
+    try:
+        for node in nodes:
+            result = request_json(
+                f"{node.api_url}/cluster/resource-ownership/acquire",
+                method="POST", payload=payload, timeout=10.0,
+            )
+            if result.get("ok") is not True:
+                raise RuntimeError("RESOURCE_OWNERSHIP_REJECTED")
+            claimed.append(node)
+    except Exception:
+        for node in claimed:
+            try:
+                request_json(
+                    f"{node.api_url}/cluster/resource-ownership/release",
+                    method="POST", payload={**payload, "cleanup_verified": True}, timeout=10.0,
+                )
+            except Exception:
+                pass
+        raise
+    return claimed
+
+
+def release_worker_ownership(
+    nodes: Sequence[Node], reservation: Dict[str, Any], *, cleanup_verified: bool
+) -> List[str]:
+    payload = {
+        "owner_id": str(reservation["owner_job_id"]),
+        "lease_id": str(reservation["lease_id"]),
+        "fencing_epoch": int(reservation["fencing_epoch"]),
+        "cleanup_verified": cleanup_verified,
+    }
+    errors: List[str] = []
+    for node in nodes:
+        try:
+            result = request_json(
+                f"{node.api_url}/cluster/resource-ownership/release",
+                method="POST", payload=payload, timeout=10.0,
+            )
+            expected = "released" if cleanup_verified else "quarantined"
+            if result.get("ok") is not True or result.get("status") != expected:
+                raise RuntimeError("RESOURCE_OWNERSHIP_RELEASE_REJECTED")
+        except Exception as exc:
+            errors.append(f"{node.name}: {type(exc).__name__}")
+    return errors
+
+
 def run_job(
     job_id: str,
     jobs_dir: Path,
@@ -53,10 +114,14 @@ def run_job(
     results_dir: Path,
 ) -> int:
     repository = FilesystemJobRepository(jobs_dir)
+    resource_coordinator = FilesystemResourceCoordinator(jobs_dir / "_resources")
     job = repository.read(job_id)
     cancel_event = threading.Event()
+    pause_event = threading.Event()
     if job.get("cancel_requested") is True:
         cancel_event.set()
+    if job.get("pause_requested") is True:
+        pause_event.set()
     monitor_stop = threading.Event()
 
     def request_cancel(_signum: int, _frame: Any) -> None:
@@ -96,6 +161,22 @@ def run_job(
             if current.get("cancel_requested") is True:
                 cancel_event.set()
                 return
+            if current.get("pause_requested") is True:
+                pause_event.set()
+            else:
+                pause_event.clear()
+            reservation = current.get("resource_reservation")
+            if isinstance(reservation, dict):
+                try:
+                    resource_coordinator.heartbeat(
+                        lease_id=str(reservation["lease_id"]),
+                        owner_job_id=job_id,
+                        fencing_epoch=int(reservation["fencing_epoch"]),
+                        evidence={"pid": os.getpid(), "phase": current.get("phase")},
+                    )
+                except (KeyError, TypeError, ValueError, ResourceConflictError):
+                    cancel_event.set()
+                    return
 
     threading.Thread(
         target=monitor_cancel,
@@ -149,7 +230,15 @@ def run_job(
 
         repository.update(job_id, apply)
 
+    summary: Dict[str, Any] | None = None
+    resource_finished = False
+    claimed_workers: List[Node] = []
     try:
+        reservation = job.get("resource_reservation")
+        if job.get("worker_ownership_capable") is True and isinstance(reservation, dict):
+            claimed_workers = claim_worker_ownership(
+                [str(item) for item in job.get("nodes") or []], inventory_path, reservation
+            )
         base_config = ExperimentConfig.from_dict(dict(job["config"]), strict=True)
         base_config.validate()
         model_ids = [str(item) for item in job["model_ids"]]
@@ -171,6 +260,7 @@ def run_job(
             total_work_units=int(job["total"]),
             per_model_work_units=int(job["model_total"]),
             started_at=str(job["started_at"]),
+            pause_event=pause_event,
         )
         suite_status = str(summary.get("status") or "failed")
         job_status = (
@@ -181,7 +271,50 @@ def run_job(
             else "failed"
         )
 
+        reservation = job.get("resource_reservation")
+        cleanup_verified = all(
+            isinstance(model, dict) and model.get("cleanup_status") == "completed"
+            for model in summary.get("models") or []
+            if isinstance(model, dict) and model.get("attempted") is True
+        )
+        resource_cooldown_s = float(job.get("resource_cooldown_s") or 0)
+        if cleanup_verified and resource_cooldown_s > 0:
+            progress({"phase": "resource_cooldown"})
+            # Cancellation cannot shorten the safety cooldown.  The lease stays
+            # held until this boundary completes.
+            time.sleep(resource_cooldown_s)
+        if isinstance(reservation, dict):
+            ownership_errors = release_worker_ownership(
+                claimed_workers, reservation, cleanup_verified=cleanup_verified
+            )
+            if ownership_errors:
+                cleanup_verified = False
+            resource_coordinator.finish(
+                lease_id=str(reservation["lease_id"]),
+                owner_job_id=job_id,
+                fencing_epoch=int(reservation["fencing_epoch"]),
+                cleanup_verified=cleanup_verified,
+                evidence={
+                    "suite_id": job.get("suite_id"),
+                    "suite_status": suite_status,
+                    "cleanup_verified": cleanup_verified,
+                    "cooldown_s": resource_cooldown_s,
+                    "worker_ownership_release_errors": ownership_errors,
+                },
+            )
+            resource_finished = True
+            if not cleanup_verified:
+                job_status = "failed"
+
         def finish(value: Dict[str, Any]) -> None:
+            saved_reservation = value.get("resource_reservation")
+            if isinstance(saved_reservation, dict):
+                saved_reservation.update(
+                    {
+                        "status": "released" if cleanup_verified else "quarantined",
+                        "cleanup_verified": cleanup_verified,
+                    }
+                )
             value.update(
                 {
                     "status": job_status,
@@ -206,8 +339,26 @@ def run_job(
         repository.update(job_id, finish)
         return 0 if job_status in {"completed", "cancelled"} else 1
     except Exception as exc:
+        reservation = job.get("resource_reservation")
+        if isinstance(reservation, dict) and not resource_finished:
+            release_worker_ownership(claimed_workers, reservation, cleanup_verified=False)
+            try:
+                resource_coordinator.quarantine(
+                    lease_id=str(reservation["lease_id"]),
+                    owner_job_id=job_id,
+                    fencing_epoch=int(reservation["fencing_epoch"]),
+                    reason="CHILD_FAILURE_WITHOUT_CLEANUP_EVIDENCE",
+                    evidence={"error_type": type(exc).__name__},
+                )
+            except (KeyError, TypeError, ValueError, ResourceConflictError):
+                pass
         def fail(value: Dict[str, Any]) -> None:
             error = {"stage": "job_process", "error": str(exc)}
+            saved_reservation = value.get("resource_reservation")
+            if isinstance(saved_reservation, dict):
+                saved_reservation.update(
+                    {"status": "quarantined", "cleanup_verified": False}
+                )
             value.update(
                 {
                     "status": "cancelled" if cancel_event.is_set() else "failed",

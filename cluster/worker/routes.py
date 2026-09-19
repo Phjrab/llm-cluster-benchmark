@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from cluster.domain.failures import failure_from_exception, http_status_for_failure
@@ -22,8 +22,10 @@ from .schemas import (
     SelectModelRequest,
     PrepareInputRequest,
     VerifyModelRequest,
+    ResourceOwnerRequest,
 )
 from .telemetry import TelemetryService
+from .ownership import WorkerOwnershipError, WorkerOwnershipRegistry
 
 
 def as_sse(event_type: str, payload: Dict[str, object]) -> str:
@@ -49,6 +51,7 @@ def mount_worker_routes(
     telemetry: TelemetryService,
     runtime: WorkerRuntimeInfo,
     deployment_provider: Optional[Callable[[], Dict[str, Any]]] = None,
+    ownership: Optional[WorkerOwnershipRegistry] = None,
 ) -> None:
     """Register legacy and cluster API routes without exposing backend internals."""
 
@@ -70,8 +73,51 @@ def mount_worker_routes(
             response["models_dir"] = str(models_dir)
         return response
 
+    def owner_context(request: Request) -> Dict[str, Any] | None:
+        owner_id = request.headers.get("X-Cluster-Resource-Owner", "")
+        lease_id = request.headers.get("X-Cluster-Resource-Lease", "")
+        epoch = request.headers.get("X-Cluster-Fencing-Epoch", "")
+        if not owner_id and not lease_id and not epoch:
+            return None
+        try:
+            return {"owner_id": owner_id, "lease_id": lease_id, "fencing_epoch": int(epoch)}
+        except ValueError:
+            raise HTTPException(status_code=409, detail="INVALID_OWNER_CONTEXT") from None
+
+    def require_owner(request: Request) -> None:
+        if ownership is None:
+            return
+        try:
+            ownership.require(owner_context(request))
+        except WorkerOwnershipError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/cluster/resource-ownership/acquire")
+    async def acquire_owner(payload: ResourceOwnerRequest) -> Dict[str, object]:
+        if ownership is None:
+            raise HTTPException(status_code=409, detail="RESOURCE_OWNERSHIP_UNAVAILABLE")
+        try:
+            current = ownership.acquire(payload.model_dump(exclude={"cleanup_verified"}))
+        except WorkerOwnershipError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"ok": True, "status": current["status"], "fencing_epoch": current["fencing_epoch"]}
+
+    @app.post("/cluster/resource-ownership/release")
+    async def release_owner(payload: ResourceOwnerRequest) -> Dict[str, object]:
+        if ownership is None:
+            raise HTTPException(status_code=409, detail="RESOURCE_OWNERSHIP_UNAVAILABLE")
+        try:
+            current = ownership.release(
+                payload.model_dump(exclude={"cleanup_verified"}),
+                cleanup_verified=payload.cleanup_verified,
+            )
+        except WorkerOwnershipError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return {"ok": True, "status": current["status"], "fencing_epoch": current["fencing_epoch"]}
+
     @app.post("/api/select-model")
-    async def select_model(payload: SelectModelRequest) -> Dict[str, object]:
+    async def select_model(payload: SelectModelRequest, request: Request) -> Dict[str, object]:
+        require_owner(request)
         try:
             if runtime.platform_kind == "raspberry-pi" and payload.n_gpu_layers > 0:
                 raise ValueError("Raspberry Pi requires n_gpu_layers=0")
@@ -90,12 +136,14 @@ def mount_worker_routes(
         return {"ok": True, "current": current}
 
     @app.post("/api/unload-model")
-    async def unload_model() -> Dict[str, object]:
+    async def unload_model(request: Request) -> Dict[str, object]:
+        require_owner(request)
         backend.unload_model()
         return {"ok": True, "current": backend.current_model_info()}
 
     @app.post("/cluster/input/prepare")
-    async def prepare_input(payload: PrepareInputRequest) -> Dict[str, object]:
+    async def prepare_input(payload: PrepareInputRequest, request: Request) -> Dict[str, object]:
+        require_owner(request)
         from .prompt_preparation import PreparationError
         prepare = getattr(backend, "prepare_input", None)
         if not callable(prepare):
@@ -232,7 +280,8 @@ def mount_worker_routes(
         )
 
     @app.post("/api/chat/stream")
-    async def chat_stream(payload: ChatStreamRequest) -> StreamingResponse:
+    async def chat_stream(payload: ChatStreamRequest, request: Request) -> StreamingResponse:
+        require_owner(request)
         return stream_response(payload)
 
     @app.get("/cluster/health")
@@ -271,6 +320,7 @@ def mount_worker_routes(
                 "worker_api_auth": runtime.worker_api_auth,
                 "deployment_verified": deployment.get("verified") is True,
                 "inference_slots": 1,
+                "resource_ownership_v1": ownership is not None,
             },
             "worker_api_auth": runtime.worker_api_auth,
             "telemetry_version": 2,
@@ -279,6 +329,12 @@ def mount_worker_routes(
             "model_ids": [str(item["id"]) for item in models],
             "metrics": telemetry.snapshot(),
             "deployment": deployment,
+        }
+        current_owner = ownership.status() if ownership is not None else None
+        response["resource_ownership"] = {
+            "supported": ownership is not None,
+            "status": current_owner.get("status") if current_owner else "available",
+            "fencing_epoch": current_owner.get("fencing_epoch") if current_owner else None,
         }
         power_probe = getattr(telemetry, "power_integrity", None)
         power_integrity = power_probe() if callable(power_probe) else None
@@ -294,7 +350,8 @@ def mount_worker_routes(
         return {"ok": True, "node": runtime.node_name, "models": backend.model_inventory()}
 
     @app.post("/cluster/models/verify")
-    async def verify_model(payload: VerifyModelRequest) -> Dict[str, Any]:
+    async def verify_model(payload: VerifyModelRequest, request: Request) -> Dict[str, Any]:
+        require_owner(request)
         try:
             if payload.metadata:
                 model = backend.verify_model(
@@ -312,7 +369,8 @@ def mount_worker_routes(
         return {"ok": True, "node": runtime.node_name, "model": model}
 
     @app.post("/cluster/models/delete")
-    async def delete_model(payload: DeleteModelRequest) -> Dict[str, Any]:
+    async def delete_model(payload: DeleteModelRequest, request: Request) -> Dict[str, Any]:
+        require_owner(request)
         try:
             model = backend.delete_model(payload.model_id)
         except Exception as exc:
@@ -325,7 +383,8 @@ def mount_worker_routes(
         return {"ok": True, "node": runtime.node_name, "model": model}
 
     @app.post("/cluster/models/install")
-    async def install_model(payload: InstallModelRequest) -> Dict[str, Any]:
+    async def install_model(payload: InstallModelRequest, request: Request) -> Dict[str, Any]:
+        require_owner(request)
         try:
             if payload.metadata or payload.expected_size_bytes:
                 model = backend.install_model(
@@ -349,7 +408,8 @@ def mount_worker_routes(
         return {"ok": True, "node": runtime.node_name, "model": model}
 
     @app.post("/cluster/chat/stream")
-    async def cluster_chat_stream(payload: ClusterChatRequest) -> StreamingResponse:
+    async def cluster_chat_stream(payload: ClusterChatRequest, request: Request) -> StreamingResponse:
+        require_owner(request)
         return stream_response(payload, seed=payload.seed)
 
 

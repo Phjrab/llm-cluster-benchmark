@@ -348,12 +348,35 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
 
     @experiments_router.post("/api/experiments/cancel")
     async def cancel_experiment(
+        job_id: str | None = None,
         dashboard: DashboardFacade = Depends(get_dashboard_services),
     ) -> Dict[str, Any]:
         try:
-            return dashboard.cancel_experiment()
+            return (
+                dashboard.cancel_experiment(job_id)
+                if job_id is not None
+                else dashboard.cancel_experiment()
+            )
         except ValueError as exc:
             return _error_response(exc)
+
+    @experiments_router.get("/api/experiment-jobs/{job_id}")
+    async def get_experiment_job(
+        job_id: str, dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        return dashboard.experiment(job_id)
+
+    @experiments_router.post("/api/experiment-jobs/{job_id}/pause")
+    async def pause_experiment_job(
+        job_id: str, dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        return dashboard.pause_experiment(job_id)
+
+    @experiments_router.post("/api/experiment-jobs/{job_id}/resume")
+    async def resume_experiment_job(
+        job_id: str, dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        return dashboard.resume_experiment(job_id)
 
     @results_router.get("/api/runs/{run_id}")
     async def get_run(

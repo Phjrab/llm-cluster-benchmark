@@ -161,6 +161,7 @@ class ExperimentPayload(BaseModel):
     model_ids: List[str] = Field(default_factory=list, max_length=32)
     continue_on_model_error: bool = True
     model_cooldown_s: float = Field(2.0, ge=0.0, le=300.0)
+    max_parallel_jobs: Literal[1, 2] = Field(1, exclude=True)
     n_ctx: int = Field(4096, ge=128, le=16384)
     n_gpu_layers: int = Field(30, ge=0, le=120)
     n_threads: Optional[int] = Field(None, ge=1, le=1024, strict=True)

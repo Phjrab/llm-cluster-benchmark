@@ -40,6 +40,11 @@ from cluster.dashboard.service_layers import (
 )
 
 from cluster.application.jobs import JobService, NONTERMINAL_JOB_STATES
+from cluster.application.resources import (
+    FilesystemResourceCoordinator,
+    ResourceConflictError,
+    WorkerResource,
+)
 from cluster.application.model_service import (
     ModelPreflightError,
     WorkerModelInventory,
@@ -1402,6 +1407,7 @@ class ActionManager:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._actions: Dict[str, Dict[str, Any]] = {}
+        self._resources = FilesystemResourceCoordinator(JOBS_DIR / "_resources")
 
     def start(self, payload: ActionPayload) -> Dict[str, Any]:
         if payload.action not in self.ALLOWED:
@@ -1411,12 +1417,28 @@ class ActionManager:
         if not selected:
             raise ValueError("Select at least one enabled node")
         selected_names = {node.name for node in selected}
-        experiment = experiments.active() if "experiments" in globals() else None
-        if experiment and experiment.get("status") in {"queued", "running"}:
-            overlap = selected_names.intersection(experiment.get("nodes") or [])
-            if overlap:
-                raise ValueError("Nodes are busy with an experiment: " + ", ".join(sorted(overlap)))
+        active_jobs = experiments.active_jobs() if "experiments" in globals() else []
+        overlap = {
+            node
+            for experiment in active_jobs
+            for node in selected_names.intersection(experiment.get("nodes") or [])
+        }
+        if overlap:
+            raise ValueError("Nodes are busy with an experiment: " + ", ".join(sorted(overlap)))
         action_id = datetime.now().strftime("%H%M%S") + "_" + uuid.uuid4().hex[:6]
+        try:
+            reservation = self._resources.acquire(
+                owner_job_id="action-" + action_id,
+                owner_attempt_id="action-" + action_id,
+                workers=[WorkerResource(node.name, node.host, node.api_port) for node in selected],
+                hold_reason=f"worker_mutation:{payload.action}",
+                admission_limit=2,
+                kind="action",
+                evidence={"action": payload.action},
+            )
+            reservation.pop("_acquired_new", None)
+        except ResourceConflictError as exc:
+            raise ValueError(str(exc)) from exc
         record = {
             "id": action_id,
             "action": payload.action,
@@ -1426,6 +1448,7 @@ class ActionManager:
             "finished_at": None,
             "exit_code": None,
             "log": [],
+            "resource_reservation": reservation,
         }
         if payload.action in {"environment-check", "environment-install"}:
             record["inventory_fingerprints"] = {
@@ -1434,6 +1457,11 @@ class ActionManager:
         with self._lock:
             for action in self._actions.values():
                 if action.get("status") in {"queued", "running"} and selected_names.intersection(action.get("nodes") or []):
+                    self._resources.finish(
+                        lease_id=reservation["lease_id"], owner_job_id="action-" + action_id,
+                        fencing_epoch=reservation["fencing_epoch"], cleanup_verified=True,
+                        evidence={"reason": "LOCAL_ACTION_CONFLICT_BEFORE_START"},
+                    )
                     raise ValueError("A selected node already has a running control action")
             self._actions[action_id] = record
         if payload.action in {"environment-check", "environment-install"}:
@@ -1467,6 +1495,51 @@ class ActionManager:
         return dict(record)
 
     def _run(self, action_id: str, payload: ActionPayload) -> None:
+        stop_heartbeat = threading.Event()
+        reservation = self.get(action_id)["resource_reservation"]
+
+        def heartbeat() -> None:
+            while not stop_heartbeat.wait(5.0):
+                try:
+                    self._resources.heartbeat(
+                        lease_id=reservation["lease_id"], owner_job_id="action-" + action_id,
+                        fencing_epoch=reservation["fencing_epoch"],
+                        evidence={"action": payload.action},
+                    )
+                except Exception:
+                    return
+
+        heartbeat_thread = threading.Thread(
+            target=heartbeat, name=f"cluster-action-lease-{action_id}", daemon=True
+        )
+        heartbeat_thread.start()
+        try:
+            self._execute(action_id, payload)
+        except Exception as exc:
+            with self._lock:
+                record = self._actions[action_id]
+                record["status"] = "failed"
+                record["finished_at"] = utc_now()
+                record["log"].append(str(exc))
+        finally:
+            stop_heartbeat.set()
+            record = self.get(action_id)
+            verified = record.get("status") == "completed" and record.get("exit_code") == 0
+            try:
+                self._resources.finish(
+                    lease_id=reservation["lease_id"], owner_job_id="action-" + action_id,
+                    fencing_epoch=reservation["fencing_epoch"], cleanup_verified=verified,
+                    evidence={
+                        "action": payload.action,
+                        "status": record.get("status"),
+                        "exit_code": record.get("exit_code"),
+                    },
+                )
+            except ResourceConflictError:
+                pass
+
+    def _execute(self, action_id: str, payload: ActionPayload) -> None:
+        reservation = self.get(action_id)["resource_reservation"]
         environment_reported_nodes: set[str] = set()
         with self._lock:
             expected_environment_fingerprints = dict(
@@ -1580,6 +1653,12 @@ class ActionManager:
             process = subprocess.Popen(
                 command,
                 cwd=PROJECT_ROOT,
+                env={
+                    **os.environ,
+                    "CLUSTER_RESOURCE_OWNER_ID": "action-" + action_id,
+                    "CLUSTER_RESOURCE_LEASE_ID": str(reservation["lease_id"]),
+                    "CLUSTER_RESOURCE_FENCING_EPOCH": str(reservation["fencing_epoch"]),
+                },
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -1944,8 +2023,17 @@ class ExperimentManager:
         if job is None:
             return None
         public = json.loads(json.dumps(job))
-        for key in ("config", "command", "process", "log_path"):
+        for key in ("config", "command", "process", "log_path", "resource_workers", "start_fingerprint"):
             public.pop(key, None)
+        reservation = public.get("resource_reservation")
+        if isinstance(reservation, dict):
+            public["resource_reservation"] = {
+                key: reservation.get(key)
+                for key in (
+                    "lease_id", "fencing_epoch", "status", "hold_reason", "worker_ids",
+                    "acquired_at", "heartbeat_at", "exclusive",
+                )
+            }
         return public
 
     @staticmethod
@@ -1957,14 +2045,22 @@ class ExperimentManager:
             "job_id": job.get("job_id"),
             "status": job.get("status"),
         }
-        events.publish("experiment_event", channel=EventChannel.EXPERIMENT, event=event, active=public_job)
+        active_jobs = (
+            experiments.active_jobs() if "experiments" in globals() else [public_job]
+        )
+        events.publish(
+            "experiment_event", channel=EventChannel.EXPERIMENT, event=event,
+            active=public_job, active_jobs=active_jobs,
+        )
         if job.get("status") not in NONTERMINAL_JOB_STATES:
             status_monitor.refresh_now()
 
-    def start(self, payload: ExperimentPayload) -> Dict[str, Any]:
+    def start(
+        self, payload: ExperimentPayload, *, worker_ownership_capable: bool = False
+    ) -> Dict[str, Any]:
         payload_data = payload.model_dump()
         for dashboard_only_key in (
-            "model_ids", "continue_on_model_error", "model_cooldown_s"
+            "model_ids", "continue_on_model_error", "model_cooldown_s", "max_parallel_jobs"
         ):
             payload_data.pop(dashboard_only_key, None)
         config = ExperimentConfig.from_dict(payload_data)
@@ -2033,6 +2129,12 @@ class ExperimentManager:
             "error": "",
             "continue_on_model_error": payload.continue_on_model_error,
             "model_cooldown_s": payload.model_cooldown_s,
+            "max_parallel_jobs": payload.max_parallel_jobs,
+            "worker_ownership_capable": worker_ownership_capable,
+            "resource_workers": [
+                {"worker_id": node.name, "host": node.host, "api_port": node.api_port}
+                for node in selected
+            ],
             "config": asdict(config),
             "cancel_requested": False,
             "created_at": started_at,
@@ -2054,11 +2156,23 @@ class ExperimentManager:
             write_suite_summary(failed)
             raise
 
-    def cancel(self) -> Dict[str, Any]:
-        return self._public_job(self._jobs.cancel()) or {}
+    def cancel(self, job_id: Optional[str] = None) -> Dict[str, Any]:
+        return self._public_job(self._jobs.cancel(job_id)) or {}
+
+    def pause(self, job_id: str) -> Dict[str, Any]:
+        return self._public_job(self._jobs.pause(job_id)) or {}
+
+    def resume(self, job_id: str) -> Dict[str, Any]:
+        return self._public_job(self._jobs.resume(job_id)) or {}
+
+    def get(self, job_id: str) -> Dict[str, Any]:
+        return self._public_job(self._jobs.get(job_id)) or {}
 
     def active(self) -> Optional[Dict[str, Any]]:
         return self._public_job(self._jobs.active())
+
+    def active_jobs(self) -> List[Dict[str, Any]]:
+        return [self._public_job(job) or {} for job in self._jobs.active_jobs()]
 
     def jobs(self) -> List[Dict[str, Any]]:
         return [self._public_job(job) or {} for job in self._jobs.list()]
@@ -2068,11 +2182,8 @@ class ExperimentManager:
 
 
 experiments = ExperimentManager()
-_active_job = experiments.active()
 reconcile_interrupted_suites(
-    [str(_active_job.get("suite_id"))]
-    if _active_job and _active_job.get("status") in NONTERMINAL_JOB_STATES
-    else []
+    [str(job.get("suite_id")) for job in experiments.active_jobs()]
 )
 
 
@@ -2113,11 +2224,8 @@ class DashboardFacade:
         )
 
     def startup(self) -> None:
-        active = experiments.active()
         reconcile_interrupted_suites(
-            [str(active.get("suite_id"))]
-            if active and active.get("status") in NONTERMINAL_JOB_STATES
-            else []
+            [str(job.get("suite_id")) for job in experiments.active_jobs()]
         )
         status_monitor.start()
 
@@ -2161,6 +2269,7 @@ class DashboardFacade:
             "model_recommendations": model_recommendations(catalog, inventories, snapshot),
             "defaults": defaults,
             "active_experiment": experiments.active(),
+            "active_experiments": experiments.active_jobs(),
             "jobs": experiments.jobs(),
             "runs": read_run_summaries(),
             "suites": read_suite_summaries(),
@@ -2449,12 +2558,12 @@ class DashboardFacade:
         with inventory_lock:
             nodes = read_all_nodes()
             existing_index = next((i for i, item in enumerate(nodes) if item.name == node.name), None)
-            active = experiments.active()
             if (
                 existing_index is not None
-                and active
-                and active.get("status") in NONTERMINAL_JOB_STATES
-                and node.name in set(active.get("nodes") or [])
+                and any(
+                    node.name in set(active.get("nodes") or [])
+                    for active in experiments.active_jobs()
+                )
             ):
                 raise DashboardServiceError(409, "Node is busy with an experiment")
             if existing_index is not None and node.name in set(actions.busy_nodes()):
@@ -2492,11 +2601,9 @@ class DashboardFacade:
         except ValueError as exc:
             raise DashboardServiceError(400, str(exc)) from exc
         with inventory_lock:
-            active = experiments.active()
-            if (
-                active
-                and active.get("status") in NONTERMINAL_JOB_STATES
-                and node_name in set(active.get("nodes") or [])
+            if any(
+                node_name in set(active.get("nodes") or [])
+                for active in experiments.active_jobs()
             ):
                 raise DashboardServiceError(409, "Node is busy with an experiment")
             if node_name in set(actions.busy_nodes()):
@@ -2577,11 +2684,9 @@ class DashboardFacade:
             "size_bytes": 0,
         }
         with inventory_lock:
-            active = experiments.active()
-            if (
-                active
-                and active.get("status") in NONTERMINAL_JOB_STATES
-                and node_name in set(active.get("nodes") or [])
+            if any(
+                node_name in set(active.get("nodes") or [])
+                for active in experiments.active_jobs()
             ):
                 raise DashboardServiceError(409, "Node is busy with an experiment")
             if node_name in set(actions.busy_nodes()):
@@ -2638,15 +2743,22 @@ class DashboardFacade:
 
     def start_experiment(self, payload: ExperimentPayload) -> Dict[str, Any]:
         try:
-            current = experiments.active()
-            if current and current.get("status") in {"queued", "running"}:
-                raise ValueError("Another experiment is already running")
             busy = set(actions.busy_nodes()).intersection(payload.node_names)
             if busy:
                 raise ValueError("Nodes have a running control action: " + ", ".join(sorted(busy)))
             status_by_name = {item.get("name"): item for item in status_monitor.snapshot()}
             inventory_by_name = {item.name: item for item in read_all_nodes()}
             selected_nodes = [inventory_by_name[name] for name in payload.node_names if name in inventory_by_name]
+            ownership_capable = all(
+                (status_by_name.get(name, {}).get("capabilities") or {}).get(
+                    "resource_ownership_v1"
+                ) is True
+                for name in payload.node_names
+            )
+            if payload.max_parallel_jobs == 2 and not ownership_capable:
+                raise ValueError(
+                    "WORKER_OWNERSHIP_UPGRADE_REQUIRED: parallel jobs require ownership-capable Workers"
+                )
             power_warnings = experiment_power_warnings(selected_nodes, status_by_name)
             readiness_platforms = {item.get("node"): item.get("platform") for item in read_environment_reports()}
             if payload.execution_strategy == "model_parallel_rpc":
@@ -2658,7 +2770,7 @@ class DashboardFacade:
                 payload = payload.model_copy(update={"rpc_coordinator_node": coordinator.name})
             strategy_payload = payload.model_dump()
             for dashboard_only_key in (
-                "model_ids", "continue_on_model_error", "model_cooldown_s"
+                "model_ids", "continue_on_model_error", "model_cooldown_s", "max_parallel_jobs"
             ):
                 strategy_payload.pop(dashboard_only_key, None)
             strategy_config = ExperimentConfig.from_dict(strategy_payload)
@@ -2702,7 +2814,10 @@ class DashboardFacade:
                 rpc_coordinator_node=payload.rpc_coordinator_node,
             )
             definition = save_experiment_definition(payload)
-            active = experiments.start(payload.model_copy(update={"experiment_id": definition["experiment_id"]}))
+            active = experiments.start(
+                payload.model_copy(update={"experiment_id": definition["experiment_id"]}),
+                worker_ownership_capable=ownership_capable,
+            )
         except ClusterError as exc:
             failure = exc.to_failure_record()
             raise DashboardServiceError(http_status_for_failure(failure), failure.to_dict()) from exc
@@ -2717,7 +2832,8 @@ class DashboardFacade:
 
     def experiments(self) -> Dict[str, Any]:
         return {
-            "active": experiments.active(), "jobs": experiments.jobs(), "runs": read_run_summaries(),
+            "active": experiments.active(), "active_jobs": experiments.active_jobs(),
+            "jobs": experiments.jobs(), "runs": read_run_summaries(),
             "suites": read_suite_summaries(), "experiment_groups": read_experiment_groups(),
         }
 
@@ -2736,12 +2852,30 @@ class DashboardFacade:
     def experiment_groups(self) -> Dict[str, Any]:
         return {"experiment_groups": read_experiment_groups()}
 
-    def cancel_experiment(self) -> Dict[str, Any]:
+    def experiment(self, job_id: str) -> Dict[str, Any]:
         try:
-            active = experiments.cancel()
+            return {"experiment": experiments.get(job_id)}
+        except (FileNotFoundError, ValueError) as exc:
+            raise DashboardServiceError(404, str(exc)) from exc
+
+    def cancel_experiment(self, job_id: Optional[str] = None) -> Dict[str, Any]:
+        try:
+            active = experiments.cancel(job_id)
         except ValueError as exc:
             raise DashboardServiceError(400, str(exc)) from exc
         return {"ok": True, "experiment": active}
+
+    def pause_experiment(self, job_id: str) -> Dict[str, Any]:
+        try:
+            return {"ok": True, "experiment": experiments.pause(job_id)}
+        except ValueError as exc:
+            raise DashboardServiceError(400, str(exc)) from exc
+
+    def resume_experiment(self, job_id: str) -> Dict[str, Any]:
+        try:
+            return {"ok": True, "experiment": experiments.resume(job_id)}
+        except ValueError as exc:
+            raise DashboardServiceError(400, str(exc)) from exc
 
     def run(self, run_id: str) -> Dict[str, Any]:
         return self._results.run(run_id)

@@ -66,3 +66,11 @@ class PrepareInputRequest(BaseModel):
     template_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     prompt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     target_input_tokens: int | None = Field(None, ge=1, le=16384, strict=True)
+
+
+class ResourceOwnerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    owner_id: str = Field(min_length=1, max_length=160)
+    lease_id: str = Field(pattern=r"^lease_[0-9a-f]{32}$")
+    fencing_epoch: int = Field(ge=1, strict=True)
+    cleanup_verified: bool = False

@@ -201,6 +201,7 @@ class SuiteRunner:
         total_work_units: int,
         per_model_work_units: int,
         started_at: str,
+        pause_event: Optional[threading.Event] = None,
     ) -> Dict[str, Any]:
         model_ids = list(model_ids)
         if base_config.sweep is not None and model_ids != [base_config.model_id]:
@@ -249,6 +250,15 @@ class SuiteRunner:
             )
 
             for index, model_id in enumerate(model_ids, start=1):
+                if pause_event is not None and pause_event.is_set():
+                    self._progress(phase="paused")
+                    self._emit("suite_paused", suite_id=suite_id, before_model_id=model_id)
+                    while pause_event.is_set() and not cancel_event.wait(0.2):
+                        pass
+                    if cancel_event.is_set():
+                        break
+                    self._progress(phase="suite")
+                    self._emit("suite_resumed", suite_id=suite_id)
                 if cancel_event.is_set():
                     break
                 attempted_models += 1
@@ -411,6 +421,19 @@ class SuiteRunner:
                 )
                 if not should_continue:
                     break
+                if pause_event is not None and pause_event.is_set():
+                    self._progress(phase="paused")
+                    self._emit(
+                        "suite_paused",
+                        suite_id=suite_id,
+                        after_model_id=model_id,
+                    )
+                    while pause_event.is_set() and not cancel_event.wait(0.2):
+                        pass
+                    if cancel_event.is_set():
+                        break
+                    self._progress(phase="suite")
+                    self._emit("suite_resumed", suite_id=suite_id)
                 if model_cooldown_s > 0:
                     self._progress(phase="model_cooldown")
                     self._emit(

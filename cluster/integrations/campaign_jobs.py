@@ -234,10 +234,20 @@ class DurableJobRunBackend:
 
     def cancel(self, attempt: Mapping[str, Any]) -> Mapping[str, Any]:
         job_id = str(attempt.get("backend_job_id") or "")
-        active = self.service.active()
+        try:
+            try:
+                active = self.service.active(job_id)
+            except TypeError:  # Compatibility with pre-S05 injected service doubles.
+                active = self.service.active()
+        except FileNotFoundError:
+            active = None
         if not active or active.get("job_id") != job_id:
             return {"status": "cancelled", "backend_job_id": job_id}
-        return _public_result(self.service.cancel())
+        try:
+            cancelled = self.service.cancel(job_id)
+        except TypeError:  # Compatibility with pre-S05 injected service doubles.
+            cancelled = self.service.cancel()
+        return _public_result(cancelled)
 
 
 __all__ = [

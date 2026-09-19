@@ -819,6 +819,17 @@ def request_json(
 ) -> Dict[str, Any]:
     data = None
     headers = {"Accept": "application/json", **worker_auth_headers()}
+    owner_id = os.getenv("CLUSTER_RESOURCE_OWNER_ID", "").strip()
+    lease_id = os.getenv("CLUSTER_RESOURCE_LEASE_ID", "").strip()
+    fencing_epoch = os.getenv("CLUSTER_RESOURCE_FENCING_EPOCH", "").strip()
+    if owner_id and lease_id and fencing_epoch:
+        headers.update(
+            {
+                "X-Cluster-Resource-Owner": owner_id,
+                "X-Cluster-Resource-Lease": lease_id,
+                "X-Cluster-Fencing-Epoch": fencing_epoch,
+            }
+        )
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -2235,6 +2246,31 @@ def main() -> int:
         nodes = select_nodes(nodes, args.node)
     except (FileNotFoundError, ValueError) as exc:
         parser.error(str(exc))
+
+    passive_commands = {
+        "inventory", "status", "discover", "host-key-scan", "host-key-list", "power-status"
+    }
+    if args.command not in passive_commands:
+        from cluster.application.resources import FilesystemResourceCoordinator, WorkerResource
+
+        coordinator = FilesystemResourceCoordinator(resolve_runtime_paths().jobs_dir / "_resources")
+        owner_id = os.getenv("CLUSTER_RESOURCE_OWNER_ID", "").strip()
+        lease_id = os.getenv("CLUSTER_RESOURCE_LEASE_ID", "").strip()
+        fencing_epoch = os.getenv("CLUSTER_RESOURCE_FENCING_EPOCH", "").strip()
+        conflicts = [
+            lease
+            for lease in coordinator.conflicts(
+                [WorkerResource(node.name, node.host, node.api_port) for node in nodes]
+            )
+            if not (
+                lease.get("owner_job_id") == owner_id
+                and lease.get("lease_id") == lease_id
+                and str(lease.get("fencing_epoch")) == fencing_epoch
+            )
+        ]
+        if conflicts:
+            print("[ERROR] RESOURCE_BUSY: selected Workers have active reservations")
+            return 1
 
     if args.command == "inventory":
         return command_inventory(nodes, args)
