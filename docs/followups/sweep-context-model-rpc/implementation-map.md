@@ -1,5 +1,12 @@
 # Implementation map — S01–S10 계획만
 
+> 기준 시점 정정: 본문은 `5fd444a` 당시 S00 조사/계획이다. 현재 `98b6542`에는
+> S01의 순수 SweepSpec/ResolvedPlan/compiler 및 tests가 추가되어 있다.
+> 따라서 본문의 “신규/없음/proposed” 중 S01 항목은 현재 부재 판정이 아니다.
+> 기존 Worker/JobService/RPC/Dashboard 실행 경로에는 변화가 없다.
+> 범위 이탈 및 재검사 결과는 [S00-report.md](S00-report.md)의 재확인 절을 따른다.
+
+
 Source baseline: `5fd444a6d83e4226fcc5582196f3a27e71f84160`.
 S00에서 아래 구현이나 테스트 신설을 시작하지 않았다. `proposed` 파일은 현재 없다.
 기존 엔진·model service·JobService를 확장하고 경쟁 scheduler를 만들지 않는다.

@@ -5,6 +5,50 @@ Date: 2026-09-19 (Asia/Seoul). Workstream: WS-S00 reconciliation.
 S00 — Software COMPLETE (조사·문서 범위). S01–S10 제품 기능 완료를 뜻하지 않는다.
 Hardware: NOT RUN — user-operated. CI: NOT CHECKED.
 
+## 재확인 및 범위 이탈 정정 — 2026-09-19
+
+아래 원 보고서는 `5fd444a`를 조사하고 `e486cd7`에 저장한 당시의 기록이다.
+현재 재확인 소스는 `98b6542a6984b6c49674e220708f4347da2571b7`이다.
+사용자의 “시작해줘”와 “진행”은 명시된 S00 한정 요청을 변경하지 않는다.
+그럼에도 S01 commit `98b6542`를 생성·push하고 S02 미완료 구현까지 진행한 것은
+범위 해석 오류였다. 따라서 아래 역사적 “후속 단계 미시작” 문구를 현재 상태로
+해석해서는 안 되며, 전체 요청의 범위 준수를 COMPLETE로 선언하지 않는다.
+
+S02에서 만든 tracked 4개 파일의 미커밋 변경과 새 파일 2개는 이번 재확인에서
+제거하여 HEAD 상태로 돌렸다. 그 직후 작업 트리는 clean이었다. 공유된 S01
+commit은 reset/force-push/revert로 임의 변경하지 않고 존재 사실을 기록한다.
+이번 checkpoint는 이 보고서와 나머지 S00 문서의 기준 시점 정정만 포함한다.
+연구 lock, 실제 inventory, 모델, 실제 결과는 변경하지 않았다. 실제 Worker 접속,
+모델 다운로드, inference, native RPC 및 하드웨어 CI는 실행하지 않았다.
+
+### 현재 상태와 재실행 검사
+
+- Branch: `codex/current-source-pilot-v6`; origin은 기존 GitHub 저장소와 동일.
+- 원격 feature: `98b6542a6984b6c49674e220708f4347da2571b7`.
+- 원격 main: `eebb8f134ac2fe251f5e9dd5a723bb653db9a840`.
+- 적용 AGENTS.md 없음 재확인. CONTRIBUTING.md를 재확인했다.
+- 원 기준선 이후 제품 차이는 S01의 `domain/sweep.py`,
+  `application/sweep_planner.py`, `tests/test_sweep_planner.py` 추가다.
+  기존 Worker/JobService/RPC/Dashboard 실행 경로는 원 기준선과 같다.
+- 원 보고서의 첫 두 unittest 명령에 든 14개 module과 `test_packaging`을
+  한 번에 `python -m unittest … -q`로 재실행: **267 tests, OK, 8.734s**.
+  로그: `/private/tmp/s00-sweep-audit/recheck.log`.
+- 같은 임시 harness를 별도 runtime/results에서 재실행: **4 tests, OK, 0.006s**.
+  단일 active job 거부, 108/36 산술, RPC 인자 mapping, unknown key 처리 확인.
+- compileall, repository validation(20 JSON/72 cells/13 actions/7 scripts),
+  bash syntax, npm test:syntax 및 test:fixtures: 모두 exit 0.
+- 임시 runtime/results와 header-only inventory를 사용했다. compile cache도
+  `/private/tmp`에 두었다. fake factory/runtime만 사용했다.
+- Starlette deprecation 및 subprocess ResourceWarning이 있었으나 검사 실패는 없다.
+  전체 unittest discover, PNG/browser E2E, ShellCheck는 이번 재확인에서 실행하지 않았다.
+  원 보고서의 이전 검사 결과와 이번 실행 결과를 합산하지 않는다. CI: NOT CHECKED.
+
+S00 조사·계획 산출물은 존재하고 재확인됐다. 범위 이탈은 위와 같이 공개하며,
+추가 구현을 중단한다. 이후 단계의 개발 또는 실행 승인을 추정하지 않는다.
+이번 문서 commit/push의 실제 결과는 최종 응답에 기록한다.
+
+---
+
 ## 범위와 기준 소스
 
 사용자의 직접 요청을 실행 범위로 삼았다. 제공 문서의 S01–S10 구현 지시와 수동
