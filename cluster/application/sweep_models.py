@@ -7,6 +7,7 @@ jobs. A resolved preview is not execution approval.
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
@@ -102,6 +103,56 @@ def _memory_status(
     if fit.fits is False:
         return "blocked", "MODEL_MEMORY_ESTIMATE_EXCEEDED"
     return "unknown", "MODEL_MEMORY_ESTIMATE_UNKNOWN"
+
+
+def _rpc_memory_status(
+    entry: ModelCatalogEntry,
+    worker: WorkerReference,
+    n_ctx: int,
+    share: float | None,
+) -> tuple[str, str]:
+    """Conservative participant check using a profile's requested weight share.
+
+    The mapped GGUF bytes are apportioned by the requested ratio. KV, compute,
+    backend/RPC buffers and the OS reserve remain per-participant because the
+    pinned runtime does not expose a trustworthy predicted placement. Auto
+    placement therefore stays unknown until the native runtime reports it.
+    """
+    if entry.context_length_advertised and n_ctx > entry.context_length_advertised:
+        return "blocked", "MODEL_CONTEXT_LIMIT_EXCEEDED"
+    conservative_auto = share is None
+    if conservative_auto:
+        # A participant that can fit the whole model plus every per-device
+        # reserve is safe regardless of the runtime's eventual auto ratio.
+        share = 1.0
+    if worker.memory_available_mb == 0:
+        return "blocked", "RPC_PARTICIPANT_MEMORY_ESTIMATE_EXCEEDED"
+    if (
+        worker.memory_total_mb is None
+        or worker.memory_available_mb is None
+        or entry.kv_cache_bytes_per_token is None
+        or entry.size_bytes is None
+    ):
+        return "unknown", "RPC_PARTICIPANT_MEMORY_ESTIMATE_UNKNOWN"
+    fit = estimate_memory_fit(
+        entry,
+        memory_total_mb=worker.memory_total_mb,
+        memory_available_mb=worker.memory_available_mb,
+        context_length=n_ctx,
+        observed_size_bytes=max(1, math.ceil(entry.size_bytes * share)),
+    )
+    if fit.fits is True:
+        return (
+            "valid",
+            "RPC_PARTICIPANT_MEMORY_CONSERVATIVE_FITS"
+            if conservative_auto
+            else "RPC_PARTICIPANT_MEMORY_ESTIMATE_FITS",
+        )
+    if fit.fits is False:
+        if conservative_auto:
+            return "unknown", "RPC_MEMORY_AUTO_PLACEMENT_UNKNOWN"
+        return "blocked", "RPC_PARTICIPANT_MEMORY_ESTIMATE_EXCEEDED"
+    return "unknown", "RPC_PARTICIPANT_MEMORY_ESTIMATE_UNKNOWN"
 
 
 def preview_catalog_sweep(
@@ -280,6 +331,36 @@ def preview_catalog_sweep(
                     )
                 )
 
+        workers_by_id = {worker.worker_id: worker for worker in workers}
+        for profile in spec.rpc_profiles:
+            if profile.split_policy == "equal":
+                shares = {node: 1.0 / len(profile.worker_ids) for node in profile.worker_ids}
+            elif profile.split_policy == "custom":
+                weights = dict(profile.weights_by_worker)
+                total = sum(weights.values())
+                shares = {node: weights[node] / total for node in profile.worker_ids}
+            else:
+                shares = {node: None for node in profile.worker_ids}
+            for worker_id in profile.worker_ids:
+                worker = workers_by_id.get(worker_id)
+                if worker is None:
+                    continue
+                for n_ctx in sorted(contexts):
+                    status, code = _rpc_memory_status(
+                        entry, worker, n_ctx, shares[worker_id]
+                    )
+                    checks.append(
+                        ModelCheck(
+                            model_ref,
+                            worker_id,
+                            "memory",
+                            status,
+                            code,
+                            n_ctx,
+                            profile.profile_id,
+                        )
+                    )
+
         templates = {
             (model.chat_template_hash, model.tokenizer_metadata_hash)
             for model in observed
@@ -349,7 +430,6 @@ def build_cell_config(
     """Build one model-bound child without dispatch or nested model expansion.
 
     S06/S07 must re-resolve fresh evidence, reserve resources and authorize Start.
-    RPC binding remains deferred to S04.
     """
     plan = verify_plan(plan.to_json())
     trial = next((item for item in plan.trials if item.trial_id == trial_id), None)
@@ -358,8 +438,6 @@ def build_cell_config(
     cell = next(item for item in plan.cells if item.cell_id == trial.cell_id)
     if cell.status != "valid" or cell.exclusion_reason:
         fail("cell is not ready for a concrete child")
-    if cell.condition.execution_strategy == "model_parallel_rpc":
-        fail("RPC child binding requires S04")
     if (
         not isinstance(prompt_text, str)
         or hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
@@ -383,6 +461,8 @@ def build_cell_config(
         "prompt_mode": cell.prompt.mode,
         "model_identity": cell.model.identity(),
     }
+    if cell.rpc_profile is not None:
+        trace["rpc_profile"] = cell.rpc_profile.to_dict()
     if cell.prompt.target_input_tokens is not None:
         trace["target_input_tokens"] = cell.prompt.target_input_tokens
     config_values.update(
@@ -391,6 +471,20 @@ def build_cell_config(
         prompt=prompt_text,
         sweep=trace,
     )
+    if cell.rpc_profile is not None:
+        profile = cell.rpc_profile
+        config_values.update(
+            rpc_coordinator_node=profile.coordinator_id,
+            rpc_split_mode=profile.split_mode,
+            rpc_split_policy=profile.split_policy,
+            rpc_tensor_split=(
+                [dict(profile.weights_by_worker)[node] for node in profile.worker_ids]
+                if profile.split_policy == "custom"
+                else []
+            ),
+            rpc_gpu_layers=profile.rpc_gpu_layers,
+            acknowledge_experimental_rpc=True,
+        )
     config = ExperimentConfig.from_dict(config_values, strict=True)
     config.validate()
     return config

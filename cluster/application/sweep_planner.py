@@ -80,15 +80,34 @@ def _cell(spec: SweepSpec, context: ResolutionContext, condition: RunCondition, 
     model_checks = [
         item for item in context.model_checks
         if item.model_ref == condition.model_ref
-        and item.worker_id in required
         and item.n_ctx in (None, condition.n_ctx)
+        and (
+            (not rpc and item.worker_id in required and item.profile_id is None)
+            or (
+                rpc
+                and (
+                    (item.profile_id is None and item.worker_id in required)
+                    or (
+                        item.profile_id == profile.profile_id
+                        and item.worker_id in condition.worker_ids
+                    )
+                )
+            )
+        )
     ]
     for item in model_checks:
-        if rpc and item.kind == "memory" and item.code != "MODEL_CONTEXT_LIMIT_EXCEEDED":
-            # Replicated file+KV estimates cannot prove a distributed RPC allocation.
-            check("unknown", "RPC_MEMORY_REQUIRES_PROFILE_PREFLIGHT", item.worker_id)
-        else:
-            check(item.status, item.code, item.worker_id)
+        if rpc and item.kind == "memory" and item.profile_id is None:
+            if item.code == "MODEL_CONTEXT_LIMIT_EXCEEDED":
+                check(item.status, item.code, item.worker_id)
+            continue
+        check(item.status, item.code, item.worker_id)
+    if rpc and any(
+        item.model_ref == condition.model_ref for item in context.model_checks
+    ) and not any(
+        item.kind == "memory" and item.profile_id == profile.profile_id
+        for item in model_checks
+    ):
+        check("unknown", "RPC_MEMORY_REQUIRES_PROFILE_PREFLIGHT", profile.profile_id)
     if model is None:
         check("blocked", "MODEL_REFERENCE_UNRESOLVED", condition.model_ref)
     else:
@@ -140,8 +159,6 @@ def _cell(spec: SweepSpec, context: ResolutionContext, condition: RunCondition, 
                 check("blocked", "RUNTIME_AXIS_NOT_IMPLEMENTED", name)
             elif not workers or any(worker.load_profile != "valid" for worker in workers):
                 check("blocked", "WORKER_LOAD_PROFILE_UNVERIFIED", name)
-    if profile and profile.rpc_gpu_layers != "all":
-        check("blocked", "RPC_GPU_POLICY_NOT_IMPLEMENTED", profile.profile_id)
     # RPC uses rpc_gpu_layers. Keep the legacy omitted ordinary default inert,
     # but reject nondefault fixed values and explicit-mode variation as well as
     # axis declarations. Explicit conditions do not appear in spec.axes.
@@ -176,6 +193,7 @@ def _cell(spec: SweepSpec, context: ResolutionContext, condition: RunCondition, 
                         rpc_split_mode=profile.split_mode, rpc_split_policy=profile.split_policy,
                         rpc_tensor_split=[dict(profile.weights_by_worker)[node] for node in profile.worker_ids]
                         if profile.split_policy == "custom" else [],
+                        rpc_gpu_layers=profile.rpc_gpu_layers,
                         acknowledge_experimental_rpc=True)
     config = ExperimentConfig.from_dict(existing, strict=True)
     config.validate()

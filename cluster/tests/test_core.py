@@ -885,7 +885,9 @@ class ExperimentTests(unittest.TestCase):
             return_value={"ok": False, "stdout": "", "stderr": "stop failed"},
         ):
             errors = _stop_rpc_topology(head, [worker])
-        self.assertEqual(len(errors), 2)
+        # S04 records both the failed stop and the independent residual
+        # process/port assertion for coordinator and RPC device.
+        self.assertEqual(len(errors), 4)
         self.assertTrue(all("stop failed" in error for error in errors))
 
 

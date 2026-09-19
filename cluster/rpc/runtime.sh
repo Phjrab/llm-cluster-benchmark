@@ -40,6 +40,23 @@ validate_port() {
   (( port <= 65535 )) || die "invalid RPC port: $port"
 }
 
+validate_context() {
+  local context=$1
+  [[ "$context" =~ ^[0-9]+$ ]] || die "invalid RPC context: $context"
+  (( context >= 128 && context <= 16384 )) || die "RPC context must be in [128, 16384]"
+}
+
+validate_gpu_layers() {
+  local gpu_layers=$1
+  [[ "$gpu_layers" == all ]] && return 0
+  [[ "$gpu_layers" =~ ^[0-9]+$ ]] || die "invalid RPC gpu layers: $gpu_layers"
+  (( gpu_layers <= 999 )) || die "RPC gpu layers must be all or in [0, 999]"
+}
+
+validate_split_mode() {
+  [[ "$1" == layer || "$1" == row ]] || die "RPC split mode must be layer or row"
+}
+
 prepare_private_file() {
   local path=$1 label=$2
   if [[ -L "$path" || ( -e "$path" && ! -f "$path" ) ]]; then
@@ -334,7 +351,11 @@ check_runtime() {
   "$rpc_server_bin" --help >/dev/null 2>&1
   server_help="$("$llama_server_bin" --help 2>&1)"
   [[ "$server_help" == *"--rpc SERVERS"* ]] || die "llama-server was built without RPC"
-  echo "[OK] llama.cpp RPC commit=$actual platform=$(platform_kind)"
+  [[ "$server_help" == *"--split-mode {none,layer,row}"* ]] \
+    || die "pinned llama-server does not advertise layer/row split modes"
+  [[ "$server_help" == *"--gpu-layers"* ]] \
+    || die "pinned llama-server does not advertise gpu layer control"
+  echo "[OK] llama.cpp RPC commit=$actual platform=$(platform_kind) rpc_split_modes=layer,row rpc_gpu_layers=all,integer rpc_input_preparation=apply-template,tokenize,props"
 }
 
 prepare_runtime() {
@@ -444,6 +465,9 @@ start_coordinator() {
   local guard_status observed_pid rollback_status
   local -a command
   validate_port "$port"
+  validate_context "$context"
+  validate_gpu_layers "$gpu_layers"
+  validate_split_mode "$split_mode"
   require_lifecycle_tools
   require_readiness_tools
   command -v curl >/dev/null 2>&1 || die "curl is required for RPC coordinator health checks"

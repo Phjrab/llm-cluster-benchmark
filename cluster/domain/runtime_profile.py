@@ -1,12 +1,13 @@
 """Pure S02 provenance and load-condition checks; no runtime access."""
 from .errors import DomainValidationError
-from .sweep import ModelReference, ref, digest, integer, choice
+from .sweep import ModelReference, RpcProfile, ref, digest, integer, choice
 
 # Only hashes/IDs/counts may enter this public trace; never prompt/token arrays.
 def validate_sweep_trace(value):
     required = {"sweep_id", "plan_sha256", "cell_id", "trial_id", "attempt_id",
                 "sweep_repeat_index", "model_sha256", "template_sha256", "prompt_sha256", "prompt_mode"}
-    if not isinstance(value, dict) or set(value) - (required | {"target_input_tokens", "model_identity"}) or required - set(value):
+    optional = {"target_input_tokens", "model_identity", "rpc_profile"}
+    if not isinstance(value, dict) or set(value) - (required | optional) or required - set(value):
         raise DomainValidationError("invalid sweep trace fields")
     for key in required:
         if key.endswith("sha256"):
@@ -30,6 +31,10 @@ def validate_sweep_trace(value):
             or model.template_sha256 != value["template_sha256"]
         ):
             raise DomainValidationError("sweep model identity mismatch")
+    if "rpc_profile" in value:
+        profile = RpcProfile.from_dict(value["rpc_profile"])
+        if profile.to_dict() != value["rpc_profile"]:
+            raise DomainValidationError("invalid RPC sweep profile")
     target = value.get("target_input_tokens")
     if value["prompt_mode"] == "token_length_profile":
         integer(target, "target_input_tokens", 1, 16384)

@@ -537,6 +537,13 @@ class ModelCheck(Record):
     status: str
     code: str
     n_ctx: int | None = None
+    profile_id: str | None = None
+
+    def to_dict(self):
+        value = super().to_dict()
+        if self.profile_id is None:
+            value.pop("profile_id")
+        return value
 
     @classmethod
     def from_dict(cls, raw):
@@ -547,6 +554,7 @@ class ModelCheck(Record):
             "status": lambda v: choice(v, ("valid", "blocked", "unknown")),
             "code": ref,
             "n_ctx": lambda v: None if v is None else integer(v, "n_ctx", 128, 16384),
+            "profile_id": lambda v: None if v is None else ref(v),
         })
 
 

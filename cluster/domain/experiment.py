@@ -84,6 +84,7 @@ class ExperimentConfig:
     n_threads: Optional[int] = None
     n_batch: Optional[int] = None
     sweep: Optional[Dict[str, Any]] = None
+    rpc_gpu_layers: Union[str, int] = "all"
 
     @classmethod
     def from_dict(
@@ -282,6 +283,12 @@ class ExperimentConfig:
         except (TypeError, ValueError) as exc:
             raise DomainValidationError("rpc_split_policy must be auto, equal or custom") from exc
 
+        if self.rpc_gpu_layers != "all" and (
+            not _is_integer(self.rpc_gpu_layers)
+            or not 0 <= self.rpc_gpu_layers <= 999
+        ):
+            raise DomainValidationError("rpc_gpu_layers must be all or an integer between 0 and 999")
+
         if not isinstance(self.rpc_tensor_split, list):
             raise DomainValidationError("rpc_tensor_split must be a list")
         invalid_split = any(
@@ -308,9 +315,35 @@ class ExperimentConfig:
                 raise DomainValidationError("rpc_coordinator_node must be one of node_names")
 
         if strategy is ExecutionStrategy.MODEL_PARALLEL_RPC and (
-            self.n_threads is not None or self.n_batch is not None or self.sweep is not None
+            self.n_threads is not None or self.n_batch is not None
         ):
-            raise DomainValidationError("RPC load profile and prepared sweep inputs require S04")
+            raise DomainValidationError("n_threads and n_batch are not supported by model_parallel_rpc")
+        if strategy is not ExecutionStrategy.MODEL_PARALLEL_RPC and self.rpc_gpu_layers != "all":
+            raise DomainValidationError("rpc_gpu_layers is only valid for model_parallel_rpc")
+        if self.sweep is not None:
+            rpc_profile = self.sweep.get("rpc_profile")
+            if strategy is ExecutionStrategy.MODEL_PARALLEL_RPC:
+                if rpc_profile is None:
+                    raise DomainValidationError("RPC sweep trace requires rpc_profile")
+                from .sweep import RpcProfile
+
+                profile = RpcProfile.from_dict(rpc_profile)
+                expected_weights = (
+                    [dict(profile.weights_by_worker)[node] for node in profile.worker_ids]
+                    if profile.split_policy == "custom"
+                    else []
+                )
+                if (
+                    list(profile.worker_ids) != self.node_names
+                    or profile.coordinator_id != coordinator
+                    or profile.split_mode != split_mode.value
+                    or profile.split_policy != split_policy.value
+                    or expected_weights != self.rpc_tensor_split
+                    or profile.rpc_gpu_layers != self.rpc_gpu_layers
+                ):
+                    raise DomainValidationError("RPC sweep profile differs from concrete config")
+            elif rpc_profile is not None:
+                raise DomainValidationError("rpc_profile trace only applies to model_parallel_rpc")
         self.execution_strategy = strategy
         self.sweep_mode = sweep_mode
         self.rpc_split_mode = split_mode
@@ -326,6 +359,8 @@ def normalized_config_identity(config: ExperimentConfig) -> Dict[str, Any]:
             continue
         value = getattr(config, name)
         if name in {"n_threads", "n_batch", "sweep"} and value is None:
+            continue
+        if name == "rpc_gpu_layers" and value == "all":
             continue
         if isinstance(value, Enum):
             value = value.value

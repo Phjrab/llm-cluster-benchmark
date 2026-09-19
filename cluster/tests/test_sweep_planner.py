@@ -282,7 +282,7 @@ class SweepCapabilityTests(unittest.TestCase):
     def test_rpc_integer_gpu_and_row_uncertainty_not_rewritten(self):
         raw = rpc_spec(); raw['rpc_profiles'][0].update(rpc_gpu_layers=0, split_mode='row')
         result = plan(raw)
-        self.assertIn('RPC_GPU_POLICY_NOT_IMPLEMENTED', self.codes(result))
+        self.assertNotIn('RPC_GPU_POLICY_NOT_IMPLEMENTED', self.codes(result))
         self.assertEqual(result.cells[0].rpc_profile.split_mode, 'row')
         self.assertEqual(result.cells[0].rpc_profile.rpc_gpu_layers, 0)
         self.assertTrue(any(c.status == 'unknown' and c.code == 'RPC_MODE_CAPABILITY' for c in result.cells[0].capabilities))

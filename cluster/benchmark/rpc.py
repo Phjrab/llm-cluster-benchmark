@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence
@@ -10,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence
 from cluster.clusterctl import request_json, run_on_node
 from cluster.domain.errors import ErrorCode
 from cluster.domain.experiment import ExperimentConfig
+from cluster.infrastructure.gguf import canonical_metadata_sha256
 
 from .rpc_selection import RpcBackendError, select_rpc_coordinator
 
@@ -121,6 +124,180 @@ class WorkerRpcBackend:
             results.append(item)
         return results
 
+    @staticmethod
+    def capabilities_from_check(check: Dict[str, Any]) -> Dict[str, set[str]]:
+        output = f"{check.get('stdout', '')} {check.get('stderr', '')}"
+        capabilities = {
+            "rpc_split_modes": {"layer"},
+            "rpc_gpu_layers": {"all"},
+            "rpc_input_preparation": set(),
+        }
+        for token in output.split():
+            for name in tuple(capabilities):
+                prefix = name + "="
+                if token.startswith(prefix):
+                    capabilities[name] = {
+                        item for item in token[len(prefix):].split(",") if item
+                    }
+        return capabilities
+
+    def _verify_capabilities(
+        self,
+        nodes: Sequence[Any],
+        checks_by_name: Dict[str, Dict[str, Any]],
+        config: ExperimentConfig,
+    ) -> None:
+        required_gpu = "all" if config.rpc_gpu_layers == "all" else "integer"
+        missing: List[Dict[str, str]] = []
+        for node in nodes:
+            available = self.capabilities_from_check(checks_by_name[node.name])
+            if str(config.rpc_split_mode) not in available["rpc_split_modes"]:
+                missing.append({"node": node.name, "capability": f"split:{config.rpc_split_mode}"})
+            if required_gpu not in available["rpc_gpu_layers"]:
+                missing.append({"node": node.name, "capability": f"gpu_layers:{required_gpu}"})
+            if config.sweep is not None and not {
+                "apply-template", "tokenize", "props"
+            }.issubset(available["rpc_input_preparation"]):
+                missing.append({"node": node.name, "capability": "exact_input_preparation"})
+        if missing:
+            raise RpcBackendError(
+                "Pinned RPC runtime does not report the requested capability",
+                code=ErrorCode.RPC_NOT_PREPARED,
+                stage="rpc_capability",
+                evidence={"unsupported": missing},
+            )
+
+    def _assert_clean_start(
+        self,
+        coordinator: Any,
+        remote_devices: Sequence[Any],
+        coordinator_platform: str,
+    ) -> None:
+        checks = [(coordinator, "assert-stopped-coordinator", RPC_COORDINATOR_PORT)]
+        checks.extend((node, "assert-stopped-worker", RPC_SERVER_PORT) for node in remote_devices)
+        if coordinator_platform == "raspberry-pi":
+            checks.append((coordinator, "assert-stopped-worker", RPC_SERVER_PORT))
+        failures = []
+        for node, action, port in checks:
+            try:
+                result = self.runtime_command(node, action, str(port), timeout=20)
+                if not result["ok"]:
+                    failures.append({
+                        "node": node.name,
+                        "role": action,
+                        "error": result["stderr"] or result["stdout"] or "not stopped",
+                    })
+            except Exception as exc:
+                failures.append({"node": node.name, "role": action, "error": type(exc).__name__})
+        if failures:
+            raise RpcBackendError(
+                "Previous RPC process or port state is not clean",
+                code=ErrorCode.RPC_NOT_PREPARED,
+                stage="rpc_residual_guard",
+                evidence={"failures": failures},
+            )
+
+    def _prepare_sweep_input(
+        self,
+        url: str,
+        model_path: PurePosixPath,
+        config: ExperimentConfig,
+    ) -> Dict[str, Any]:
+        trace = config.sweep
+        if trace is None:
+            return {}
+        props = self.request_json(f"{url}/props", timeout=30.0)
+        if props.get("model_path") != str(model_path):
+            raise RpcBackendError(
+                "RPC coordinator reported a different model path",
+                code=ErrorCode.RPC_MODEL_LOAD_FAILED,
+                stage="rpc_model_identity",
+                model_id=config.model_id,
+            )
+        template = props.get("chat_template")
+        runtime_template_hash = (
+            canonical_metadata_sha256({"tokenizer.chat_template": template})
+            if isinstance(template, str) and template
+            else ""
+        )
+        if runtime_template_hash != trace["template_sha256"]:
+            raise RpcBackendError(
+                "RPC coordinator chat template identity mismatch",
+                code=ErrorCode.RPC_MODEL_LOAD_FAILED,
+                stage="rpc_model_metadata",
+                model_id=config.model_id,
+            )
+        effective_n_ctx = (props.get("default_generation_settings") or {}).get("n_ctx")
+        if effective_n_ctx != config.n_ctx:
+            raise RpcBackendError(
+                "RPC coordinator effective context differs from requested n_ctx",
+                code=ErrorCode.CONFIG_MISMATCH,
+                stage="rpc_effective_context",
+                evidence={"requested_n_ctx": config.n_ctx, "effective_n_ctx": effective_n_ctx},
+            )
+        applied = self.request_json(
+            f"{url}/apply-template",
+            method="POST",
+            payload={"messages": [{"role": "user", "content": config.prompt}]},
+            timeout=30.0,
+        )
+        rendered = applied.get("prompt")
+        if not isinstance(rendered, str):
+            raise RpcBackendError(
+                "RPC coordinator did not return a rendered prompt",
+                code=ErrorCode.CONFIG_MISMATCH,
+                stage="rpc_input_preparation",
+            )
+        tokenized = self.request_json(
+            f"{url}/tokenize",
+            method="POST",
+            payload={"content": rendered, "add_special": False, "parse_special": True},
+            timeout=30.0,
+        )
+        tokens = tokenized.get("tokens")
+        if (
+            not isinstance(tokens, list)
+            or not tokens
+            or any(type(token) is not int for token in tokens)
+        ):
+            raise RpcBackendError(
+                "RPC coordinator did not return exact token IDs",
+                code=ErrorCode.CONFIG_MISMATCH,
+                stage="rpc_input_preparation",
+            )
+        count = len(tokens)
+        if count + config.max_tokens > config.n_ctx:
+            raise RpcBackendError(
+                "RPC prompt and output reserve exceed n_ctx",
+                code=ErrorCode.CONFIG_MISMATCH,
+                stage="rpc_context_budget",
+                evidence={
+                    "input_tokens": count,
+                    "output_reserve_tokens": config.max_tokens,
+                    "effective_n_ctx": config.n_ctx,
+                },
+            )
+        target = trace.get("target_input_tokens")
+        if target is not None and count != target:
+            raise RpcBackendError(
+                "RPC prepared input does not match the token-length target",
+                code=ErrorCode.CONFIG_MISMATCH,
+                stage="rpc_input_preparation",
+                evidence={"input_tokens": count, "target_input_tokens": target},
+            )
+        return {
+            "preparation_id": trace["attempt_id"],
+            "prompt_sha256": trace["prompt_sha256"],
+            "rendered_prompt_sha256": hashlib.sha256(rendered.encode("utf-8")).hexdigest(),
+            "template_hash": trace["template_sha256"],
+            "model_sha256": trace["model_sha256"],
+            "effective_n_ctx": config.n_ctx,
+            "output_reserve_tokens": config.max_tokens,
+            "input_token_source": "pinned_llama_server_apply_template_tokenize",
+            "input_tokens": count,
+            "input_tokens_exact": True,
+        }
+
     def start(
         self,
         nodes: Sequence[Any],
@@ -143,6 +320,7 @@ class WorkerRpcBackend:
             )
 
         checks_by_name = {item["node"]: item for item in checks}
+        self._verify_capabilities(workers, checks_by_name, config)
         platforms = {
             node.name: self.platform_from_check(node, checks_by_name[node.name])
             for node in workers
@@ -151,6 +329,9 @@ class WorkerRpcBackend:
             workers, config.rpc_coordinator_node, platforms
         )
         remote_devices = [node for node in workers if node.name != coordinator.name]
+        self._assert_clean_start(
+            coordinator, remote_devices, platforms[coordinator.name]
+        )
 
         for node in workers:
             try:
@@ -230,18 +411,34 @@ class WorkerRpcBackend:
                     node=coordinator.name,
                     model_id=config.model_id,
                 )
+            if config.sweep is not None:
+                checksum = self.run_on_node(
+                    coordinator, ["sha256sum", "--", str(model_path)], timeout=900
+                )
+                observed_sha256 = checksum.stdout.strip().split(maxsplit=1)[0] if checksum.returncode == 0 else ""
+                if observed_sha256 != config.sweep["model_sha256"]:
+                    raise RpcBackendError(
+                        "Coordinator model checksum differs from the sweep identity",
+                        code=ErrorCode.RPC_MODEL_LOAD_FAILED,
+                        stage="rpc_model_identity",
+                        node=coordinator.name,
+                        model_id=config.model_id,
+                    )
 
             resolved_device_nodes = list(rpc_device_nodes)
             if coordinator_platform != "raspberry-pi":
                 resolved_device_nodes.append(coordinator)
             split_values: List[float] = []
+            requested_weights_by_node: Dict[str, float] = {}
             if str(config.rpc_split_policy) == "equal":
                 split_values = [1.0] * len(resolved_device_nodes)
+                requested_weights_by_node = {node.name: 1.0 for node in workers}
             elif str(config.rpc_split_policy) == "custom":
                 requested_by_node = {
                     node.name: float(value)
                     for node, value in zip(workers, config.rpc_tensor_split)
                 }
+                requested_weights_by_node = dict(requested_by_node)
                 split_values = [requested_by_node[node.name] for node in resolved_device_nodes]
             split_csv = ",".join(f"{value:g}" for value in split_values) or "-"
             endpoints_csv = ",".join(endpoints)
@@ -256,7 +453,7 @@ class WorkerRpcBackend:
                 str(RPC_COORDINATOR_PORT),
                 str(model_path),
                 str(config.n_ctx),
-                "999",
+                str(config.rpc_gpu_layers),
                 endpoints_csv,
                 str(config.rpc_split_mode),
                 split_csv,
@@ -278,6 +475,10 @@ class WorkerRpcBackend:
                     model_id=config.model_id,
                 )
             load_s = time.perf_counter() - load_started
+            coordinator_url = f"http://{coordinator.host}:{RPC_COORDINATOR_PORT}"
+            input_preparation = self._prepare_sweep_input(
+                coordinator_url, model_path, config
+            )
             commit_check = self.run_on_node(
                 coordinator,
                 [
@@ -299,8 +500,17 @@ class WorkerRpcBackend:
                 "split_mode": str(config.rpc_split_mode),
                 "split_policy": str(config.rpc_split_policy),
                 "tensor_split": split_values,
+                "requested_weights_by_worker": requested_weights_by_node,
                 "resolved_device_order": [node.name for node in resolved_device_nodes],
-                "requested_gpu_layers": "all",
+                "requested_gpu_layers": config.rpc_gpu_layers,
+                "effective_gpu_layers_argv": str(config.rpc_gpu_layers),
+                "actual_layer_placement": None,
+                "requested_n_ctx": config.n_ctx,
+                "model_id": config.model_id,
+                "rpc_session_id": uuid.uuid4().hex,
+                "rpc_session_policy": "new_session_per_cell",
+                "model_cache_policy": "reload_per_cell",
+                "model_load_cache_reused": False,
                 "model_load_s": round(load_s, 6),
                 "model_load_distribution_s": {
                     "rpc_device_start_s": device_start_s,
@@ -311,9 +521,11 @@ class WorkerRpcBackend:
                 "coordinator_slots": 1,
                 "client_concurrency": config.concurrency,
             }
+            if input_preparation:
+                topology["input_preparation"] = input_preparation
             return RpcSession(
                 coordinator,
-                f"http://{coordinator.host}:{RPC_COORDINATOR_PORT}",
+                coordinator_url,
                 topology,
                 started_devices,
                 lambda: self.stop(coordinator, started_devices),
@@ -342,6 +554,16 @@ class WorkerRpcBackend:
                 )
         except Exception as exc:
             errors.append(f"{coordinator.name} coordinator: {exc}")
+        try:
+            result = self.runtime_command(
+                coordinator, "assert-stopped-coordinator", str(RPC_COORDINATOR_PORT), timeout=20
+            )
+            if not result["ok"]:
+                errors.append(
+                    f"{coordinator.name} coordinator residual: {result['stderr'] or result['stdout']}"
+                )
+        except Exception as exc:
+            errors.append(f"{coordinator.name} coordinator residual: {exc}")
         for device in devices:
             try:
                 result = self.runtime_command(
@@ -353,6 +575,16 @@ class WorkerRpcBackend:
                     )
             except Exception as exc:
                 errors.append(f"{device.name} RPC device: {exc}")
+            try:
+                result = self.runtime_command(
+                    device, "assert-stopped-worker", str(RPC_SERVER_PORT), timeout=20
+                )
+                if not result["ok"]:
+                    errors.append(
+                        f"{device.name} RPC device residual: {result['stderr'] or result['stdout']}"
+                    )
+            except Exception as exc:
+                errors.append(f"{device.name} RPC device residual: {exc}")
         return errors
 
 

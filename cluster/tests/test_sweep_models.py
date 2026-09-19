@@ -324,7 +324,7 @@ class SweepModelResolutionTests(unittest.TestCase):
         }
         self.assertEqual(blocked(result.plan.cells[0]), set())
         self.assertIn("MODEL_NOT_INSTALLED", blocked(result.plan.cells[1]))
-        self.assertEqual(result.plan.cells[0].status, "unknown")
+        self.assertEqual(result.plan.cells[0].status, "valid")
         data["catalog"][0] = dataclasses.replace(
             data["catalog"][0], default_context=128, context_length_advertised=128
         )

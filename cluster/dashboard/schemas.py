@@ -10,7 +10,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -181,8 +181,18 @@ class ExperimentPayload(BaseModel):
     rpc_split_mode: str = "layer"
     rpc_split_policy: str = "auto"
     rpc_tensor_split: List[float] = Field(default_factory=list)
+    rpc_gpu_layers: Union[Literal["all"], int] = "all"
     rpc_coordinator_node: Optional[str] = Field(None, max_length=80)
     acknowledge_experimental_rpc: bool = False
+
+    @field_validator("rpc_gpu_layers", mode="before")
+    @classmethod
+    def validate_rpc_gpu_layers(cls, value: Any) -> Any:
+        if value == "all":
+            return value
+        if type(value) is not int or not 0 <= value <= 999:
+            raise ValueError("rpc_gpu_layers must be all or an integer between 0 and 999")
+        return value
 
     @model_validator(mode="after")
     def normalize_models(self) -> "ExperimentPayload":
