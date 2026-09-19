@@ -1,0 +1,84 @@
+{
+  "artifact_type": "sweep_api_request_template",
+  "schema_version": 1,
+  "template_only": true,
+  "run_on_import": false,
+  "resolution_state": "unresolved",
+  "unresolved": [
+    "request_template.spec.rpc_profiles[*].worker_ids",
+    "request_template.spec.rpc_profiles[*].coordinator_id",
+    "request_template.model_selections.model"
+  ],
+  "request_template": {
+    "sweep_id": "rpc-small",
+    "spec": {
+      "artifact_type": "sweep_spec",
+      "schema_version": 1,
+      "mode": "exploratory",
+      "revision": 1,
+      "combination": "grid",
+      "base": {
+        "model_ref": "model",
+        "prompt_ref": "same",
+        "execution_strategy": "model_parallel_rpc",
+        "n_ctx": 1024,
+        "requests": 1,
+        "concurrency": 1,
+        "max_tokens": 32,
+        "warmup_requests": 0,
+        "persist_prompt": false,
+        "response_storage_mode": "hash_only"
+      },
+      "rpc_profiles": [
+        {
+          "profile_id": "two-auto",
+          "worker_ids": ["SELECT_COORDINATOR", "SELECT_RPC_WORKER"],
+          "coordinator_id": "SELECT_COORDINATOR",
+          "split_mode": "layer",
+          "split_policy": "auto",
+          "rpc_gpu_layers": "all"
+        },
+        {
+          "profile_id": "two-custom",
+          "worker_ids": ["SELECT_COORDINATOR", "SELECT_RPC_WORKER"],
+          "coordinator_id": "SELECT_COORDINATOR",
+          "split_mode": "layer",
+          "split_policy": "custom",
+          "weights_by_worker": {
+            "SELECT_COORDINATOR": 2,
+            "SELECT_RPC_WORKER": 1
+          },
+          "rpc_gpu_layers": "all"
+        }
+      ],
+      "axes": [
+        {"name": "rpc_profile_ref", "values": ["two-auto", "two-custom"]},
+        {"name": "n_ctx", "values": [1024, 2048]}
+      ],
+      "repeat_count": 1,
+      "execution": {
+        "mode": "sequential",
+        "max_parallel_jobs": 1,
+        "order": "as_listed",
+        "backfill_policy": "strict",
+        "failure_policy": "stop",
+        "cooldown_s": 2,
+        "rpc_session_policy": "new_session_per_cell"
+      },
+      "budget": {
+        "max_trials": 8,
+        "max_physical_requests": 100
+      }
+    },
+    "model_selections": {
+      "model": "SELECT_INSTALLED_CATALOG_MODEL_ID"
+    },
+    "prompts": [
+      {
+        "ref": "same",
+        "text": "Give one short sentence about distributed inference.",
+        "mode": "same_text"
+      }
+    ]
+  }
+}

@@ -1,4 +1,19 @@
-# Implementation map — S01–S10 계획만
+# Implementation map — S01–S10 구현·인수 상태
+
+## S10 통합 인수 — 2026-09-19
+
+S01–S09 product 경로는 S10에서 loopback fake Worker, injected fake native runtime,
+durable supervisor/JobService fixture와 browser E2E로 함께 검증했다. 108-trial 일반 grid와
+36-trial RPC grid가 concrete runner/native argv까지 연결되며, disjoint cap 2, overlap 대기,
+targeted cancel, 재시작, duplicate Start, crash-after-claim, result-before-manifest, partial RPC
+start, cleanup quarantine를 통과했다. 전체 A01–A65 매핑과 실제 명령은
+[S10-report.md](S10-report.md), 사용자 인수 절차는
+[sweep-context-model-rpc.md](../../manual/sweep-context-model-rpc.md)에 있다.
+
+R01/R03는 기존 gate를 재사용하고 R02의 scenario 내부 계측 gap, R04 formal Campaign live
+control adapter, R05 multipart artifact set, R06 실제 hardware compatibility evidence는 남아 있다.
+이 항목은 exploratory sweep software 완료를 뒤집지 않지만 hardware/formal 완료로 승격할 수
+없다. R/H hardware 단계는 자동으로 시작하지 않았다.
 
 ## 현재 소스에서의 계획 보정 — f22f246
 

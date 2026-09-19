@@ -1,0 +1,65 @@
+{
+  "artifact_type": "sweep_api_request_template",
+  "schema_version": 1,
+  "template_only": true,
+  "run_on_import": false,
+  "resolution_state": "unresolved",
+  "unresolved": [
+    "request_template.spec.base.worker_ids[0]",
+    "request_template.model_selections.small",
+    "request_template.model_selections.large"
+  ],
+  "request_template": {
+    "sweep_id": "context-model-small",
+    "spec": {
+      "artifact_type": "sweep_spec",
+      "schema_version": 1,
+      "mode": "exploratory",
+      "revision": 1,
+      "combination": "grid",
+      "base": {
+        "model_ref": "small",
+        "prompt_ref": "same",
+        "worker_ids": ["SELECT_INSTALLED_WORKER"],
+        "execution_strategy": "replicated_round_robin",
+        "n_ctx": 1024,
+        "n_gpu_layers": 0,
+        "requests": 1,
+        "concurrency": 1,
+        "max_tokens": 32,
+        "warmup_requests": 0,
+        "persist_prompt": false,
+        "response_storage_mode": "hash_only"
+      },
+      "axes": [
+        {"name": "model_ref", "values": ["small", "large"]},
+        {"name": "n_ctx", "values": [1024, 2048]},
+        {"name": "concurrency", "values": [1, 2]}
+      ],
+      "repeat_count": 1,
+      "execution": {
+        "mode": "sequential",
+        "max_parallel_jobs": 1,
+        "order": "as_listed",
+        "backfill_policy": "strict",
+        "failure_policy": "stop",
+        "cooldown_s": 2
+      },
+      "budget": {
+        "max_trials": 16,
+        "max_physical_requests": 100
+      }
+    },
+    "model_selections": {
+      "small": "SELECT_INSTALLED_CATALOG_MODEL_ID",
+      "large": "SELECT_SECOND_INSTALLED_CATALOG_MODEL_ID"
+    },
+    "prompts": [
+      {
+        "ref": "same",
+        "text": "Give one short sentence about reproducible benchmarking.",
+        "mode": "same_text"
+      }
+    ]
+  }
+}
