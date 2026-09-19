@@ -27,7 +27,7 @@ import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Sequence
+from typing import Any, Dict, Generator, List, Mapping, Optional, Sequence
 
 import psutil
 
@@ -37,6 +37,8 @@ from cluster.dashboard.service_layers import (
     ResearchService,
     ResultService,
     SettingsService,
+    SweepDraftRepository,
+    SweepService,
 )
 
 from cluster.application.jobs import JobService, NONTERMINAL_JOB_STATES
@@ -55,6 +57,13 @@ from cluster.application.model_service import (
     build_direct_install_spec,
 )
 from cluster.application.suite_runner import suite_document, suite_model_records
+from cluster.application.sweep_models import preview_catalog_sweep
+from cluster.application.sweep_runner import (
+    DurableSweepJobBackend,
+    SweepJobDocumentFactory,
+    SweepRepository,
+    SweepSupervisor,
+)
 from cluster.domain.events import ClusterEvent, EventChannel
 from cluster.domain.identifiers import validate_node_id
 from cluster.benchmark.runner import (
@@ -86,6 +95,7 @@ from cluster.domain.power import (
     power_warning_records,
     unavailable_power_integrity,
 )
+from cluster.domain.sweep import PromptVariant, SweepSpec, WorkerReference
 from cluster.infrastructure.storage import (
     FilesystemEnvironmentReportRepository,
     FilesystemExperimentRepository,
@@ -127,6 +137,9 @@ SETTINGS_PATH = RUNTIME_PATHS.settings_path
 ENVIRONMENT_DIR = RUNTIME_PATHS.environment_dir
 JOBS_DIR = RUNTIME_PATHS.jobs_dir
 CAMPAIGNS_DIR = RUNTIME_PATHS.campaigns_dir
+SWEEPS_DIR = RUNTIME_DIR / "sweeps"
+SWEEP_DRAFTS_DIR = SWEEPS_DIR / "_drafts"
+SWEEP_EVIDENCE_PATH = SWEEPS_DIR / "cached_evidence.json"
 RESEARCH_CONFIG_DIR = PROJECT_ROOT / "config" / "research"
 ENVIRONMENT_MARKER = "CLUSTER_ENVIRONMENT_JSON="
 MODEL_PROGRESS_MARKER = "CLUSTER_MODEL_PROGRESS_JSON="
@@ -1021,6 +1034,138 @@ def collect_worker_model_inventories(
         collected = [future.result() for future in concurrent.futures.as_completed(futures)]
     order = {node.name: index for index, node in enumerate(selected)}
     return sorted(collected, key=lambda item: order[item.node])
+
+
+def _cached_sweep_inventories(*, refresh: bool) -> List[WorkerModelInventory]:
+    """Return private cached inventory evidence; refresh is explicit and read-only."""
+    if refresh:
+        selected = [node for node in read_enabled_nodes() if node.role == "worker"]
+        inventories = collect_worker_model_inventories(selected, timeout=10.0)
+        SWEEPS_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+        write_json_object(
+            SWEEP_EVIDENCE_PATH,
+            {
+                "schema_version": 1,
+                "artifact_type": "sweep_cached_evidence",
+                "observed_at": utc_now(),
+                "inventories": [item.to_dict() for item in inventories],
+            },
+            default_mode=0o600,
+        )
+        return inventories
+    try:
+        document = read_json_object(SWEEP_EVIDENCE_PATH)
+    except (FileNotFoundError, OSError, StorageCorruptionError):
+        return []
+    if document.get("artifact_type") != "sweep_cached_evidence":
+        return []
+    output = []
+    for item in document.get("inventories") or []:
+        if not isinstance(item, dict) or not isinstance(item.get("models"), list):
+            continue
+        inventory = parse_worker_inventory(str(item.get("node") or ""), item["models"])
+        if item.get("error"):
+            inventory = WorkerModelInventory(inventory.node, inventory.models, str(item["error"]))
+        output.append(inventory)
+    return output
+
+
+def _sweep_workers() -> List[WorkerReference]:
+    status = {str(item.get("name") or ""): item for item in status_monitor.snapshot()}
+    output = []
+    for node in read_enabled_nodes():
+        if node.role != "worker":
+            continue
+        live = status.get(node.name) or {}
+        profile = live.get("profile") if isinstance(live.get("profile"), dict) else {}
+        backend = profile.get("runtime_backend") if isinstance(profile.get("runtime_backend"), dict) else {}
+        capabilities = live.get("capabilities") if isinstance(live.get("capabilities"), dict) else {}
+        runtime_commit = str(backend.get("runtime_fingerprint") or "")
+        platform = str(profile.get("platform_kind") or node.platform or "unknown")
+        if platform not in {"jetson", "raspberry-pi"}:
+            platform = "unknown"
+        values: Dict[str, Any] = {
+            "worker_id": node.name,
+            "endpoint_identity": f"{node.host}:{node.api_port}",
+            "platform": platform,
+            "availability": "valid" if live.get("api") is True else "blocked" if live else "unknown",
+            "rpc_layer": "valid" if capabilities.get("rpc_layer_v1") is True else "unknown",
+            "rpc_row": "valid" if capabilities.get("rpc_row_v1") is True else "unknown",
+            "load_profile": "valid" if capabilities.get("worker_load_profile_v1") is True else "unknown",
+        }
+        if re.fullmatch(r"[0-9a-f]{40}", runtime_commit):
+            values["runtime_commit"] = runtime_commit
+        if isinstance(backend.get("verified"), bool):
+            values["backend_verified"] = backend["verified"]
+        for field in ("memory_total_mb", "memory_available_mb"):
+            if isinstance(profile.get(field), (int, float)) and profile[field] >= 0:
+                values[field] = int(profile[field])
+        try:
+            output.append(WorkerReference.from_dict(values))
+        except ValueError:
+            continue
+    return output
+
+
+def resolve_sweep_request(request: Mapping[str, Any], refresh: bool = False):
+    """Resolve only server catalog/cache evidence; client identity claims are absent."""
+    if not isinstance(request, Mapping):
+        raise ValueError("sweep request must be an object")
+    spec = SweepSpec.from_dict(request.get("spec"))
+    selections = request.get("model_selections")
+    if not isinstance(selections, dict):
+        raise ValueError("model selections must be an object")
+    raw_prompts = request.get("prompts")
+    if not isinstance(raw_prompts, list):
+        raise ValueError("prompts must be a list")
+    prompt_by_ref = {
+        (str(item.get("model_ref") or "*"), str(item.get("ref"))): dict(item)
+        for item in raw_prompts
+        if isinstance(item, Mapping) and isinstance(item.get("ref"), str)
+    }
+    if refresh:
+        status_monitor.refresh_now()
+    inventories = _cached_sweep_inventories(refresh=refresh)
+    inventory_models = {
+        model.id: model
+        for inventory in inventories
+        for model in inventory.models
+        if model.metadata_inspected and model.chat_template_hash
+    }
+    prompts = []
+    for model_ref, model_id in selections.items():
+        model = inventory_models.get(str(model_id))
+        if model is None or not re.fullmatch(r"[0-9a-f]{64}", model.chat_template_hash):
+            continue
+        used_refs = {spec.base.prompt_ref, *(item.prompt_ref for item in spec.explicit)}
+        for axis in spec.axes:
+            if axis.name == "prompt_ref":
+                used_refs.update(str(value) for value in axis.values)
+        for prompt_ref in used_refs:
+            source = prompt_by_ref.get((str(model_ref), prompt_ref)) or prompt_by_ref.get(("*", prompt_ref))
+            if source is None:
+                continue
+            text_value = str(source.get("text") or "")
+            prompts.append(PromptVariant.from_dict({
+                "ref": prompt_ref,
+                "model_ref": str(model_ref),
+                "text_sha256": hashlib.sha256(text_value.encode()).hexdigest(),
+                "template_sha256": model.chat_template_hash,
+                "mode": str(source.get("mode") or "same_text"),
+                "target_input_tokens": source.get("target_input_tokens"),
+                "input_token_source": "unavailable",
+                "input_tokens_exact": False,
+            }))
+    return preview_catalog_sweep(
+        spec,
+        selections={str(key): str(value) for key, value in selections.items()},
+        catalog=read_model_catalog(),
+        inventories=inventories,
+        workers=_sweep_workers(),
+        prompts=prompts,
+        acceptances=read_model_license_acceptances(),
+        gated_access=False,
+    )
 
 
 def list_models() -> List[Dict[str, Any]]:
@@ -2222,6 +2367,20 @@ class DashboardFacade:
             start_action=lambda payload: actions.start(payload),
             publish_event=events.publish,
         )
+        sweep_runs = SweepRepository(SWEEPS_DIR / "runs")
+        self._sweeps = SweepService(
+            drafts=SweepDraftRepository(SWEEP_DRAFTS_DIR),
+            runs=sweep_runs,
+            resolver=resolve_sweep_request,
+            supervisor_factory=lambda prompt_provider, drift_checker: SweepSupervisor(
+                sweep_runs,
+                DurableSweepJobBackend(
+                    experiments._jobs,
+                    SweepJobDocumentFactory(prompt_provider),
+                ),
+                drift_checker,
+            ),
+        )
 
     def startup(self) -> None:
         reconcile_interrupted_suites(
@@ -2848,6 +3007,48 @@ class DashboardFacade:
 
     def research_readiness(self) -> Dict[str, Any]:
         return self._research.readiness()
+
+    def sweep_capabilities(self) -> Dict[str, Any]:
+        return self._sweeps.capabilities()
+
+    def preview_sweep(self, payload: Any, *, refresh: bool = False) -> Dict[str, Any]:
+        return self._sweeps.preview(payload, refresh=refresh)
+
+    def save_sweep(self, payload: Any) -> Dict[str, Any]:
+        return self._sweeps.save(payload)
+
+    def sweeps(self, *, offset: int = 0, limit: int = 100) -> Dict[str, Any]:
+        return self._sweeps.list(offset=offset, limit=limit)
+
+    def sweep(self, sweep_id: str) -> Dict[str, Any]:
+        return self._sweeps.get(sweep_id)
+
+    def start_sweep(self, sweep_id: str, payload: Any) -> Dict[str, Any]:
+        return self._sweeps.start(sweep_id, payload)
+
+    def pause_sweep(self, sweep_id: str, payload: Any) -> Dict[str, Any]:
+        return self._sweeps.pause(sweep_id, payload)
+
+    def resume_sweep(self, sweep_id: str, payload: Any) -> Dict[str, Any]:
+        return self._sweeps.resume(sweep_id, payload)
+
+    def cancel_sweep(self, sweep_id: str, payload: Any) -> Dict[str, Any]:
+        return self._sweeps.cancel(sweep_id, payload)
+
+    def retry_sweep_trial(self, sweep_id: str, trial_id: str, payload: Any) -> Dict[str, Any]:
+        return self._sweeps.retry(sweep_id, trial_id, payload)
+
+    def sweep_events(self, sweep_id: str, *, cursor: int = 0, limit: int = 100) -> Dict[str, Any]:
+        return self._sweeps.events(sweep_id, cursor=cursor, limit=limit)
+
+    def sweep_event_stream(self, sweep_id: str, *, cursor: int = 0):
+        return self._sweeps.event_stream(sweep_id, cursor=cursor)
+
+    def sweep_results(self, sweep_id: str) -> Dict[str, Any]:
+        return self._sweeps.results(sweep_id)
+
+    def export_sweep_plan(self, sweep_id: str) -> Dict[str, Any]:
+        return self._sweeps.export_plan(sweep_id)
 
     def experiment_groups(self) -> Dict[str, Any]:
         return {"experiment_groups": read_experiment_groups()}

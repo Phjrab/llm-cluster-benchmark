@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from cluster.dashboard.dependencies import (
     get_dashboard_services,
     supplied_dashboard_token,
+    verify_sweep_body_size,
     verify_token,
 )
 from cluster.dashboard.schemas import (
@@ -29,6 +30,10 @@ from cluster.dashboard.schemas import (
     NodePayload,
     NodeRenamePayload,
     SshHostKeyPinPayload,
+    SweepLifecyclePayload,
+    SweepPreviewPayload,
+    SweepReasonPayload,
+    SweepSaveDraftPayload,
     TrashPurgePayload,
 )
 from cluster.dashboard.services import DashboardFacade
@@ -44,6 +49,9 @@ events_router = APIRouter(dependencies=[Depends(verify_token)])
 experiments_router = APIRouter(dependencies=[Depends(verify_token)])
 results_router = APIRouter(dependencies=[Depends(verify_token)])
 research_router = APIRouter(dependencies=[Depends(verify_token)])
+sweeps_router = APIRouter(
+    dependencies=[Depends(verify_token), Depends(verify_sweep_body_size)]
+)
 
 
 def _error_response(error: ValueError) -> JSONResponse:
@@ -346,6 +354,179 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
         except ValueError as exc:
             return _error_response(exc)
 
+    @sweeps_router.get("/api/sweeps/capabilities")
+    async def sweep_capabilities(
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        return dashboard.sweep_capabilities()
+
+    @sweeps_router.post("/api/sweeps/preview")
+    async def preview_sweep(
+        payload: SweepPreviewPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.preview_sweep(payload)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.post("/api/sweeps/readiness/refresh")
+    async def refresh_sweep_readiness(
+        payload: SweepPreviewPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.preview_sweep(payload, refresh=True)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.post("/api/sweeps/drafts")
+    async def save_sweep_draft(
+        payload: SweepSaveDraftPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.save_sweep(payload)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.get("/api/sweeps")
+    async def list_sweeps(
+        offset: int = 0,
+        limit: int = 100,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.sweeps(offset=offset, limit=limit)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.get("/api/sweeps/{sweep_id}")
+    async def get_sweep(
+        sweep_id: str,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.sweep(sweep_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.post("/api/sweeps/{sweep_id}/start")
+    async def start_sweep(
+        sweep_id: str,
+        payload: SweepLifecyclePayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.start_sweep(sweep_id, payload)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.post("/api/sweeps/{sweep_id}/pause")
+    async def pause_sweep(
+        sweep_id: str,
+        payload: SweepReasonPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.pause_sweep(sweep_id, payload)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.post("/api/sweeps/{sweep_id}/resume")
+    async def resume_sweep(
+        sweep_id: str,
+        payload: SweepLifecyclePayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.resume_sweep(sweep_id, payload)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.post("/api/sweeps/{sweep_id}/cancel")
+    async def cancel_sweep(
+        sweep_id: str,
+        payload: SweepReasonPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.cancel_sweep(sweep_id, payload)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.post("/api/sweeps/{sweep_id}/trials/{trial_id}/retry")
+    async def retry_sweep_trial(
+        sweep_id: str,
+        trial_id: str,
+        payload: SweepReasonPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.retry_sweep_trial(sweep_id, trial_id, payload)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.get("/api/sweeps/{sweep_id}/events")
+    async def get_sweep_events(
+        sweep_id: str,
+        cursor: int = 0,
+        limit: int = 100,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.sweep_events(sweep_id, cursor=cursor, limit=limit)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.get("/api/sweeps/{sweep_id}/events/stream")
+    async def stream_sweep_events(
+        sweep_id: str,
+        request: Request,
+        cursor: int = 0,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Any:
+        raw_cursor = request.headers.get("Last-Event-ID", "")
+        if raw_cursor:
+            try:
+                cursor = int(raw_cursor)
+            except ValueError:
+                return JSONResponse(status_code=400, content={"detail": "Invalid Last-Event-ID"})
+        try:
+            dashboard.sweep_events(sweep_id, cursor=cursor, limit=1)
+            stream = dashboard.sweep_event_stream(sweep_id, cursor=cursor)
+            return StreamingResponse(
+                stream,
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.get("/api/sweeps/{sweep_id}/results")
+    async def get_sweep_results(
+        sweep_id: str,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.sweep_results(sweep_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @sweeps_router.get("/api/sweeps/{sweep_id}/export-plan")
+    async def export_sweep_plan(
+        sweep_id: str,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> JSONResponse:
+        try:
+            value = dashboard.export_sweep_plan(sweep_id)
+        except ValueError as exc:
+            return _error_response(exc)
+        return JSONResponse(
+            content=value,
+            headers={"Content-Disposition": f'attachment; filename="sweep-plan-{sweep_id}.json"'},
+        )
+
     @experiments_router.post("/api/experiments/cancel")
     async def cancel_experiment(
         job_id: str | None = None,
@@ -458,6 +639,7 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
     app.include_router(experiments_router)
     app.include_router(results_router)
     app.include_router(research_router)
+    app.include_router(sweeps_router)
 
 
 def dashboard_event_stream(dashboard: DashboardFacade, supplied_token: str):

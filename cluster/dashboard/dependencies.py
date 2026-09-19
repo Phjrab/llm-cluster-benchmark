@@ -25,5 +25,17 @@ def verify_token(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Dashboard access token is missing or invalid")
 
 
+def verify_sweep_body_size(request: Request) -> None:
+    raw = request.headers.get("content-length")
+    if not raw:
+        return
+    try:
+        size = int(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid Content-Length") from exc
+    if size < 0 or size > 1_048_576:
+        raise HTTPException(status_code=413, detail="Sweep request body exceeds 1 MiB")
+
+
 def get_dashboard_services(request: Request) -> "DashboardFacade":
     return request.app.state.dashboard_services

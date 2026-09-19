@@ -208,3 +208,48 @@ class ClusterSettingsPayload(BaseModel):
     dashboard_token_auth: Optional[bool] = None
     ssh_host_key_policy: Optional[str] = Field(None, pattern=r"^(trusted_lan|pinned)$")
     dashboard_token: str = Field("", max_length=256)
+
+
+class SweepPromptPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ref: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+    model_ref: Optional[str] = Field(None, min_length=1, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+    text: str = Field(min_length=1, max_length=20_000)
+    mode: Literal["same_text", "token_length_profile"] = "same_text"
+    target_input_tokens: Optional[int] = Field(None, ge=1, le=16_384)
+
+    @model_validator(mode="after")
+    def validate_mode(self) -> "SweepPromptPayload":
+        if (self.mode == "token_length_profile") != (self.target_input_tokens is not None):
+            raise ValueError("token_length_profile requires target_input_tokens")
+        return self
+
+
+class SweepPreviewPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    spec: Dict[str, Any]
+    model_selections: Dict[str, str] = Field(min_length=1, max_length=128)
+    prompts: List[SweepPromptPayload] = Field(min_length=1, max_length=512)
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> "SweepPreviewPayload":
+        if len({(item.model_ref, item.ref) for item in self.prompts}) != len(self.prompts):
+            raise ValueError("prompt model/ref pairs must be unique")
+        if sum(len(item.text.encode("utf-8")) for item in self.prompts) > 256_000:
+            raise ValueError("prompt payload exceeds byte budget")
+        return self
+
+
+class SweepSaveDraftPayload(SweepPreviewPayload):
+    sweep_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+
+class SweepLifecyclePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    idempotency_key: str = Field(min_length=8, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+    plan_revision: int = Field(ge=1, le=2_147_483_647)
+    plan_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+
+
+class SweepReasonPayload(SweepLifecyclePayload):
+    reason: str = Field(min_length=1, max_length=512)
