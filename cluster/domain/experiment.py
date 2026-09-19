@@ -104,7 +104,7 @@ class ExperimentConfig:
         )
         if values.get("sweep") is not None:
             validate_sweep_trace(values["sweep"])
-            values["sweep"] = dict(values["sweep"])
+            values["sweep"] = json.loads(json.dumps(values["sweep"]))
         return cls(**values)
 
     def validate(self) -> None:
@@ -192,6 +192,9 @@ class ExperimentConfig:
         )
         if self.sweep is not None:
             validate_sweep_trace(self.sweep)
+            model_identity = self.sweep.get("model_identity") or {}
+            if model_identity.get("model_id", self.model_id) != self.model_id:
+                raise DomainValidationError("sweep model identity differs from model_id")
             if has_formal_identity or has_pilot_identity or self.experiment_type:
                 raise DomainValidationError("sweep cannot mix formal or pilot identity")
             if self.sweep["prompt_sha256"] != hashlib.sha256(self.prompt.encode("utf-8")).hexdigest():

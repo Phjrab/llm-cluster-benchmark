@@ -1,12 +1,12 @@
 """Pure S02 provenance and load-condition checks; no runtime access."""
 from .errors import DomainValidationError
-from .sweep import ref, digest, integer, choice
+from .sweep import ModelReference, ref, digest, integer, choice
 
 # Only hashes/IDs/counts may enter this public trace; never prompt/token arrays.
 def validate_sweep_trace(value):
     required = {"sweep_id", "plan_sha256", "cell_id", "trial_id", "attempt_id",
                 "sweep_repeat_index", "model_sha256", "template_sha256", "prompt_sha256", "prompt_mode"}
-    if not isinstance(value, dict) or set(value) - (required | {"target_input_tokens"}) or required - set(value):
+    if not isinstance(value, dict) or set(value) - (required | {"target_input_tokens", "model_identity"}) or required - set(value):
         raise DomainValidationError("invalid sweep trace fields")
     for key in required:
         if key.endswith("sha256"):
@@ -17,6 +17,19 @@ def validate_sweep_trace(value):
             choice(value[key], ("same_text", "token_length_profile"))
         else:
             ref(value[key])
+    if "model_identity" in value:
+        identity = value["model_identity"]
+        if not isinstance(identity, dict):
+            raise DomainValidationError("invalid model identity")
+        if {"size_bytes", "architecture", "tokenizer_sha256"} - set(identity):
+            raise DomainValidationError("incomplete sweep model identity")
+        model = ModelReference.from_dict({**identity, "ref": "trace-model"})
+        if (
+            model.identity() != identity
+            or model.artifact_sha256 != value["model_sha256"]
+            or model.template_sha256 != value["template_sha256"]
+        ):
+            raise DomainValidationError("sweep model identity mismatch")
     target = value.get("target_input_tokens")
     if value["prompt_mode"] == "token_length_profile":
         integer(target, "target_input_tokens", 1, 16384)
@@ -34,6 +47,12 @@ def require_applied_profile(current, config):
         if current.get("adjustment_reasons"):
             raise DomainValidationError("SWEEP_CONDITION_MISMATCH: adjusted load")
         if current.get("model_sha256") != config.sweep["model_sha256"]:
+            raise DomainValidationError("SWEEP_MODEL_IDENTITY_MISMATCH")
+        identity = config.sweep.get("model_identity")
+        if identity and (
+            current.get("model_id") != identity["model_id"]
+            or current.get("model_size_bytes") != identity.get("size_bytes")
+        ):
             raise DomainValidationError("SWEEP_MODEL_IDENTITY_MISMATCH")
     for name in names:
         requested = getattr(config, name)

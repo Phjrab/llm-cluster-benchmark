@@ -2,12 +2,28 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Optional, Sequence
 from urllib.parse import quote
 
 from cluster.domain.errors import ClusterError, ErrorCode
 from cluster.domain.model import ModelCatalogEntry, ModelInventoryEntry
+
+
+def model_license_fingerprint(entry: ModelCatalogEntry) -> str:
+    """Return the existing project-local license/source acceptance identity."""
+    payload = "\0".join(
+        (
+            entry.id,
+            entry.license,
+            entry.source_model_repo,
+            entry.source_model_revision,
+            entry.download_repo,
+            entry.download_revision,
+        )
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -246,4 +262,4 @@ def validate_model_preflight(
             observed_checksums[model_id] = model.sha256
 
 
-__all__ = ["DirectModelInstallSpec", "ModelPreflightError", "WorkerModelInventory", "aggregate_catalog", "build_direct_install_spec", "parse_worker_inventory", "validate_model_preflight"]
+__all__ = ["DirectModelInstallSpec", "ModelPreflightError", "WorkerModelInventory", "aggregate_catalog", "build_direct_install_spec", "model_license_fingerprint", "parse_worker_inventory", "validate_model_preflight"]

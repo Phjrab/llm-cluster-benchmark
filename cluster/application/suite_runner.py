@@ -203,6 +203,10 @@ class SuiteRunner:
         started_at: str,
     ) -> Dict[str, Any]:
         model_ids = list(model_ids)
+        if base_config.sweep is not None and model_ids != [base_config.model_id]:
+            raise ValueError(
+                "A sweep child must contain exactly its bound model; nested model expansion is forbidden"
+            )
         summaries: List[Dict[str, Any]] = []
         errors: List[Dict[str, Any]] = []
         cleanup_statuses: Dict[int, str] = {}

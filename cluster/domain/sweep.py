@@ -425,6 +425,16 @@ class ModelReference(Record):
     installed_workers: tuple[str, ...] = ()
     availability: str = "unknown"
     runtime_compatibility: str = "unknown"
+    size_bytes: int | None = None
+    architecture: str | None = None
+    tokenizer_sha256: str | None = None
+
+    def to_dict(self):
+        value = super().to_dict()
+        for key in ("size_bytes", "architecture", "tokenizer_sha256"):
+            if value[key] is None:
+                value.pop(key)
+        return value
 
     def identity(self):
         return {key: value for key, value in self.to_dict().items()
@@ -438,10 +448,15 @@ class ModelReference(Record):
             validate_model_id(value)
             return value
         return parse(cls, raw, ("ref", "catalog_id", "model_id", "artifact_sha256", "source_revision", "quantization", "template_sha256"), {
-            "ref": ref, "catalog_id": ref, "model_id": model_id,
+            "ref": ref,
+            "catalog_id": lambda v: model_id(v) if isinstance(v, str) and v.endswith(".gguf") else ref(v),
+            "model_id": model_id,
             "artifact_sha256": digest, "source_revision": lambda v: digest(v, 40),
             "quantization": lambda v: validate_quantization(text(v, "quantization", 32)),
             "template_sha256": digest,
+            "size_bytes": lambda v: integer(v, "size_bytes", 1, 1024**5),
+            "architecture": lambda v: text(v, "architecture", 80),
+            "tokenizer_sha256": digest,
             "artifact_kind": lambda v: choice(v, ("single_gguf", "artifact_set")),
             "installed_workers": worker_ids,
             "availability": lambda v: choice(v, ("valid", "blocked", "unknown")),
@@ -486,20 +501,52 @@ class WorkerReference(Record):
     rpc_layer: str = "unknown"
     rpc_row: str = "unknown"
     load_profile: str = "unknown"
+    runtime_commit: str | None = None
+    backend_verified: bool | None = None
+    memory_total_mb: int | None = None
+    memory_available_mb: int | None = None
 
     def to_dict(self):
         value = super().to_dict()
         if self.load_profile == "unknown":
             value.pop("load_profile")  # retain S01 default serialized shape
+        for key in ("runtime_commit", "backend_verified", "memory_total_mb", "memory_available_mb"):
+            if value[key] is None:
+                value.pop(key)
         return value
 
     @classmethod
     def from_dict(cls, raw):
         return parse(cls, raw, ("worker_id", "endpoint_identity", "platform"), {
             "worker_id": ref, "endpoint_identity": ref,
+            "runtime_commit": lambda v: digest(v, 40),
+            "backend_verified": boolean,
+            "memory_total_mb": lambda v: integer(v, "memory_total_mb", 1, 1024**4),
+            "memory_available_mb": lambda v: integer(v, "memory_available_mb", 0, 1024**4),
             "platform": lambda v: choice(v, ("jetson", "raspberry-pi", "unknown")),
             **{key: (lambda v: choice(v, ("valid", "blocked", "unknown")))
                for key in ("availability", "rpc_layer", "rpc_row", "load_profile")},
+        })
+
+
+@dataclass(frozen=True)
+class ModelCheck(Record):
+    model_ref: str
+    worker_id: str
+    kind: str
+    status: str
+    code: str
+    n_ctx: int | None = None
+
+    @classmethod
+    def from_dict(cls, raw):
+        return parse(cls, raw, ("model_ref", "worker_id", "kind", "status", "code"), {
+            "model_ref": ref,
+            "worker_id": ref,
+            "kind": lambda v: choice(v, ("installation", "runtime", "memory")),
+            "status": lambda v: choice(v, ("valid", "blocked", "unknown")),
+            "code": ref,
+            "n_ctx": lambda v: None if v is None else integer(v, "n_ctx", 128, 16384),
         })
 
 
@@ -509,6 +556,13 @@ class ResolutionContext(Record):
     models: tuple[ModelReference, ...]
     prompts: tuple[PromptVariant, ...]
     workers: tuple[WorkerReference, ...]
+    model_checks: tuple[ModelCheck, ...] = ()
+
+    def to_dict(self):
+        value = super().to_dict()
+        if not self.model_checks:
+            value.pop("model_checks")
+        return value
 
     @classmethod
     def from_dict(cls, raw):
@@ -516,6 +570,7 @@ class ResolutionContext(Record):
             "models": lambda v: tuple(ModelReference.from_dict(x) for x in sequence(v, "models", 128)),
             "prompts": lambda v: tuple(PromptVariant.from_dict(x) for x in sequence(v, "prompts", 512)),
             "workers": lambda v: tuple(WorkerReference.from_dict(x) for x in sequence(v, "workers", 64)),
+            "model_checks": lambda v: tuple(ModelCheck.from_dict(x) for x in sequence(v, "model_checks", 32768)),
         })
         unique_refs(obj.models, "model reference")
         unique_refs(obj.prompts, "prompt/model reference", lambda p: (p.ref, p.model_ref))

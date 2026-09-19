@@ -596,7 +596,8 @@ class LlamaCppInferenceBackend:
                             n_batch=n_batch if n_batch is not None else self._n_batch_schedule(n_ctx)[0])
             adjustments = [key for key, value in resolved.items() if (
                 factory_config[key] != value or (effective.get(key) is not None and effective[key] != value))]
-            self._load_metadata = dict(model_sha256=model_sha, requested_config=requested,
+            self._load_metadata = dict(model_sha256=model_sha, model_size_bytes=model_path.stat().st_size,
+                requested_config=requested,
                 factory_config=factory_config, effective_config=effective, adjustment_reasons=adjustments,
                 resolved_load_config=resolved,
                 effective_sources={key: "backend_reported" if value is not None else "unavailable"

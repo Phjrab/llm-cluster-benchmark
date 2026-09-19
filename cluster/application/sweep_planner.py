@@ -76,12 +76,26 @@ def _cell(spec: SweepSpec, context: ResolutionContext, condition: RunCondition, 
     def check(status: str, code: str, subject: str = ""):
         checks.append(CapabilityResult(status, code, subject))
 
+    required = (profile.coordinator_id,) if profile else condition.worker_ids
+    model_checks = [
+        item for item in context.model_checks
+        if item.model_ref == condition.model_ref
+        and item.worker_id in required
+        and item.n_ctx in (None, condition.n_ctx)
+    ]
+    for item in model_checks:
+        if rpc and item.kind == "memory" and item.code != "MODEL_CONTEXT_LIMIT_EXCEEDED":
+            # Replicated file+KV estimates cannot prove a distributed RPC allocation.
+            check("unknown", "RPC_MEMORY_REQUIRES_PROFILE_PREFLIGHT", item.worker_id)
+        else:
+            check(item.status, item.code, item.worker_id)
     if model is None:
         check("blocked", "MODEL_REFERENCE_UNRESOLVED", condition.model_ref)
     else:
         check(model.availability, "MODEL_AVAILABILITY", model.ref)
-        check(model.runtime_compatibility, "MODEL_RUNTIME_COMPATIBILITY", model.ref)
-        required = (profile.coordinator_id,) if profile else condition.worker_ids
+        for node in required:
+            if not any(item.kind == "runtime" and item.worker_id == node for item in model_checks):
+                check(model.runtime_compatibility, "MODEL_RUNTIME_COMPATIBILITY", node)
         if model.availability == "valid":
             for node in required:
                 if node not in model.installed_workers:
@@ -192,7 +206,10 @@ def _cell(spec: SweepSpec, context: ResolutionContext, condition: RunCondition, 
         "model": model.identity() if model else {"unresolved": condition.model_ref},
         "prompt": prompt_identity if prompt else {"unresolved": condition.prompt_ref},
         "workers": [{"worker_id": node, "endpoint_identity": workers_by_id[node].endpoint_identity,
-                     "platform": workers_by_id[node].platform} if node in workers_by_id else {"unresolved": node}
+                     "platform": workers_by_id[node].platform,
+                     **({"runtime_commit": workers_by_id[node].runtime_commit}
+                        if workers_by_id[node].runtime_commit else {})}
+                    if node in workers_by_id else {"unresolved": node}
                     for node in condition.worker_ids],
         "rpc": profile.semantic_identity() if profile else None,
     }

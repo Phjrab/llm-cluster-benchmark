@@ -44,6 +44,7 @@ from cluster.application.model_service import (
     ModelPreflightError,
     WorkerModelInventory,
     aggregate_catalog,
+    model_license_fingerprint,
     parse_worker_inventory,
     validate_model_preflight,
     build_direct_install_spec,
@@ -869,17 +870,7 @@ def read_model_catalog() -> List[ModelCatalogEntry]:
 
 
 def _model_license_fingerprint(entry: ModelCatalogEntry) -> str:
-    payload = "\0".join(
-        (
-            entry.id,
-            entry.license,
-            entry.source_model_repo,
-            entry.source_model_revision,
-            entry.download_repo,
-            entry.download_revision,
-        )
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return model_license_fingerprint(entry)
 
 
 def read_model_license_acceptances() -> Dict[str, Dict[str, Any]]:
