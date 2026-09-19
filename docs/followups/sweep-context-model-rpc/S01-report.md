@@ -6,6 +6,56 @@ S01 — Software COMPLETE (domain/compiler scope only).
 Hardware: NOT RUN — user-operated. CI: NOT CHECKED.
 S02 and later development phases have not been started.
 
+## S01 review fix — 2026-09-19
+
+This entry supersedes the historical scope statements below. The original S01
+advance exceeded the S00-only request; see the S00 correction. The subsequent
+review identified the RPC ordinary-GPU validation gap, and the user's continuation
+is applied only to that reported fix, not to S02 or hardware work.
+
+Tested parent: `0a4339d07d09f03ec403b67f0ec3245b4bc95dd6`.
+Branch: `codex/current-source-pilot-v6`, initially clean; origin feature matched
+that parent before commit. No applicable AGENTS.md; CONTRIBUTING.md reviewed.
+
+Previously, explicit RPC conditions with ordinary `n_gpu_layers=0` and `120`
+produced two valid cells, while the same grid axis was blocked. The compiler now
+blocks nondefault fixed ordinary-GPU values and explicit RPC variation as well as
+axis declarations. When explicit RPC values vary, every such RPC candidate is
+blocked, including a candidate carrying the ordinary default. Conditions and their
+requested values remain visible; no automatic rewrite or exclusion is performed.
+
+The omitted ordinary default (30) remains inert for legacy-compatible RPC plans.
+This schema cannot distinguish omission from an explicitly supplied default 30;
+a lone default value is therefore still accepted as inert. Actual RPC offload
+continues to belong to RpcProfile.rpc_gpu_layers. Ordinary Worker conditions,
+including mixed explicit lists, retain their existing semantics. Plans remain
+non-executable, and no runtime or Worker code changed.
+
+Actual checks, with temporary runtime/results/header-only inventory under
+`/private/tmp/s00-sweep-audit/` and bytecode disabled:
+
+```sh
+.venv/bin/python -m unittest cluster.tests.test_sweep_planner cluster.tests.test_domain cluster.tests.test_benchmark_core cluster.tests.test_durable_jobs cluster.tests.test_rpc_coordinator cluster.tests.test_research_campaign cluster.tests.test_models cluster.tests.test_model_library_followup -q
+```
+
+Result: **166 tests PASS, 1.765s**, including two new regression methods covering
+all combination modes, default/nondefault variation, blocked Trial status,
+roundtrip integrity, omission, fixed invalid values and mixed ordinary/RPC lists.
+Log: `/private/tmp/s00-sweep-audit/s01-fix.log`. The model progress output is the
+existing four-byte mocked fixture, not a model download.
+
+`compileall -q cluster scripts` with a temporary pycache, repository validation
+(20 JSON documents, 72 formal cells, 13 pinned actions, 7 shell scripts), and
+`git diff --check` passed. Full unittest discovery, packaging, browser/JS and
+hardware tests were not rerun for this pure planner fix. CI: NOT CHECKED.
+Hardware: NOT RUN. Locks, inventory, results, runtime and credentials unchanged.
+
+Only planner, its test module, this report and its contract are staged. The final
+response records the new commit/push result. STOP after this S01 fix; S02 is not
+started by this continuation.
+
+---
+
 ## Baseline and scope
 
 - Baseline/tested parent: `e486cd7dfd7a14165c837a20e1fb763459f8d386`.

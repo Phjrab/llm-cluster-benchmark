@@ -140,6 +140,13 @@ Parallel intent adds RESOURCE_RESERVATIONS_NOT_IMPLEMENTED. Numeric RPC GPU sett
 and threads/batch add their own blockers. Layer/row is preserved with capability
 evidence. No fake hardware-verification flag is produced.
 
+Ordinary `n_gpu_layers` axes are blocked for RPC in every combination mode.
+Nondefault fixed values are also blocked; when explicit RPC conditions vary this
+field, all those RPC candidates are blocked. The schema retains its omitted default
+30 as inert for RPC compatibility and cannot distinguish an explicitly supplied 30
+from omission. Use RpcProfile.rpc_gpu_layers for RPC offload intent. Ordinary
+Worker conditions are unaffected, including in mixed explicit lists.
+
 Existing strategy validation and definitions/work_units provide counts without
 materializing per-request tasks. Logical requests, physical requests, scenarios,
 warmup calls and model loads are separate. Ordinary warmup runs once per selected

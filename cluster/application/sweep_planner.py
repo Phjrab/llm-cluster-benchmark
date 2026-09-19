@@ -125,7 +125,18 @@ def _cell(spec: SweepSpec, context: ResolutionContext, condition: RunCondition, 
             check("blocked", "RUNTIME_AXIS_NOT_IMPLEMENTED", name)
     if profile and profile.rpc_gpu_layers != "all":
         check("blocked", "RPC_GPU_POLICY_NOT_IMPLEMENTED", profile.profile_id)
-    if rpc and any(axis.name == "n_gpu_layers" for axis in spec.axes):
+    # RPC uses rpc_gpu_layers. Keep the legacy omitted ordinary default inert,
+    # but reject nondefault fixed values and explicit-mode variation as well as
+    # axis declarations. Explicit conditions do not appear in spec.axes.
+    explicit_rpc_layers = {
+        item.n_gpu_layers for item in spec.explicit
+        if item.execution_strategy == "model_parallel_rpc"
+    }
+    if rpc and (
+        any(axis.name == "n_gpu_layers" for axis in spec.axes)
+        or condition.n_gpu_layers != RunCondition.__dataclass_fields__["n_gpu_layers"].default
+        or len(explicit_rpc_layers) > 1
+    ):
         check("blocked", "ORDINARY_GPU_AXIS_NOT_APPLICABLE_TO_RPC", "n_gpu_layers")
 
     # Validate only existing scalar fields through its strict parser, without

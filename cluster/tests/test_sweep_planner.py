@@ -247,6 +247,38 @@ class SweepCapabilityTests(unittest.TestCase):
             self.assertEqual([getattr(c.condition, axis) for c in result.cells], [2, 4])
             self.assertIn('RUNTIME_AXIS_NOT_IMPLEMENTED', self.codes(result))
 
+    def test_rpc_ordinary_gpu_is_blocked_across_combination_modes(self):
+        for mode in ('grid', 'one_at_a_time', 'explicit'):
+            for values in ([0, 120], [30, 120]):
+                with self.subTest(mode=mode, values=values):
+                    raw = rpc_spec()
+                    raw.update(combination=mode, repeat_count=1)
+                    raw['base']['rpc_profile_ref'] = 'two-auto'
+                    raw['axes'] = [dict(name='n_gpu_layers', values=values)]
+                    if mode == 'explicit':
+                        raw.update(axes=[], explicit=[dict(raw['base'], n_gpu_layers=n) for n in values])
+                    result = plan(raw)
+                    self.assertEqual(result.counts.valid_cells, 0)
+                    self.assertTrue(all(c.status == 'blocked' for c in result.cells))
+                    self.assertTrue(all(t.status == 'blocked' for t in result.trials))
+                    self.assertIn('ORDINARY_GPU_AXIS_NOT_APPLICABLE_TO_RPC', self.codes(result))
+                    self.assertEqual(verify_plan(result.to_json()), result)
+
+    def test_rpc_fixed_gpu_rejected_but_omission_and_ordinary_runs_preserved(self):
+        raw = rpc_spec()
+        raw.update(axes=[], repeat_count=1)
+        raw['base']['rpc_profile_ref'] = 'two-auto'
+        self.assertEqual(plan(raw).counts.valid_cells, 1)
+        for value in (0, 120):
+            raw['base']['n_gpu_layers'] = value
+            self.assertEqual(plan(raw).counts.blocked_cells, 1)
+        ordinary = dict(spec_data()['base'], n_gpu_layers=0)
+        raw.update(combination='explicit', explicit=[ordinary, dict(ordinary, n_gpu_layers=120)])
+        self.assertEqual(plan(raw).counts.valid_cells, 2)
+        raw['explicit'].append(dict(raw['base']))
+        result = plan(raw)
+        self.assertEqual([c.status for c in result.cells], ['valid', 'valid', 'blocked'])
+
     def test_rpc_integer_gpu_and_row_uncertainty_not_rewritten(self):
         raw = rpc_spec(); raw['rpc_profiles'][0].update(rpc_gpu_layers=0, split_mode='row')
         result = plan(raw)
