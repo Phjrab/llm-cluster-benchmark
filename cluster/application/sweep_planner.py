@@ -289,9 +289,13 @@ def compile_plan(spec: SweepSpec, context: ResolutionContext) -> ResolvedPlan:
         cell.cell_id, repeat, index, order[index],
         "pending" if cell.status == "valid" else "blocked",
     ) for index, (cell, repeat) in enumerate(trial_inputs))
-    capabilities = [CapabilityResult("blocked", "SWEEP_EXECUTION_NOT_IMPLEMENTED")]
+    capabilities = [CapabilityResult("valid", "DURABLE_SWEEP_EXECUTION_AVAILABLE")]
     if spec.execution.mode == "disjoint_parallel":
-        capabilities.append(CapabilityResult("blocked", "RESOURCE_RESERVATIONS_NOT_IMPLEMENTED"))
+        capabilities.append(CapabilityResult("valid", "DURABLE_RESOURCE_RESERVATIONS_AVAILABLE"))
+    resolution_state = "resolved" if all(
+        cell.model is not None and cell.prompt is not None
+        and len(cell.workers) == len(cell.condition.worker_ids) for cell in cells
+    ) else "unresolved"
     return ResolvedPlan(
         spec, context, plan_sha, tuple(cells), trials,
         PlanCounts(candidate_cells, len(unique), len(cells) - len(unique),
@@ -300,10 +304,10 @@ def compile_plan(spec: SweepSpec, context: ResolutionContext) -> ResolvedPlan:
                    sum(cell.status == "blocked" for cell in included),
                    sum(cell.status == "unknown" for cell in included), len(trials), Workload(**counts)),
         tuple(capabilities),
-        resolution_state="resolved" if all(
-            cell.model is not None and cell.prompt is not None
-            and len(cell.workers) == len(cell.condition.worker_ids) for cell in cells
-        ) else "unresolved",
+        resolution_state=resolution_state,
+        executable=resolution_state == "resolved" and any(
+            trial.status == "pending" for trial in trials
+        ),
     )
 
 

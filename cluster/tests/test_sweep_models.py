@@ -129,7 +129,7 @@ class SweepModelResolutionTests(unittest.TestCase):
     def test_two_models_pin_identity_and_keep_model_specific_prompt_evidence(self):
         result = preview()
         self.assertEqual(result.plan.counts.valid_cells, 2)
-        self.assertFalse(result.plan.executable)
+        self.assertTrue(result.plan.executable)
         for candidate in result.candidates:
             self.assertEqual(candidate.installed_workers, ("j1", "j2"))
             self.assertTrue(candidate.downloadable)

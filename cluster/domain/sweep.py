@@ -311,6 +311,8 @@ class ExecutionPolicy(Record):
     max_parallel_jobs: int = 1
     order: str = "as_listed"
     order_seed: int = 42
+    backfill_policy: str = "strict"
+    backfill_window: int = 8
     failure_policy: str = "stop"
     cleanup_policy: str = "quarantine_on_uncertainty"
     cooldown_s: float = 2.0
@@ -325,6 +327,8 @@ class ExecutionPolicy(Record):
             "max_parallel_jobs": lambda v: integer(v, "max_parallel_jobs", 1, 2),
             "order": lambda v: choice(v, ("as_listed", "seeded_randomized")),
             "order_seed": lambda v: integer(v, "order_seed", 0, 2_147_483_647),
+            "backfill_policy": lambda v: choice(v, ("strict", "bounded")),
+            "backfill_window": lambda v: integer(v, "backfill_window", 1, 64),
             "failure_policy": lambda v: choice(v, ("stop", "continue_ready")),
             "cleanup_policy": lambda v: choice(v, ("quarantine_on_uncertainty",)),
             "cooldown_s": lambda v: number(v, "cooldown_s", 0, 86400),
@@ -334,6 +338,8 @@ class ExecutionPolicy(Record):
         })
         if obj.mode == "sequential" and obj.max_parallel_jobs != 1:
             fail("sequential requires max_parallel_jobs=1")
+        if obj.mode == "sequential" and obj.backfill_policy != "strict":
+            fail("sequential execution requires strict dispatch order")
         return obj
 
 
@@ -651,7 +657,7 @@ class PlanCounts(Record):
 
 @dataclass(frozen=True)
 class ResolvedPlan(Record):
-    """Resolved preview. S01 supplies no runner and never authorizes execution."""
+    """Resolved preview; execution still requires a durable S06 supervisor claim."""
     spec: SweepSpec
     context: ResolutionContext
     plan_sha256: str

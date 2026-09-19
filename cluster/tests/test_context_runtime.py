@@ -399,7 +399,7 @@ class ContextRuntimeTests(unittest.TestCase):
         for worker in ctx['workers']:worker['load_profile']='valid'
         result=plan(raw,ctx)
         self.assertEqual(result.counts.valid_cells,2)
-        self.assertFalse(result.executable)
+        self.assertTrue(result.executable)
 
 
 class PinnedPreparationAdapterTests(unittest.TestCase):

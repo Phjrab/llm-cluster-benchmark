@@ -312,6 +312,7 @@ class JobService:
                 "job_id", "suite_id", "config", "model_ids", "nodes", "resource_workers",
                 "continue_on_model_error", "model_cooldown_s", "resource_cooldown_s",
                 "max_parallel_jobs", "campaign_attempt_id",
+                "sweep_id", "sweep_trial_id", "sweep_attempt_id",
             )
         }
         return hashlib.sha256(
@@ -588,7 +589,13 @@ class JobService:
             formal = config.get("experiment_type") == "formal" or bool(job.get("campaign_id"))
             attempt_id = str(
                 job.get("campaign_attempt_id")
+                or job.get("sweep_attempt_id")
                 or config.get("campaign_attempt_id")
+                or (
+                    config.get("sweep", {}).get("attempt_id")
+                    if isinstance(config.get("sweep"), Mapping)
+                    else ""
+                )
                 or job_id
             )
             coordinator_id = (

@@ -71,8 +71,8 @@ class SweepCombinationTests(unittest.TestCase):
         self.assertEqual(len({trial.trial_id for trial in result.trials}), 108)
         self.assertEqual([t.sweep_repeat_index for t in result.trials[:3]], [1, 2, 3])
         self.assertEqual({t.cell_id for t in result.trials[:3]}, {result.cells[0].cell_id})
-        self.assertFalse(result.executable)
-        self.assertEqual(result.capabilities[0].code, "SWEEP_EXECUTION_NOT_IMPLEMENTED")
+        self.assertTrue(result.executable)
+        self.assertEqual(result.capabilities[0].code, "DURABLE_SWEEP_EXECUTION_AVAILABLE")
         self.assertNotIn('"campaign_id"', result.to_json())
         self.assertNotIn('"repeat_index"', result.to_json())
 
@@ -215,7 +215,7 @@ class SweepIdentityTests(unittest.TestCase):
                    lambda r: r['cells'][0].update(cell_id='cell_'+'0'*64),
                    lambda r: r['trials'][0].update(sweep_repeat_index=2),
                    lambda r: r['counts'].update(trials=1),
-                   lambda r: r.update(executable=True),
+                   lambda r: r.update(executable=False),
                    lambda r: r['spec']['base'].update(n_ctx=8192),
                    lambda r: r.update(unexpected=True)]
         for change in changes:
@@ -332,12 +332,12 @@ class SweepCapabilityTests(unittest.TestCase):
         result = plan(context=ctx)
         self.assertEqual((result.counts.valid_cells, result.counts.blocked_cells), (18, 18))
 
-    def test_parallel_declared_but_never_enabled(self):
+    def test_parallel_declares_durable_resource_coordination(self):
         raw = spec_data(); raw['execution'] = {'mode': 'disjoint_parallel', 'max_parallel_jobs': 2}
         result = plan(raw)
-        self.assertFalse(result.executable)
+        self.assertTrue(result.executable)
         self.assertEqual(result.spec.execution.max_parallel_jobs, 2)
-        self.assertIn('RESOURCE_RESERVATIONS_NOT_IMPLEMENTED', [c.code for c in result.capabilities])
+        self.assertIn('DURABLE_RESOURCE_RESERVATIONS_AVAILABLE', [c.code for c in result.capabilities])
 
 
 class SweepValidationTests(unittest.TestCase):
