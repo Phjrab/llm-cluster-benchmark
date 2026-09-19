@@ -10,7 +10,7 @@ import asyncio
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from cluster.dashboard.dependencies import (
@@ -31,6 +31,7 @@ from cluster.dashboard.schemas import (
     NodeRenamePayload,
     SshHostKeyPinPayload,
     SweepLifecyclePayload,
+    SweepCloneConditionPayload,
     SweepPreviewPayload,
     SweepReasonPayload,
     SweepSaveDraftPayload,
@@ -526,6 +527,38 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
             content=value,
             headers={"Content-Disposition": f'attachment; filename="sweep-plan-{sweep_id}.json"'},
         )
+
+    @sweeps_router.get("/api/sweeps/{sweep_id}/export-results")
+    async def export_sweep_results(
+        sweep_id: str,
+        format: str = "json",
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Any:
+        try:
+            value = dashboard.export_sweep_results(sweep_id, format=format)
+        except ValueError as exc:
+            return _error_response(exc)
+        if format == "csv":
+            return PlainTextResponse(
+                content=str(value), media_type="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="sweep-results-{sweep_id}.csv"'},
+            )
+        return JSONResponse(
+            content=value,
+            headers={"Content-Disposition": f'attachment; filename="sweep-results-{sweep_id}.json"'},
+        )
+
+    @sweeps_router.post("/api/sweeps/{sweep_id}/trials/{trial_id}/clone-draft")
+    async def clone_sweep_condition(
+        sweep_id: str,
+        trial_id: str,
+        payload: SweepCloneConditionPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.clone_sweep_condition(sweep_id, trial_id, payload.new_sweep_id)
+        except ValueError as exc:
+            return _error_response(exc)
 
     @experiments_router.post("/api/experiments/cancel")
     async def cancel_experiment(

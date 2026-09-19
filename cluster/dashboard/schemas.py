@@ -253,3 +253,8 @@ class SweepLifecyclePayload(BaseModel):
 
 class SweepReasonPayload(SweepLifecyclePayload):
     reason: str = Field(min_length=1, max_length=512)
+
+
+class SweepCloneConditionPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    new_sweep_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")

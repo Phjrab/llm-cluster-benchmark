@@ -2380,6 +2380,7 @@ class DashboardFacade:
                 ),
                 drift_checker,
             ),
+            run_repository=_run_repository(),
         )
 
     def startup(self) -> None:
@@ -3049,6 +3050,12 @@ class DashboardFacade:
 
     def export_sweep_plan(self, sweep_id: str) -> Dict[str, Any]:
         return self._sweeps.export_plan(sweep_id)
+
+    def export_sweep_results(self, sweep_id: str, *, format: str) -> Dict[str, Any] | str:
+        return self._sweeps.export_results(sweep_id, format=format)
+
+    def clone_sweep_condition(self, sweep_id: str, trial_id: str, new_sweep_id: str) -> Dict[str, Any]:
+        return self._sweeps.clone_condition(sweep_id, trial_id, new_sweep_id)
 
     def experiment_groups(self) -> Dict[str, Any]:
         return {"experiment_groups": read_experiment_groups()}

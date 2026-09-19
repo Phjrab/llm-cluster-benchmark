@@ -433,7 +433,17 @@
           <div id="activeSweepGrid" class="active-sweep-grid"><div class="empty-result"><strong>저장된 sweep 없음</strong></div></div>
           <div class="sweep-detail-grid">
             <section><header><span>SELECTED SWEEP EVENTS</span><strong id="sweepLogTitle">선택 없음</strong></header><div id="sweepEventLog" class="sweep-event-log" tabindex="0"><p>run별 이벤트가 분리되어 표시됩니다.</p></div></section>
-            <section><header><span>TRIAL STATUS</span><strong id="sweepTrialTitle">선택 없음</strong></header><div id="sweepTrialResults" class="sweep-trial-results"><p>실행할 sweep을 선택하세요.</p></div></section>
+            <section class="sweep-results-panel"><header><span>RESULT COMPARISON · EXPLORATORY</span><strong id="sweepTrialTitle">선택 없음</strong></header>
+              <div id="sweepResultToolbar" class="sweep-result-toolbar" hidden>
+                <label>축<select id="sweepResultAxis"><option value="context_capacity">Context capacity</option><option value="actual_prompt_tokens">실제 prompt tokens</option><option value="concurrency">Concurrency</option><option value="model">Model</option><option value="gpu_offload">GPU offload</option><option value="rpc_profile">RPC profile</option></select></label>
+                <label>값<select id="sweepResultFilter"><option value="all">전체</option></select></label>
+                <label>지표<select id="sweepResultMetric"><option value="cluster_tokens_per_s">Physical tokens/s</option><option value="effective_user_tokens_per_s">Effective user tokens/s</option><option value="ttft_p50_s">TTFT p50</option><option value="e2e_p50_s">E2E p50</option><option value="generated_tokens_per_j">Generated tokens/J</option></select></label>
+                <label>Series<select id="sweepResultSeries"><option value="none">없음</option><option value="model">Model</option><option value="execution_strategy">Strategy</option><option value="rpc_profile">RPC profile</option></select></label>
+                <label><input id="sweepAllAttempts" type="checkbox"> 모든 attempt</label>
+                <button id="sweepExportJson" type="button" class="button ghost compact">JSON ↓</button><button id="sweepExportCsv" type="button" class="button ghost compact">CSV ↓</button>
+              </div>
+              <div id="sweepTrialResults" class="sweep-trial-results"><p>실행할 sweep을 선택하세요.</p></div>
+            </section>
           </div>
         </section>
       </section>
@@ -682,7 +692,7 @@
   <script src="/static/app.js?v=20260919.3" defer></script>
   <script src="/static/js/sweep-builder.js?v=20260919.1" defer></script>
   <script src="/static/js/sweep-control.js?v=20260919.1" defer></script>
-  <script src="/static/js/sweep-results.js?v=20260919.1" defer></script>
+  <script src="/static/js/sweep-results.js?v=20260919.2" defer></script>
   <script src="/static/js/utils.js?v=20260821.6" defer></script>
   <script src="/static/js/power.js?v=20260821.6" defer></script>
   <script src="/static/js/console.js?v=20260821.6" defer></script>

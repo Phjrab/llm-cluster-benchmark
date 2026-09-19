@@ -24,6 +24,7 @@ from cluster.dashboard.schemas import (
 from cluster.dashboard.service_layers.errors import DashboardServiceError
 from cluster.dashboard.service_layers.sweep_service import SweepDraftRepository, SweepService
 from cluster.domain.sweep import SweepSpec
+from cluster.infrastructure.storage import FilesystemRunRepository
 from cluster.tests.test_sweep_models import TEXT, fixtures
 
 
@@ -114,6 +115,7 @@ class SweepServiceTests(unittest.TestCase):
             supervisor_factory=lambda prompt, drift: SweepSupervisor(
                 self.runs, self.backend, drift
             ),
+            run_repository=FilesystemRunRepository(self.root / "results"),
         )
 
     def save(self, sweep_id="sweep_api", **privacy):
@@ -316,6 +318,8 @@ class RouteFacade:
     def sweep_event_stream(self, sweep_id, cursor=0): return self.service.event_stream(sweep_id, cursor=cursor)
     def sweep_results(self, sweep_id): return self.service.results(sweep_id)
     def export_sweep_plan(self, sweep_id): return self.service.export_plan(sweep_id)
+    def export_sweep_results(self, sweep_id, format="json"): return self.service.export_results(sweep_id, format=format)
+    def clone_sweep_condition(self, sweep_id, trial_id, new_sweep_id): return self.service.clone_condition(sweep_id, trial_id, new_sweep_id)
 
 
 class SweepRouteTests(SweepServiceTests):
@@ -379,6 +383,20 @@ class SweepRouteTests(SweepServiceTests):
                 exported.headers["content-disposition"],
                 'attachment; filename="sweep-plan-route_sweep.json"',
             )
+            results_json = self.client.get("/api/sweeps/route_sweep/export-results?format=json")
+            self.assertEqual(results_json.status_code, 200)
+            self.assertFalse(results_json.json()["formal_approved"])
+            results_csv = self.client.get("/api/sweeps/route_sweep/export-results?format=csv")
+            self.assertEqual(results_csv.status_code, 200)
+            self.assertIn("text/csv", results_csv.headers["content-type"])
+            trial_id = start.json()["sweep"]["trials"][0]["trial_id"]
+            cloned = self.client.post(
+                f"/api/sweeps/route_sweep/trials/{trial_id}/clone-draft",
+                json={"new_sweep_id": "route_sweep_clone"},
+            )
+            self.assertEqual(cloned.status_code, 200)
+            self.assertFalse(cloned.json()["started"])
+            self.assertEqual(cloned.json()["draft"]["status"], "draft")
 
         with mock.patch("cluster.dashboard.dependencies.services.read_settings", return_value={"dashboard_token_auth": True}), mock.patch(
             "cluster.dashboard.dependencies.services.dashboard_token_is_valid",

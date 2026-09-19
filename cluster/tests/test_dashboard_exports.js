@@ -139,7 +139,7 @@ assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*p
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
 assert.match(template, /styles\.css\?v=20260919\.3/);
 assert.match(template, /models\.js\?v=20260826\.5/);
-assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260919\.3[\s\S]*sweep-builder\.js\?v=20260919\.1[\s\S]*sweep-control\.js\?v=20260919\.1[\s\S]*sweep-results\.js\?v=20260919\.1/);
+assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260919\.3[\s\S]*sweep-builder\.js\?v=20260919\.1[\s\S]*sweep-control\.js\?v=20260919\.1[\s\S]*sweep-results\.js\?v=20260919\.2/);
 assert.match(template, /results\.js\?v=20260824\.1/);
 assert.match(template, /research\.js\?v=20260828\.1/);
 const researchSource = fs.readFileSync(path.join(dashboardRoot, "static/js/research.js"), "utf8");

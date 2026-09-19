@@ -17,6 +17,7 @@ from cluster.domain.sweep import ResolvedPlan
 from cluster.infrastructure.storage import atomic_write_text, read_json_object
 
 from .errors import DashboardServiceError
+from .sweep_result_service import SweepResultService
 
 
 Resolver = Callable[[Mapping[str, Any], bool], Any]
@@ -162,11 +163,13 @@ class SweepService:
         runs: SweepRepository,
         resolver: Resolver,
         supervisor_factory: SupervisorFactory,
+        run_repository: Any | None = None,
     ) -> None:
         self.drafts = drafts
         self.runs = runs
         self.resolver = resolver
         self.supervisor_factory = supervisor_factory
+        self.result_reader = SweepResultService(run_repository) if run_repository is not None else None
 
     @staticmethod
     def _request(payload: Any) -> dict[str, Any]:
@@ -212,6 +215,7 @@ class SweepService:
             "lifecycle": [
                 "preview", "save-draft", "list", "get", "start", "pause", "resume",
                 "cancel", "retry-trial", "events", "results", "export-plan",
+                "export-results", "clone-condition-draft",
             ],
             "max_trials": 500,
             "max_parallel_jobs": 2,
@@ -494,6 +498,8 @@ class SweepService:
         except SweepStateError as exc:
             raise DashboardServiceError(409, "Sweep has not started") from exc
         plan = verify_plan(json.dumps(value["plan_snapshot"], ensure_ascii=False))
+        if self.result_reader is not None:
+            return self.result_reader.assemble(value, plan)
         cells = {cell.cell_id: cell for cell in plan.cells}
         trials = []
         for trial in value.get("trials") or []:
@@ -530,6 +536,52 @@ class SweepService:
                 ],
             })
         return {"sweep_id": sweep_id, "plan_sha256": value.get("plan_sha256"), "status": value.get("status"), "coverage": value.get("coverage"), "trials": trials}
+
+    def export_results(self, sweep_id: str, *, format: str) -> dict[str, Any] | str:
+        if self.result_reader is None:
+            raise DashboardServiceError(503, "Sweep result reader is unavailable")
+        results = self.results(sweep_id)
+        plan = self.export_plan(sweep_id)
+        if format == "json":
+            return self.result_reader.export_json(results, plan)
+        if format == "csv":
+            return self.result_reader.export_csv(results)
+        raise DashboardServiceError(400, "Unsupported sweep result export format")
+
+    def clone_condition(self, sweep_id: str, trial_id: str, new_sweep_id: str) -> dict[str, Any]:
+        """Create a fresh one-condition draft; never start or alter the source."""
+        from cluster.dashboard.schemas import SweepSaveDraftPayload
+
+        draft = self.drafts.read(sweep_id)
+        plan = self._saved_plan(draft)
+        try:
+            plan_trial = next(item for item in plan.trials if item.trial_id == trial_id)
+            cell = next(item for item in plan.cells if item.cell_id == plan_trial.cell_id)
+        except StopIteration as exc:
+            raise DashboardServiceError(404, "Sweep trial not found") from exc
+        request = self._input_request(draft)
+        spec = json.loads(json.dumps(request["spec"]))
+        spec.update({
+            "base": cell.condition.to_dict(), "combination": "grid", "axes": [],
+            "explicit": [], "repeat_count": 1, "revision": 1, "exclusions": [],
+            "rpc_profiles": [cell.rpc_profile.to_dict()] if cell.rpc_profile else [],
+        })
+        model_ref = cell.condition.model_ref
+        prompt_ref = cell.condition.prompt_ref
+        prompts = [
+            item for item in request.get("prompts") or []
+            if item.get("ref") == prompt_ref and item.get("model_ref") in (None, model_ref)
+        ]
+        if not prompts:
+            raise DashboardServiceError(409, "Private prompt input is unavailable for cloning")
+        payload = SweepSaveDraftPayload(
+            sweep_id=new_sweep_id,
+            spec=spec,
+            model_selections={model_ref: request["model_selections"][model_ref]},
+            prompts=prompts,
+        )
+        cloned = self.save(payload)
+        return {"draft": cloned, "source": {"sweep_id": sweep_id, "trial_id": trial_id, "cell_id": cell.cell_id}, "started": False}
 
     def export_plan(self, sweep_id: str) -> dict[str, Any]:
         draft = self.drafts.read(sweep_id)

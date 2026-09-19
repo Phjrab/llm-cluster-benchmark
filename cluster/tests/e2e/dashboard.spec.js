@@ -324,7 +324,26 @@ function installSweepApi(fixture) {
       return json({ sweep_id: sweepId, events, cursor, next_cursor: cursor + events.length, has_more: false }), true;
     }
     if (suffix === "events/stream") return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": fake sweep evidence\n\n" }), true;
-    if (suffix === "results") return json({ sweep_id: sweepId, status: detail.sweep?.status, coverage: detail.sweep?.coverage || {}, trials: detail.sweep?.trials || [] }), true;
+    if (suffix === "results") {
+      const cell = detail.sweep?.plan_snapshot?.cells?.[0] || {};
+      const trials = (detail.sweep?.trials || []).map((trial, index) => ({
+        ...trial, repeat_index: index + 1, representative_attempt_id: trial.official_attempt_id,
+        condition: cell.condition || {},
+        model_identity: { model_id: cell.model?.model_id || MODEL_ID, artifact_sha256: "a".repeat(64) },
+        prompt_identity: { template_sha256: "b".repeat(64) }, rpc_profile: cell.rpc_profile,
+        attempts: (trial.attempts || []).map(attempt => ({
+          ...attempt, representative: true, run_id: `${sweepId}-run-1`,
+          requested_config: { n_ctx: 4096, n_gpu_layers: 30 }, effective_config: { n_ctx: 3072, n_gpu_layers: 30 },
+          condition_mismatch: true, mismatch_fields: ["n_ctx"],
+          metrics: { cluster_tokens_per_s: 12.5, effective_user_tokens_per_s: 11.2, requests_per_s: 1.2, ttft_p50_s: 0.4, e2e_p50_s: 1.3, success_rate: 1, generated_tokens_per_j: null },
+          energy: { generated_tokens_per_j: null, quality: "unknown", available: false }, measurement_count: 0,
+          request_evidence: { actual_input_tokens: [64], finish_reasons: ["stop"], early_eos_count: 1, input_tokens_exact: true, output_tokens_exact: true },
+          responses: [{ request_id: 1, input_tokens: 64, input_tokens_exact: true, generated_tokens: 8, output_tokens_exact: true, finish_reason: "stop", response_storage_status: "stored", response: "fixture response" }],
+          parallel_context: { label: "parallel exploratory", overlapping_run_ids: [`${sweepId}-run-2`], isolation: "shared controller/network/storage are not isolated" },
+        })),
+      }));
+      return json({ sweep_id: sweepId, status: detail.sweep?.status, coverage: detail.sweep?.coverage || {}, trials, aggregates: [{ cell_id: cell.cell_id, independent_run_count: 1, metrics: {} }], statistical_unit: "independent completed run per repeat", selection_policy: "official attempt; otherwise latest completed; otherwise latest attempt", comparison_warnings: ["RPC, replicated, and broadcast throughput have different request/token meanings."] }), true;
+    }
     if (suffix === "start" && request.method() === "POST") {
       const plan = detail.plan || sweepPlan(fixture.savedSweepPayload, detail.draft.plan_sha256);
       detail.sweep = { sweep_id: sweepId, status: "running", plan_sha256: detail.draft.plan_sha256, plan_snapshot: plan, trials: [{ trial_id: `${sweepId}-trial-1`, cell_id: plan.cells[0].cell_id, status: "running", official_attempt_id: `${sweepId}-attempt-1`, attempts: [{ attempt_id: `${sweepId}-attempt-1`, status: "running" }] }], coverage: { completed: 0 } };
@@ -338,6 +357,12 @@ function installSweepApi(fixture) {
       return json({ sweep: detail.sweep, idempotent_replay: false }), true;
     }
     if (/^trials\/[^/]+\/retry$/.test(suffix) && request.method() === "POST") return json({ sweep: detail.sweep, idempotent_replay: false }), true;
+    if (/^trials\/[^/]+\/clone-draft$/.test(suffix) && request.method() === "POST") {
+      const newId = request.postDataJSON().new_sweep_id;
+      const cloned = sweepDetail(newId, detail.sweep.plan_snapshot.cells[0].condition.worker_ids, "draft", "e".repeat(64));
+      details.set(newId, cloned);
+      return json({ draft: cloned.draft, source: { sweep_id: sweepId }, started: false }), true;
+    }
     return false;
   };
 }
@@ -382,6 +407,14 @@ test("Sweep Builder previews 108 trials and controls disjoint durable runs witho
   await expect(page.locator('[data-sweep-card="sweep-b"]')).toContainText("RUNNING");
   await page.locator('[data-sweep-card="sweep-b"] [data-sweep-select]').click();
   await expect(page.locator("#sweepEventLog")).toContainText("sweep-b restored");
+  await expect(page.locator("#sweepTrialResults")).toContainText("Exploratory only");
+  await expect(page.locator("#sweepTrialResults")).toContainText("CONDITION MISMATCH");
+  await expect(page.locator("#sweepTrialResults")).toContainText("fixture response");
+  await expect(page.locator("#sweepTrialResults")).toContainText("parallel exploratory");
+  await expect(page.locator("#sweepTrialResults svg")).toBeVisible();
+  await page.locator("[data-clone-trial]").click();
+  await expect(page.locator(".toast-stack")).toContainText("실행되지 않음");
+  await expect(page.locator('[data-sweep-card^="sweep-b-rerun-"]')).toContainText("DRAFT");
   await page.locator('[data-sweep-card="sweep-a"] [data-sweep-action="cancel"]').click();
   await expect(page.locator('[data-sweep-card="sweep-a"]')).toContainText("CANCELLED");
   await expect(page.locator('[data-sweep-card="sweep-b"]')).toContainText("RUNNING");
