@@ -35,12 +35,21 @@ for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "re
 
 const template = fs.readFileSync(path.join(dashboardRoot, "templates/index.html"), "utf8");
 const appSource = fs.readFileSync(appPath, "utf8");
-assert.match(template, /01<\/span>개요[\s\S]*02<\/span>노드[\s\S]*03<\/span>모델[\s\S]*04<\/span>실험[\s\S]*05<\/span>결과[\s\S]*06<\/span>캠페인[\s\S]*07<\/span>비교[\s\S]*08<\/span>연구 준비/);
+assert.match(template, /01<\/span>개요[\s\S]*02<\/span>노드[\s\S]*03<\/span>모델[\s\S]*04<\/span>실험[\s\S]*05<\/span>스윕[\s\S]*06<\/span>결과[\s\S]*07<\/span>캠페인[\s\S]*08<\/span>비교[\s\S]*09<\/span>연구 준비/);
 assert.match(template, /CONTROLLER[\s\S]*DASHBOARD[\s\S]*SCHEDULER[\s\S]*STORAGE/);
 assert.doesNotMatch(template, /HEAD · CONTROL \+ INFERENCE/);
-for (const moduleName of ["state.js", "api.js", "events.js", "utils.js", "power.js", "console.js", "models.js", "results.js", "research.js"]) {
+for (const moduleName of ["state.js", "api.js", "events.js", "utils.js", "power.js", "console.js", "models.js", "results.js", "research.js", "sweep-builder.js", "sweep-control.js", "sweep-results.js"]) {
   assert.match(template, new RegExp(`/static/js/${moduleName.replace(".", "\\.")}`));
 }
+const sweepBuilderSource = fs.readFileSync(path.join(dashboardRoot, "static/js/sweep-builder.js"), "utf8");
+const sweepControlSource = fs.readFileSync(path.join(dashboardRoot, "static/js/sweep-control.js"), "utf8");
+assert.match(template, /id="sweepBuilderForm"[\s\S]*id="sweepPreviewContent"[\s\S]*id="activeSweepGrid"/);
+assert.match(sweepBuilderSource, /\/api\/sweeps\/preview/);
+assert.match(sweepBuilderSource, /\/api\/sweeps\/readiness\/refresh/);
+assert.match(sweepBuilderSource, /저장한 plan을 수정했습니다[\s\S]*새 Sweep ID/);
+assert.doesNotMatch(sweepBuilderSource, /\/api\/models\/[^\n]*install/);
+assert.match(sweepControlSource, /Last-Event-ID/);
+assert.match(sweepControlSource, /sessionStorage\.getItem\(`sweepApproval:/);
 
 assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("completed").tone`, context), "completed");
 assert.equal(vm.runInContext(`ClusterDashboard.utils.statusPresentation("cancelled").icon`, context), "−");
@@ -128,9 +137,9 @@ assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/events.j
 assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js"), "utf8"), /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260919\.2/);
+assert.match(template, /styles\.css\?v=20260919\.3/);
 assert.match(template, /models\.js\?v=20260826\.5/);
-assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260919\.2/);
+assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260919\.3[\s\S]*sweep-builder\.js\?v=20260919\.1[\s\S]*sweep-control\.js\?v=20260919\.1[\s\S]*sweep-results\.js\?v=20260919\.1/);
 assert.match(template, /results\.js\?v=20260824\.1/);
 assert.match(template, /research\.js\?v=20260828\.1/);
 const researchSource = fs.readFileSync(path.join(dashboardRoot, "static/js/research.js"), "utf8");

@@ -60,9 +60,10 @@ function fixtureState() {
 
 function bootstrapPayload(fixture) {
   const visibleRuns = fixture.deletedRuns.has(RUN_ID) ? [] : [fixture.run];
+  const models = fixture.models || [fixture.model];
   return {
-    nodes: fixture.nodes, status: fixture.status, models: [fixture.model], model_catalog: [fixture.model.catalog],
-    model_recommendations: {
+    nodes: fixture.nodes, status: fixture.status, models, model_catalog: models.map(model => model.catalog),
+    model_recommendations: fixture.modelRecommendations || {
       "jetson-worker-01": [{ id: MODEL_ID, status: "recommended", reasons_ko: ["CUDA smoke 검증"], cautions_ko: [], memory: { fits: true, required_mb: 1700, safe_available_mb: 5000 } }],
       "pi-worker-02": [{ id: MODEL_ID, status: "compatible", reasons_ko: ["OpenBLAS smoke 검증"], cautions_ko: ["CPU 추론"], memory: { fits: true, required_mb: 1700, safe_available_mb: 2600 } }],
     },
@@ -79,10 +80,14 @@ async function installApiFixture(page, fixture) {
     const request = route.request();
     const url = new URL(request.url());
     const path = url.pathname;
-    const json = value => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(value) });
+    const json = (value, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
     if (path === "/api/events") return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": fixture\n\n" });
     if (path === "/api/controller/status") return json({ role: "controller", inference_enabled: false, dashboard: { healthy: true } });
     if (path === "/api/bootstrap") return json(bootstrapPayload(fixture));
+    if (fixture.sweepApi) {
+      const handled = await fixture.sweepApi({ route, request, url, path, json });
+      if (handled) return;
+    }
     if (path === "/api/actions") return json({ actions: fixture.actions });
     if (path === "/api/campaigns") return json({ campaigns: [] });
     if (path === "/api/research/compare") return json({ rows: [], filters: {} });
@@ -244,4 +249,180 @@ test("Node detail presents a running runtime preparation as a structured operati
   await expect(card.locator(".node-action-meta")).toContainText("jetson@192.168.0.26");
   await expect(card.locator(".node-action-meta")).toContainText("/home/jetson/llm-cluster-benchmark");
   await expect(card.locator(".node-action-log")).toContainText("[jetson-worker-01] checking/installing runtime");
+});
+
+function sweepPlan(payload, hash = "c".repeat(64), options = {}) {
+  const spec = payload?.spec || options.spec || {
+    base: { model_ref: "model_1", prompt_ref: "prompt_main", worker_ids: options.workers || ["jetson-worker-01"], execution_strategy: "replicated_round_robin", n_ctx: 1024, concurrency: 1, max_tokens: 64 },
+    revision: 1, repeat_count: 1, axes: [], rpc_profiles: [], execution: { max_parallel_jobs: 1 }, budget: { max_trials: 500, max_physical_requests: 1000000 },
+  };
+  const axes = spec.axes || [];
+  const cells = axes.reduce((count, axis) => count * (axis.values?.length || 1), 1);
+  const trials = cells * (spec.repeat_count || 1);
+  const modelRef = spec.base?.model_ref || "model_1";
+  const modelId = payload?.model_selections?.[modelRef] || options.modelId || MODEL_ID;
+  const rpc = spec.base?.execution_strategy === "model_parallel_rpc";
+  const profile = (spec.rpc_profiles || [])[0] || null;
+  const workers = rpc ? (profile?.worker_ids || options.workers || []) : (spec.base?.worker_ids || options.workers || []);
+  const capabilities = options.capabilities || [];
+  const condition = { ...spec.base, worker_ids: workers };
+  return {
+    schema_version: 1, artifact_type: "exploratory_sweep_plan", spec,
+    context: { models: [], prompts: [], workers: [] }, plan_sha256: hash,
+    cells: [{ cell_id: `cell_${"1".repeat(64)}`, candidate_index: 0, condition, model: { model_id: modelId }, prompt: { ref: "prompt_main" }, workers: workers.map(worker_id => ({ worker_id })), rpc_profile: profile, capabilities, workload: { scenarios: 1, logical_requests: 6, physical_requests: 6, warmup_calls: 1, model_loads: workers.length || 1 }, status: capabilities.some(item => item.status === "blocked") ? "blocked" : capabilities.some(item => item.status === "unknown") ? "unknown" : "valid" }],
+    trials: Array.from({ length: trials }, (_, index) => ({ trial_id: `trial-${index + 1}`, cell_id: `cell_${"1".repeat(64)}`, sweep_repeat_index: index + 1, generation_order_index: index, execution_order_index: index, status: "pending" })),
+    counts: { candidate_cells: cells, unique_cells: cells, duplicate_cells: 0, excluded_cells: 0, included_cells: cells, valid_cells: cells, blocked_cells: 0, unknown_cells: 0, trials, workload: { scenarios: cells, logical_requests: cells * 6, physical_requests: cells * 6, warmup_calls: cells, model_loads: cells * Math.max(1, workers.length) } },
+    capabilities: [{ status: "valid", code: "DURABLE_SWEEP_EXECUTION_AVAILABLE", subject: "" }], resolution_state: "resolved", executable: true,
+  };
+}
+
+function sweepDetail(id, workers, status = "running", hash = "d".repeat(64), modelId = MODEL_ID) {
+  const plan = sweepPlan(null, hash, { workers, modelId });
+  const draft = { schema_version: 1, artifact_type: "sweep_api_draft", sweep_id: id, status: status === "draft" ? "draft" : "started", plan_revision: 1, plan_sha256: hash, resolution_request: {}, candidate_count: 1, created_at_unix: 1, updated_at_unix: 1 };
+  if (status === "draft") return { draft, sweep: null };
+  const trials = [{ trial_id: `${id}-trial-1`, cell_id: plan.cells[0].cell_id, status: status === "completed" ? "completed" : "running", official_attempt_id: `${id}-attempt-1`, attempts: [{ attempt_id: `${id}-attempt-1`, status, cleanup_status: status === "completed" ? "verified" : "pending" }] }];
+  return { draft, sweep: { sweep_id: id, status, plan_sha256: hash, plan_snapshot: plan, trials, coverage: { completed: status === "completed" ? 1 : 0 } } };
+}
+
+function installSweepApi(fixture) {
+  const details = new Map([
+    ["sweep-a", sweepDetail("sweep-a", ["jetson-worker-01"], "running", "a".repeat(64))],
+    ["sweep-b", sweepDetail("sweep-b", ["pi-worker-02"], "running", "b".repeat(64))],
+  ]);
+  fixture.sweepDetails = details;
+  fixture.driftOnResume = false;
+  fixture.largeModelInstallRequested = false;
+  fixture.sweepApi = async ({ route, request, url, path, json }) => {
+    if (path.includes("/install")) fixture.largeModelInstallRequested = true;
+    if (path === "/api/sweeps/capabilities") return json({ max_trials: 500, max_parallel_jobs: 2, preview_uses_cached_evidence: true }), true;
+    if (["/api/sweeps/preview", "/api/sweeps/readiness/refresh"].includes(path) && request.method() === "POST") {
+      fixture.sweepPreviewPayload = request.postDataJSON();
+      const rpc = fixture.sweepPreviewPayload.spec.base.execution_strategy === "model_parallel_rpc";
+      const unsupported = rpc && fixture.sweepPreviewPayload.spec.rpc_profiles.some(profile => profile.split_mode === "row");
+      const plan = sweepPlan(fixture.sweepPreviewPayload, "c".repeat(64), { capabilities: unsupported ? [{ status: "unknown", code: "RPC_ROW_CAPABILITY_UNKNOWN", subject: "jetson-worker-03" }] : [] });
+      if (unsupported) { plan.counts.valid_cells = 0; plan.counts.unknown_cells = plan.counts.candidate_cells; }
+      return json({ plan, candidates: [], evidence_mode: path.endsWith("refresh") ? "fresh" : "cached" }), true;
+    }
+    if (path === "/api/sweeps/drafts" && request.method() === "POST") {
+      const body = request.postDataJSON();
+      fixture.savedSweepPayload = body;
+      const plan = sweepPlan(body, "c".repeat(64));
+      details.set(body.sweep_id, { draft: { schema_version: 1, artifact_type: "sweep_api_draft", sweep_id: body.sweep_id, status: "draft", plan_revision: body.spec.revision, plan_sha256: plan.plan_sha256, resolution_request: {}, candidate_count: plan.counts.candidate_cells, created_at_unix: 2, updated_at_unix: 2 }, sweep: null, plan });
+      return json(details.get(body.sweep_id).draft), true;
+    }
+    if (path === "/api/sweeps" && request.method() === "GET") return json({ sweeps: [...details.values()].map(item => item.draft), offset: 0, limit: 100 }), true;
+    const match = path.match(/^\/api\/sweeps\/([^/]+)(?:\/(.*))?$/);
+    if (!match) return false;
+    const sweepId = decodeURIComponent(match[1]);
+    const suffix = match[2] || "";
+    const detail = details.get(sweepId);
+    if (!detail) return json({ detail: "Sweep not found" }, 404), true;
+    if (!suffix && request.method() === "GET") return json({ draft: detail.draft, sweep: detail.sweep }), true;
+    if (suffix === "events" && request.method() === "GET") {
+      const cursor = Number(url.searchParams.get("cursor") || 0);
+      const events = cursor ? [] : [{ type: "sweep_status", status: detail.sweep?.status || "draft", message: `${sweepId} restored`, at: "2026-09-19T10:00:00Z" }];
+      return json({ sweep_id: sweepId, events, cursor, next_cursor: cursor + events.length, has_more: false }), true;
+    }
+    if (suffix === "events/stream") return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": fake sweep evidence\n\n" }), true;
+    if (suffix === "results") return json({ sweep_id: sweepId, status: detail.sweep?.status, coverage: detail.sweep?.coverage || {}, trials: detail.sweep?.trials || [] }), true;
+    if (suffix === "start" && request.method() === "POST") {
+      const plan = detail.plan || sweepPlan(fixture.savedSweepPayload, detail.draft.plan_sha256);
+      detail.sweep = { sweep_id: sweepId, status: "running", plan_sha256: detail.draft.plan_sha256, plan_snapshot: plan, trials: [{ trial_id: `${sweepId}-trial-1`, cell_id: plan.cells[0].cell_id, status: "running", official_attempt_id: `${sweepId}-attempt-1`, attempts: [{ attempt_id: `${sweepId}-attempt-1`, status: "running" }] }], coverage: { completed: 0 } };
+      return json({ sweep: detail.sweep, idempotent_replay: false }), true;
+    }
+    if (["pause", "resume", "cancel"].includes(suffix) && request.method() === "POST") {
+      fixture.lifecycleCalls = [...(fixture.lifecycleCalls || []), { sweepId, operation: suffix, body: request.postDataJSON() }];
+      if (suffix === "resume" && fixture.driftOnResume) return json({ detail: "Saved sweep plan is stale against fresh preflight" }, 409), true;
+      detail.sweep.status = suffix === "pause" ? "paused" : suffix === "resume" ? "running" : "cancelled";
+      if (suffix === "cancel") detail.sweep.trials[0].status = "cancelled";
+      return json({ sweep: detail.sweep, idempotent_replay: false }), true;
+    }
+    if (/^trials\/[^/]+\/retry$/.test(suffix) && request.method() === "POST") return json({ sweep: detail.sweep, idempotent_replay: false }), true;
+    return false;
+  };
+}
+
+test("Sweep Builder previews 108 trials and controls disjoint durable runs without hidden authority", async ({ page }, testInfo) => {
+  const fixture = fixtureState();
+  const third = { ...fixture.nodes[0], name: "jetson-worker-03", host: "192.168.0.28" };
+  fixture.nodes.push(third);
+  fixture.status[0].capabilities = { inference_ready: true, rpc_layer_v1: true, rpc_row_v1: true };
+  fixture.status[1].capabilities = { inference_ready: true, rpc_layer_v1: true, rpc_row_v1: true };
+  fixture.status.push({ ...fixture.status[0], name: third.name, profile: { platform_kind: "jetson", hostname: "jetson-lab-3" }, capabilities: { inference_ready: true, rpc_layer_v1: true, rpc_row_v1: false } });
+  const second = { ...fixture.model, id: "gemma-2b/gemma-2b-q4_k_m.gguf", filename: "gemma-2b-q4_k_m.gguf", installed_nodes: fixture.nodes.map(node => node.name), catalog: { ...fixture.model.catalog, display_name: "Gemma 2B Instruct", vendor: "Google", family: "Gemma", parameters_total_b: 2 } };
+  fixture.model.installed_nodes = fixture.nodes.map(node => node.name);
+  const missing = { ...fixture.model, id: "large/14b-q4_k_m.gguf", filename: "14b-q4_k_m.gguf", installed_nodes: [], catalog: { ...fixture.model.catalog, display_name: "Large 14B Candidate", vendor: "Example", family: "Large", parameters_total_b: 14, formal_approved: false, official_gguf: true } };
+  fixture.models = [fixture.model, second, missing];
+  fixture.modelRecommendations = Object.fromEntries(fixture.nodes.map(node => [node.name, [fixture.model, second].map(model => ({ id: model.id, status: "recommended", memory: { fits: true, required_mb: 1700, safe_available_mb: node.platform === "raspberry-pi" ? 2200 : 5600 } }))]));
+  installSweepApi(fixture);
+  await installApiFixture(page, fixture);
+  await page.goto("/#sweeps");
+
+  await expect(page.locator("[data-sweep-worker]")).toHaveCount(3);
+  await expect(page.locator("[data-sweep-model]")).toHaveCount(3);
+  await expect(page.locator('[data-sweep-model="large/14b-q4_k_m.gguf"]')).toBeDisabled();
+  await expect(page.locator("#sweepModelPicker")).toContainText("선택 Worker 전체에 설치되지 않음");
+  await expect(page.locator("#sweepModelPicker")).toContainText("formal 별도");
+  await page.locator(`[data-sweep-model="${MODEL_ID}"]`).check();
+  await page.locator('[data-sweep-model="gemma-2b/gemma-2b-q4_k_m.gguf"]').check();
+  await page.locator("#sweepPreviewButton").click();
+  await expect(page.locator("#sweepCountGrid")).toContainText("108");
+  await expect(page.locator("#sweepBudgetNote")).toContainText("실행 가능한 plan");
+  expect(fixture.sweepPreviewPayload.model_selections).toEqual({ model_1: MODEL_ID, model_2: "gemma-2b/gemma-2b-q4_k_m.gguf" });
+  expect(fixture.sweepPreviewPayload.spec.mode).toBe("exploratory");
+  expect(fixture.sweepPreviewPayload.spec.axes.map(axis => axis.name)).toEqual(["model_ref", "n_ctx", "concurrency", "max_tokens"]);
+  await page.locator("#sweepApprovalCheck").check();
+  await page.locator("#sweepSaveButton").click();
+  await expect(page.locator('[data-sweep-card="context-model-grid"]')).toBeVisible();
+  await page.locator('[data-sweep-card="context-model-grid"] [data-sweep-action="start"]').click();
+  await expect(page.locator('[data-sweep-card="context-model-grid"]')).toContainText("RUNNING");
+  expect(fixture.largeModelInstallRequested).toBe(false);
+
+  await expect(page.locator('[data-sweep-card="sweep-a"]')).toContainText("RUNNING");
+  await expect(page.locator('[data-sweep-card="sweep-b"]')).toContainText("RUNNING");
+  await page.locator('[data-sweep-card="sweep-b"] [data-sweep-select]').click();
+  await expect(page.locator("#sweepEventLog")).toContainText("sweep-b restored");
+  await page.locator('[data-sweep-card="sweep-a"] [data-sweep-action="cancel"]').click();
+  await expect(page.locator('[data-sweep-card="sweep-a"]')).toContainText("CANCELLED");
+  await expect(page.locator('[data-sweep-card="sweep-b"]')).toContainText("RUNNING");
+  await expect(page.locator("#sweepEventLog")).toContainText("sweep-b restored");
+  await page.locator('[data-sweep-card="sweep-b"] [data-sweep-action="pause"]').click();
+  await expect(page.locator('[data-sweep-card="sweep-b"]')).toContainText("PAUSED");
+  await page.locator('[data-sweep-card="sweep-b"] [data-sweep-action="resume"]').click();
+  await expect(page.locator('[data-sweep-card="sweep-b"]')).toContainText("RUNNING");
+  await page.reload();
+  await expect(page.locator('[data-sweep-card="sweep-a"]')).toContainText("CANCELLED");
+  await expect(page.locator('[data-sweep-card="sweep-b"]')).toContainText("RUNNING");
+
+  await page.locator('[data-sweep-card="sweep-b"] [data-sweep-action="pause"]').click();
+  fixture.driftOnResume = true;
+  await page.locator('[data-sweep-card="sweep-b"] [data-sweep-action="resume"]').click();
+  await expect(page.locator('[data-sweep-card="sweep-b"]')).toContainText("Saved sweep plan is stale against fresh preflight");
+  await expect(page.locator('[data-sweep-card="sweep-a"]')).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("S08_FAKE_DATA_sweep-dashboard.png"), fullPage: true });
+
+  await page.locator("#sweepStrategySelect").selectOption("model_parallel_rpc");
+  await page.locator("#addRpcProfileButton").click();
+  await page.locator('[data-rpc-profile-index="0"] [data-rpc-worker="jetson-worker-03"]').uncheck();
+  await page.locator('[data-rpc-profile-index="0"] [data-rpc-field="split_policy"]').selectOption("custom");
+  await page.locator('[data-rpc-profile-index="0"] [data-rpc-weight="jetson-worker-01"]').fill("2");
+  await page.locator("#addRpcProfileButton").click();
+  await page.locator('[data-rpc-profile-index="1"] [data-rpc-field="split_mode"]').selectOption("row");
+  await expect(page.locator('[data-rpc-profile-index="0"] [data-rpc-worker]:checked')).toHaveCount(2);
+  await expect(page.locator('[data-rpc-profile-index="1"] [data-rpc-worker]:checked')).toHaveCount(3);
+  await expect(page.locator('[data-rpc-profile-index="1"]')).toContainText("row unsupported");
+  await page.locator('[data-sweep-worker="jetson-worker-03"]').uncheck();
+  await expect(page.locator("[data-rpc-profile-index]")).toHaveCount(0);
+  await expect(page.locator("#sweepRpcNotice")).toContainText("이전 coordinator와 custom 비율을 폐기");
+  await page.locator("#sweepStrategySelect").selectOption("replicated_round_robin");
+  await page.locator(`[data-sweep-model="${MODEL_ID}"]`).check();
+  await page.locator('[data-sweep-model="gemma-2b/gemma-2b-q4_k_m.gguf"]').check();
+  await page.locator(".sweep-advanced summary").click();
+  await page.locator("#addSweepPromptButton").click();
+  await page.locator('[data-prompt-index="1"] [data-prompt-field="text"]').fill("두 번째 길이 프로필 입력");
+  await page.locator('[data-prompt-index="1"] [data-prompt-field="mode"]').selectOption("token_length_profile");
+  await page.locator('[data-prompt-index="1"] [data-prompt-field="target_input_tokens"]').fill("256");
+  const variantRequest = await page.evaluate(() => window.ClusterDashboard.sweepBuilder.buildRequest());
+  expect(variantRequest.prompts).toHaveLength(2);
+  expect(variantRequest.spec.axes.find(axis => axis.name === "prompt_ref").values).toEqual(["prompt_main", "prompt_2"]);
 });

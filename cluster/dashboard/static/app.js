@@ -2028,6 +2028,8 @@ async function bootstrap() {
     connectEvents();
     startEnvironmentPolling();
     window.ClusterDashboard?.research?.load?.();
+    window.ClusterDashboard?.sweepBuilder?.syncInventory?.();
+    window.ClusterDashboard?.sweepControl?.refresh?.();
     if (!location.hash) requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
   } catch (error) {
     if (/401|token|invalid|missing/i.test(error.message)) {

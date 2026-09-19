@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>MediFlow Cluster Lab</title>
   <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
-  <link rel="stylesheet" href="/static/styles.css?v=20260919.2">
+  <link rel="stylesheet" href="/static/styles.css?v=20260919.3">
 </head>
 <body>
   <div class="app-shell">
@@ -20,10 +20,11 @@
         <a class="nav-link" href="#nodes" data-section="nodes"><span>02</span>노드</a>
         <a class="nav-link" href="#models" data-section="models"><span>03</span>모델</a>
         <a class="nav-link" href="#experiment" data-section="experiment"><span>04</span>실험</a>
-        <a class="nav-link" href="#results" data-section="results"><span>05</span>결과</a>
-        <a class="nav-link" href="#campaign" data-section="campaign"><span>06</span>캠페인</a>
-        <a class="nav-link" href="#compare" data-section="compare"><span>07</span>비교</a>
-        <a class="nav-link" href="#research" data-section="research"><span>08</span>연구 준비</a>
+        <a class="nav-link" href="#sweeps" data-section="sweeps"><span>05</span>스윕</a>
+        <a class="nav-link" href="#results" data-section="results"><span>06</span>결과</a>
+        <a class="nav-link" href="#campaign" data-section="campaign"><span>07</span>캠페인</a>
+        <a class="nav-link" href="#compare" data-section="compare"><span>08</span>비교</a>
+        <a class="nav-link" href="#research" data-section="research"><span>09</span>연구 준비</a>
       </nav>
       <div class="sidebar-foot">
         <div class="live-indicator"><i></i><span id="streamLabel">연결 준비 중</span></div>
@@ -318,6 +319,125 @@
         </form>
       </section>
 
+      <section id="sweeps" class="section sweep-section">
+        <div class="section-heading light-heading">
+          <div><span class="section-index">05 / EXPLORATORY SWEEPS</span><h2>Context · 모델 · RPC Sweep</h2></div>
+          <span class="form-status" id="sweepBuilderStatus">서버 상태 확인 중</span>
+        </div>
+        <div class="sweep-boundary-note" role="note">
+          <strong>탐색용 실행</strong>
+          <span>새 sweep은 formal Campaign 증거가 아닙니다. 모델 설치는 모델 화면에서 별도로 수행하며 이 화면은 다운로드를 시작하지 않습니다.</span>
+        </div>
+        <div class="sweep-workspace">
+          <form id="sweepBuilderForm" class="sweep-builder" novalidate>
+            <header class="sweep-panel-head">
+              <div><span>SWEEP BUILDER</span><h3>실행 조합 설계</h3></div>
+              <button class="button ghost compact" id="sweepResetButton" type="button">초기화</button>
+            </header>
+
+            <div class="sweep-form-grid">
+              <div class="field full-field">
+                <label for="sweepIdInput">Sweep ID</label>
+                <input id="sweepIdInput" maxlength="128" pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" value="context-model-grid" required>
+                <small>저장 후 ID는 plan revision과 이벤트 저널을 식별합니다.</small>
+              </div>
+              <div class="field full-field">
+                <label>대상 Worker · stable ID</label>
+                <div id="sweepWorkerPicker" class="sweep-choice-grid" role="group" aria-label="Sweep 대상 Worker"></div>
+                <small id="sweepWorkerHint">Worker를 먼저 선택하세요. Worker 집합을 바꾸면 기존 RPC 비율은 폐기됩니다.</small>
+              </div>
+              <div class="field full-field">
+                <label>설치 모델</label>
+                <div id="sweepModelPicker" class="sweep-model-picker" role="group" aria-label="Sweep 모델 선택"></div>
+                <small>설치, 다운로드 가능, runtime 검증, formal 승인 상태를 구분합니다. 미설치 모델은 여기서 다운로드하지 않습니다.</small>
+              </div>
+              <div class="field">
+                <label for="sweepStrategySelect">Strategy</label>
+                <select id="sweepStrategySelect">
+                  <option value="replicated_round_robin">복제 · 요청 분산</option>
+                  <option value="single_node">단일 노드</option>
+                  <option value="broadcast_compare">전체 동시 전송</option>
+                  <option value="node_sweep">노드 수 sweep</option>
+                  <option value="model_parallel_rpc">모델 분할 · RPC</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="sweepCombinationSelect">조합 방식</label>
+                <select id="sweepCombinationSelect"><option value="grid">전체 Grid</option><option value="one_at_a_time">기준값 대비 한 축씩</option></select>
+              </div>
+              <div class="field"><label for="sweepContextInput">Context capacity 목록</label><input id="sweepContextInput" value="1024, 2048, 4096" inputmode="numeric"><small>n_ctx · actual input length와 별개</small></div>
+              <div class="field"><label for="sweepConcurrencyInput">Request concurrency 목록</label><input id="sweepConcurrencyInput" value="1, 3, 6" inputmode="numeric"><small>각 child 내부 동시 요청 수</small></div>
+              <div class="field"><label for="sweepMaxTokensInput">Output token 목록</label><input id="sweepMaxTokensInput" value="64, 128" inputmode="numeric"></div>
+              <div class="field"><label for="sweepRepeatsInput">독립 repeats</label><input id="sweepRepeatsInput" type="number" min="1" max="500" value="3"></div>
+            </div>
+
+            <details class="sweep-advanced">
+              <summary><span>Advanced</span><small>runtime · input · sampling · budget · dispatch</small></summary>
+              <div class="sweep-form-grid">
+                <div class="field"><label for="sweepRequestsInput">측정 요청/조건</label><input id="sweepRequestsInput" type="number" min="1" max="10000" value="6"></div>
+                <div class="field"><label for="sweepWarmupInput">Warmup/Worker</label><input id="sweepWarmupInput" type="number" min="0" max="10" value="1"></div>
+                <div class="field"><label for="sweepGpuLayersInput">GPU layers</label><input id="sweepGpuLayersInput" type="number" min="0" max="120" value="30"></div>
+                <div class="field"><label for="sweepThreadsInput">Threads · 비우면 backend 기본</label><input id="sweepThreadsInput" type="number" min="1" max="1024"></div>
+                <div class="field"><label for="sweepBatchInput">Batch · 비우면 backend 기본</label><input id="sweepBatchInput" type="number" min="1" max="16384"></div>
+                <div class="field"><label for="sweepTemperatureInput">Temperature</label><input id="sweepTemperatureInput" type="number" min="0" max="2" step="0.1" value="0"></div>
+                <div class="field"><label for="sweepTopPInput">Top-p</label><input id="sweepTopPInput" type="number" min="0" max="1" step="0.05" value="0.9"></div>
+                <div class="field"><label for="sweepSeedInput">Seed</label><input id="sweepSeedInput" type="number" min="-1" max="2147483647" value="42"></div>
+                <div class="field"><label for="sweepExecutionModeSelect">Child dispatch</label><select id="sweepExecutionModeSelect"><option value="sequential">순차 · 최대 1 job</option><option value="disjoint_parallel">서로 다른 Worker만 병렬</option></select></div>
+                <div class="field"><label for="sweepParallelInput">max_parallel_jobs</label><input id="sweepParallelInput" type="number" min="1" max="2" value="1"><small>child run 수의 상한 · request concurrency와 다름</small></div>
+                <div class="field"><label for="sweepOrderSelect">순서</label><select id="sweepOrderSelect"><option value="as_listed">입력 순서</option><option value="seeded_randomized">Seed 고정 무작위</option></select></div>
+                <div class="field"><label for="sweepFailureSelect">실패 정책</label><select id="sweepFailureSelect"><option value="stop">첫 실패에서 정지</option><option value="continue_ready">준비된 조건 계속</option></select></div>
+                <div class="field"><label for="sweepCooldownInput">조건 간 cooldown (초)</label><input id="sweepCooldownInput" type="number" min="0" max="86400" step="0.5" value="2"></div>
+                <div class="field"><label for="sweepMaxTrialsInput">Trial budget</label><input id="sweepMaxTrialsInput" type="number" min="1" max="500" value="500"></div>
+                <div class="field"><label for="sweepMaxRequestsInput">Physical request budget</label><input id="sweepMaxRequestsInput" type="number" min="1" max="1000000" value="1000000"></div>
+                <div class="field"><label for="sweepStorageSelect">응답 저장</label><select id="sweepStorageSelect"><option value="full">원문 저장</option><option value="hash_only">해시만</option><option value="none">저장 안 함</option></select></div>
+                <label class="toggle-field"><input id="sweepPersistPromptInput" type="checkbox" checked><span></span><div><strong>Prompt 원문 보관</strong><small>끄면 terminal 상태에서 private 원문 제거</small></div></label>
+                <div class="field full-field prompt-field">
+                  <div class="sweep-input-head"><label>Input variants</label><button class="button ghost compact" id="addSweepPromptButton" type="button">+ Variant</button></div>
+                  <div id="sweepPromptVariants" class="sweep-prompt-variants"></div>
+                  <small>Context capacity는 KV 용량이고 actual input length는 template 적용 후 토큰 수입니다. 서버가 정확히 준비하지 못한 길이는 unknown입니다.</small>
+                </div>
+              </div>
+            </details>
+
+            <section id="sweepRpcEditor" class="sweep-rpc-editor" hidden aria-labelledby="sweepRpcTitle">
+              <header><div><span>RPC PROFILE EDITOR</span><h4 id="sweepRpcTitle">Worker topology profiles</h4></div><button class="button ghost compact" id="addRpcProfileButton" type="button">+ Profile</button></header>
+              <p>선택한 stable Worker ID에 coordinator와 비율을 묶습니다. 모델은 coordinator에 설치되어야 하며 profile별 capability와 메모리를 preview에서 다시 확인합니다.</p>
+              <div id="sweepRpcNotice" class="sweep-rpc-notice" aria-live="polite"></div>
+              <div id="sweepRpcProfiles" class="sweep-rpc-profiles"></div>
+            </section>
+
+            <div class="sweep-preview-actions">
+              <button class="button secondary" id="sweepRefreshReadinessButton" type="button">Readiness 새로 확인</button>
+              <button class="button primary" id="sweepPreviewButton" type="submit">Plan preview</button>
+            </div>
+          </form>
+
+          <aside class="sweep-preview-panel" aria-live="polite">
+            <header class="sweep-panel-head"><div><span>PREVIEW & APPROVAL</span><h3>실행 전 검토</h3></div><span id="sweepEvidenceMode" class="sweep-evidence-badge">CACHE</span></header>
+            <div id="sweepPreviewEmpty" class="empty-result"><strong>Preview가 필요합니다.</strong><span>전체 조합과 blocker를 서버에서 계산합니다.</span></div>
+            <div id="sweepPreviewContent" hidden>
+              <div class="sweep-count-grid" id="sweepCountGrid"></div>
+              <div class="sweep-budget-note" id="sweepBudgetNote"></div>
+              <div class="sweep-cell-review" id="sweepCellReview"></div>
+              <button class="button ghost compact" id="sweepApplyExclusionsButton" type="button" hidden>선택 제외 사유 적용 후 다시 preview</button>
+              <div class="sweep-hash"><span>PLAN SHA-256</span><code id="sweepPlanHash">—</code></div>
+              <label class="sweep-approval"><input id="sweepApprovalCheck" type="checkbox"><span></span><div><strong>현재 preview hash와 blocker를 확인했습니다</strong><small>입력을 바꾸면 승인이 자동 취소됩니다. 일반 Pi 과거 경고만으로 Start를 막지 않습니다.</small></div></label>
+              <div class="sweep-save-actions"><button class="button primary" id="sweepSaveButton" type="button" disabled>Draft 저장</button><a class="button ghost" href="#models">모델 설치 화면</a></div>
+            </div>
+          </aside>
+        </div>
+
+        <section class="active-sweeps" aria-labelledby="activeSweepsTitle">
+          <header class="sweep-panel-head"><div><span>DURABLE CONTROL</span><h3 id="activeSweepsTitle">Active Sweeps</h3></div><button class="button ghost compact" id="refreshSweepsButton" type="button">서버 상태 복원</button></header>
+          <div class="sweep-parallel-note"><strong>두 종류의 동시성</strong><span><code>concurrency</code>는 한 child의 요청 수, <code>max_parallel_jobs</code>는 서로 다른 child 수입니다. 같은 물리 Worker가 겹치면 병렬 설정이어도 대기합니다.</span></div>
+          <div id="activeSweepGrid" class="active-sweep-grid"><div class="empty-result"><strong>저장된 sweep 없음</strong></div></div>
+          <div class="sweep-detail-grid">
+            <section><header><span>SELECTED SWEEP EVENTS</span><strong id="sweepLogTitle">선택 없음</strong></header><div id="sweepEventLog" class="sweep-event-log" tabindex="0"><p>run별 이벤트가 분리되어 표시됩니다.</p></div></section>
+            <section><header><span>TRIAL STATUS</span><strong id="sweepTrialTitle">선택 없음</strong></header><div id="sweepTrialResults" class="sweep-trial-results"><p>실행할 sweep을 선택하세요.</p></div></section>
+          </div>
+        </section>
+      </section>
+
       <section id="results" class="section panel-section runs-section">
         <div class="section-heading">
           <div><span class="section-index">04 / RESULTS</span><h2>실험별 결과</h2></div>
@@ -556,10 +676,13 @@
   </dialog>
 
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-  <script src="/static/js/state.js?v=20260824.1" defer></script>
+  <script src="/static/js/state.js?v=20260919.1" defer></script>
   <script src="/static/js/api.js?v=20260824.1" defer></script>
   <script src="/static/js/events.js?v=20260824.1" defer></script>
-  <script src="/static/app.js?v=20260919.2" defer></script>
+  <script src="/static/app.js?v=20260919.3" defer></script>
+  <script src="/static/js/sweep-builder.js?v=20260919.1" defer></script>
+  <script src="/static/js/sweep-control.js?v=20260919.1" defer></script>
+  <script src="/static/js/sweep-results.js?v=20260919.1" defer></script>
   <script src="/static/js/utils.js?v=20260821.6" defer></script>
   <script src="/static/js/power.js?v=20260821.6" defer></script>
   <script src="/static/js/console.js?v=20260821.6" defer></script>
