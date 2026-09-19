@@ -82,6 +82,7 @@ def request_measurement(run_id: str, result: Mapping[str, Any]) -> Dict[str, Any
         "fallback_reason_code": result.get("fallback_reason_code"),
         "chat_template_hash": result.get("chat_template_hash"),
         "template_hash": result.get("template_hash"),
+        **{key: result.get(key) for key in ("finish_reason", "requested_n_ctx", "effective_n_ctx", "requested_max_tokens", "effective_max_tokens", "prompt_sha256", "model_sha256", "preparation_id", "output_tokens_exact")},
         "controller_executor_queue_wait_s": result.get("controller_executor_queue_wait_s"),
         "worker_inference_lock_wait_s": result.get("worker_inference_lock_wait_s"),
         "prompt_eval_s": result.get("prompt_eval_s"),

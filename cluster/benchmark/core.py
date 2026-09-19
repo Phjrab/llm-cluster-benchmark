@@ -45,6 +45,9 @@ def benchmark_parameters(config: ExperimentConfig) -> Dict[str, Any]:
         "model_id": config.model_id,
         "n_ctx": config.n_ctx,
         "n_gpu_layers": config.n_gpu_layers,
+        "n_threads": config.n_threads,
+        "n_batch": config.n_batch,
+        "sweep": config.sweep,
         "requested_n_gpu_layers": config.n_gpu_layers,
         "effective_n_gpu_layers": "all" if strategy.execution_backend == "rpc" else None,
         "requests_per_scenario": config.requests,
@@ -289,9 +292,16 @@ class BenchmarkRunner:
                             raise RuntimeError(
                                 f"Failed to load model on {node.name}: {exc}"
                             ) from exc
+                from cluster.domain.runtime_profile import require_applied_profile, require_prepared_input
+                for info in loaded:
+                    require_applied_profile(info, config)
+                    if config.sweep is not None:
+                        if info.get("input_preparation_error"):
+                            raise ValueError(info["input_preparation_error"])
+                        require_prepared_input(info.get("input_preparation") or {}, config)
                 uniform_warnings = self.validate_uniform(loaded, config)
                 warnings.extend(uniform_warnings)
-                if uniform_warnings and config.require_uniform_config:
+                if uniform_warnings and (config.require_uniform_config or config.sweep is not None):
                     raise RuntimeError(
                         "Uniform configuration check failed: "
                         + "; ".join(uniform_warnings)

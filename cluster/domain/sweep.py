@@ -485,6 +485,13 @@ class WorkerReference(Record):
     availability: str = "unknown"
     rpc_layer: str = "unknown"
     rpc_row: str = "unknown"
+    load_profile: str = "unknown"
+
+    def to_dict(self):
+        value = super().to_dict()
+        if self.load_profile == "unknown":
+            value.pop("load_profile")  # retain S01 default serialized shape
+        return value
 
     @classmethod
     def from_dict(cls, raw):
@@ -492,7 +499,7 @@ class WorkerReference(Record):
             "worker_id": ref, "endpoint_identity": ref,
             "platform": lambda v: choice(v, ("jetson", "raspberry-pi", "unknown")),
             **{key: (lambda v: choice(v, ("valid", "blocked", "unknown")))
-               for key in ("availability", "rpc_layer", "rpc_row")},
+               for key in ("availability", "rpc_layer", "rpc_row", "load_profile")},
         })
 
 

@@ -17,6 +17,7 @@ from .identifiers import (
     validate_node_id,
     validate_suite_id,
 )
+from .runtime_profile import validate_sweep_trace
 from .strategy import ExecutionStrategy, RpcSplitMode, RpcSplitPolicy, SweepMode
 
 
@@ -80,6 +81,9 @@ class ExperimentConfig:
     pilot_repeat_index: int = 0
     pilot_order_index: int = 0
     ignored_config_keys: List[str] = field(default_factory=list)
+    n_threads: Optional[int] = None
+    n_batch: Optional[int] = None
+    sweep: Optional[Dict[str, Any]] = None
 
     @classmethod
     def from_dict(
@@ -98,6 +102,9 @@ class ExperimentConfig:
         values["ignored_config_keys"] = sorted(
             set(str(item) for item in recorded) | set(unknown)
         )
+        if values.get("sweep") is not None:
+            validate_sweep_trace(values["sweep"])
+            values["sweep"] = dict(values["sweep"])
         return cls(**values)
 
     def validate(self) -> None:
@@ -125,6 +132,10 @@ class ExperimentConfig:
             raise DomainValidationError("n_ctx must be between 128 and 16384")
         if not _is_integer(self.n_gpu_layers) or not 0 <= self.n_gpu_layers <= 120:
             raise DomainValidationError("n_gpu_layers must be between 0 and 120")
+        for name, upper in (("n_threads", 1024), ("n_batch", 16384)):
+            value = getattr(self, name)
+            if value is not None and (not _is_integer(value) or not 1 <= value <= upper):
+                raise DomainValidationError(f"{name} must be between 1 and {upper}")
         if not _is_integer(self.requests) or not 1 <= self.requests <= 10_000:
             raise DomainValidationError("requests must be between 1 and 10000")
         if not _is_integer(self.concurrency) or not 1 <= self.concurrency <= 256:
@@ -179,6 +190,12 @@ class ExperimentConfig:
         has_pilot_identity = bool(self.pilot_id or self.pilot_cell_id) or any(
             value != 0 for value in (self.pilot_repeat_index, self.pilot_order_index)
         )
+        if self.sweep is not None:
+            validate_sweep_trace(self.sweep)
+            if has_formal_identity or has_pilot_identity or self.experiment_type:
+                raise DomainValidationError("sweep cannot mix formal or pilot identity")
+            if self.sweep["prompt_sha256"] != hashlib.sha256(self.prompt.encode("utf-8")).hexdigest():
+                raise DomainValidationError("sweep prompt identity mismatch")
         if has_formal_identity and has_pilot_identity:
             raise DomainValidationError("formal campaign and pilot identity cannot be mixed")
         if has_formal_identity:
@@ -287,6 +304,10 @@ class ExperimentConfig:
             if coordinator not in self.node_names:
                 raise DomainValidationError("rpc_coordinator_node must be one of node_names")
 
+        if strategy is ExecutionStrategy.MODEL_PARALLEL_RPC and (
+            self.n_threads is not None or self.n_batch is not None or self.sweep is not None
+        ):
+            raise DomainValidationError("RPC load profile and prepared sweep inputs require S04")
         self.execution_strategy = strategy
         self.sweep_mode = sweep_mode
         self.rpc_split_mode = split_mode
@@ -301,6 +322,8 @@ def normalized_config_identity(config: ExperimentConfig) -> Dict[str, Any]:
         if name in {"prompt", "ignored_config_keys"}:
             continue
         value = getattr(config, name)
+        if name in {"n_threads", "n_batch", "sweep"} and value is None:
+            continue
         if isinstance(value, Enum):
             value = value.value
         identity[name] = value

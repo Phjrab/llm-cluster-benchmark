@@ -50,6 +50,8 @@ def stream_worker_request(
         "top_p": config.top_p,
         "seed": config.seed,
     }
+    if config.sweep is not None:
+        payload["prepared_input_id"] = config.sweep["attempt_id"]
     request_body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         f"{node.api_url}/cluster/chat/stream",
@@ -144,6 +146,7 @@ def stream_worker_request(
         "template_hash": server_metrics.get("template_hash"),
         "worker_inference_lock_wait_s": server_metrics.get("worker_inference_lock_wait_s"),
         "prompt_eval_s": server_metrics.get("prompt_eval_s"),
+        **{key: server_metrics.get(key) for key in ("finish_reason", "requested_n_ctx", "effective_n_ctx", "requested_max_tokens", "effective_max_tokens", "prompt_sha256", "model_sha256", "preparation_id", "output_tokens_exact")},
         "inference_slots": server_metrics.get("inference_slots", 1),
     }
 
@@ -175,6 +178,7 @@ def stream_rpc_request(
     output_parts: List[str] = []
     generated_tokens = 0
     completion_usage_reported = False
+    finish_reason = None
     input_tokens: Optional[int] = None
     error = ""
     error_code = ""
@@ -207,6 +211,8 @@ def stream_rpc_request(
                             first_token_at = time.perf_counter()
                         output_parts.append(token)
                     if choices[0].get("finish_reason") is not None:
+                        reason = choices[0]["finish_reason"]
+                        finish_reason = reason if reason in {"stop", "length", "content_filter", "tool_calls", "function_call"} else None
                         ok = True
     except (OSError, ValueError, urllib.error.URLError) as exc:
         error = str(exc)
@@ -247,6 +253,13 @@ def stream_rpc_request(
         "error_code": failure.code.value if failure else error_code,
         "failure": failure.to_dict() if failure else None,
         "warmup": False,
+        "finish_reason": finish_reason,
+        "requested_n_ctx": config.n_ctx,
+        "effective_n_ctx": None,
+        "requested_max_tokens": config.max_tokens,
+        "effective_max_tokens": None,
+        "output_tokens_exact": completion_usage_reported,
+        "prompt_sha256": hashlib.sha256(config.prompt.encode()).hexdigest(),
         "token_count_source": (
             "server_usage" if completion_usage_reported
             else "stream_chunk_estimate" if output_parts

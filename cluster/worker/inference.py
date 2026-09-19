@@ -19,6 +19,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence
 
+from .prompt_preparation import capture_chat_input, PreparationError
 from cluster.infrastructure.gguf import GGUF_METADATA_CONTRACT, inspect_gguf_metadata
 
 
@@ -49,7 +50,7 @@ class InferenceBackend(Protocol):
 
     def current_model_info(self) -> Dict[str, object]: ...
 
-    def load_model(self, model_id: str, n_ctx: int, n_gpu_layers: int) -> Dict[str, object]: ...
+    def load_model(self, model_id: str, n_ctx: int, n_gpu_layers: int, *, n_threads: Optional[int] = None, n_batch: Optional[int] = None) -> Dict[str, object]: ...
 
     def unload_model(self) -> None: ...
 
@@ -63,6 +64,7 @@ class InferenceBackend(Protocol):
         top_p: float,
         seed: Optional[int] = None,
         trace: Optional[Dict[str, object]] = None,
+        prepared_input_id: Optional[str] = None,
     ) -> Iterable[str]: ...
 
     def tokenize(self, text: str) -> int: ...
@@ -79,7 +81,7 @@ class InferenceBackend(Protocol):
 class LlamaCppInferenceBackend:
     """Repository-local port of the legacy ``web.app.ModelManager`` behavior."""
 
-    def __init__(self, models_dir: Path, *, llama_factory: Any = None, torch_module: Any = None) -> None:
+    def __init__(self, models_dir: Path, *, llama_factory: Any = None, torch_module: Any = None, chat_preparer: Any = None) -> None:
         self.models_dir = Path(models_dir)
         # A streamed generator may resume on a different AnyIO worker thread,
         # while two different requests may also reuse the same OS thread.
@@ -87,6 +89,10 @@ class LlamaCppInferenceBackend:
         # onto one mutable context. A plain Lock is deliberately owner-agnostic
         # on release and never re-entrant, matching the streaming lifecycle.
         self.lock = threading.Lock()
+        self._chat_preparer = chat_preparer or capture_chat_input
+        self._load_identity = None
+        self._load_metadata = {}
+        self._prepared_inputs = {}
         self._llama_factory = llama_factory
         self._torch = torch_module
         self._runtime_error: Optional[str] = None
@@ -97,7 +103,7 @@ class LlamaCppInferenceBackend:
         self.loaded_n_batch: Optional[int] = None
         self.requested_n_ctx: Optional[int] = None
         self.requested_n_gpu_layers: Optional[int] = None
-        self._model_hash_cache: Dict[Path, tuple[int, int, str]] = {}
+        self._model_hash_cache: Dict[Path, tuple[int, tuple[int, int, int], str]] = {}
         self._metadata_path = self.models_dir / ".cluster-model-metadata.json"
 
     def _read_model_metadata(self) -> Dict[str, Dict[str, object]]:
@@ -303,10 +309,10 @@ class LlamaCppInferenceBackend:
     def _cached_sha256(self, path: Path) -> str:
         stat = path.stat()
         cached = self._model_hash_cache.get(path)
-        if cached is not None and cached[:2] == (stat.st_size, stat.st_mtime_ns):
+        if cached is not None and cached[:2] == (stat.st_size, (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino)):
             return cached[2]
         digest = self._sha256_file(path)
-        self._model_hash_cache[path] = (stat.st_size, stat.st_mtime_ns, digest)
+        self._model_hash_cache[path] = (stat.st_size, (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_ino), digest)
         return digest
 
     def model_inventory(self) -> List[Dict[str, object]]:
@@ -489,6 +495,9 @@ class LlamaCppInferenceBackend:
                 pass
 
     def _unload_locked(self) -> None:
+        self._load_identity = None
+        self._load_metadata = {}
+        self._prepared_inputs.clear()
         if self.llm is not None:
             previous = self.llm
             self.llm = None
@@ -533,15 +542,18 @@ class LlamaCppInferenceBackend:
                 schedule.append(value)
         return schedule or [max(32, min(64, n_ctx_value))]
 
-    def load_model(self, model_id: str, n_ctx: int, n_gpu_layers: int) -> Dict[str, object]:
+    def load_model(self, model_id: str, n_ctx: int, n_gpu_layers: int, *, n_threads: Optional[int] = None, n_batch: Optional[int] = None) -> Dict[str, object]:
+        for name, value, low, high in (("n_ctx", n_ctx, 128, 16384), ("n_gpu_layers", n_gpu_layers, 0, 120),
+                                       ("n_threads", n_threads, 1, 1024), ("n_batch", n_batch, 1, 16384)):
+            if value is not None and (type(value) is not int or not low <= value <= high):
+                raise ValueError("Invalid load parameter: " + name)
         with self.lock:
             model_path = self._resolve_model_path(model_id)
-            if (
-                self.llm is not None
-                and self.loaded_model_path == model_path
-                and self.requested_n_ctx == n_ctx
-                and self.requested_n_gpu_layers == n_gpu_layers
-            ):
+            model_sha = self._cached_sha256(model_path)
+            template = self._read_model_metadata().get(model_id, {}).get("chat_template_hash", "")
+            threads = DEFAULT_N_THREADS if n_threads is None else n_threads
+            identity = (model_path, model_sha, template, n_ctx, n_gpu_layers, n_threads, threads, n_batch, DEFAULT_N_BATCH)
+            if self.llm is not None and self._load_identity == identity:
                 return self.current_model_info()
             self._unload_locked()
             factory = self._factory()
@@ -549,14 +561,14 @@ class LlamaCppInferenceBackend:
             selected: Optional[tuple[int, int, int]] = None
             for candidate_n_ctx in self._n_ctx_schedule(n_ctx):
                 for candidate_layers in self._gpu_layer_schedule(n_gpu_layers):
-                    for candidate_n_batch in self._n_batch_schedule(candidate_n_ctx):
+                    for candidate_n_batch in ([min(n_batch, candidate_n_ctx)] if n_batch is not None else self._n_batch_schedule(candidate_n_ctx)):
                         try:
                             self.llm = factory(
                                 model_path=str(model_path),
                                 n_ctx=candidate_n_ctx,
                                 n_gpu_layers=candidate_layers,
                                 n_batch=candidate_n_batch,
-                                n_threads=DEFAULT_N_THREADS,
+                                n_threads=threads,
                                 verbose=False,
                             )
                             selected = (candidate_n_ctx, candidate_layers, candidate_n_batch)
@@ -574,6 +586,21 @@ class LlamaCppInferenceBackend:
             self.loaded_n_ctx, self.loaded_n_gpu_layers, self.loaded_n_batch = selected
             self.requested_n_ctx = n_ctx
             self.requested_n_gpu_layers = n_gpu_layers
+            self._load_identity = identity
+            factory_config = dict(n_ctx=self.loaded_n_ctx, n_gpu_layers=self.loaded_n_gpu_layers,
+                                  n_batch=self.loaded_n_batch, n_threads=threads)
+            requested = dict(n_ctx=n_ctx, n_gpu_layers=n_gpu_layers, n_threads=n_threads, n_batch=n_batch)
+            effective = {key: self._reported_integer(key) for key in ("n_ctx", "n_batch", "n_threads")}
+            effective["n_gpu_layers"] = None  # no observed physical layer placement API
+            resolved = dict(requested, n_threads=threads,
+                            n_batch=n_batch if n_batch is not None else self._n_batch_schedule(n_ctx)[0])
+            adjustments = [key for key, value in resolved.items() if (
+                factory_config[key] != value or (effective.get(key) is not None and effective[key] != value))]
+            self._load_metadata = dict(model_sha256=model_sha, requested_config=requested,
+                factory_config=factory_config, effective_config=effective, adjustment_reasons=adjustments,
+                resolved_load_config=resolved,
+                effective_sources={key: "backend_reported" if value is not None else "unavailable"
+                                   for key, value in effective.items()})
             info = self.current_model_info()
             info.update(
                 {
@@ -602,6 +629,7 @@ class LlamaCppInferenceBackend:
             self.loaded_model_path.relative_to(self.models_dir.resolve()).as_posix(), {}
         )
         return {
+            **self._load_metadata,
             "loaded": True,
             "model_id": self.loaded_model_path.relative_to(self.models_dir.resolve()).as_posix(),
             "model_path": str(self.loaded_model_path),
@@ -612,6 +640,57 @@ class LlamaCppInferenceBackend:
             "requested_n_gpu_layers": self.requested_n_gpu_layers,
             "chat_template_hash": metadata.get("chat_template_hash", ""),
         }
+
+    def _reported_integer(self, name):
+        try:
+            value = getattr(self.llm, name, None)
+            value = value() if callable(value) else value
+            return value if type(value) is int and value > 0 else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _input_binding(message, history):
+        return hashlib.sha256(json.dumps([message, history], sort_keys=True).encode()).hexdigest()
+
+    def prepare_input(self, *, preparation_id, message, history, max_tokens,
+                      model_sha256, template_sha256, prompt_sha256, target_input_tokens=None):
+        # The caller has explicitly requested preparation. Tokens stay private on
+        # this loaded Worker; no model load, sampling, padding or truncation here.
+        with self.lock:
+            if self.llm is None or self._load_metadata.get("model_sha256") != model_sha256:
+                raise PreparationError("PREPARATION_MODEL_MISMATCH")
+            if hashlib.sha256(message.encode()).hexdigest() != prompt_sha256:
+                raise PreparationError("PREPARATION_PROMPT_MISMATCH")
+            messages = self._sanitize_history(history)
+            messages.append({"role": "user", "content": message})
+            try:
+                completion, template_hash = self._chat_preparer(self.llm, messages)
+            except PreparationError:
+                raise
+            except Exception:
+                raise PreparationError("EXACT_INPUT_UNAVAILABLE") from None
+            tokens = completion.get("prompt")
+            if not isinstance(tokens, list) or not tokens or any(type(t) is not int for t in tokens):
+                raise PreparationError("EXACT_INPUT_UNAVAILABLE")
+            if template_hash != template_sha256:
+                raise PreparationError("PREPARATION_TEMPLATE_MISMATCH")
+            ctx = self._load_metadata["effective_config"].get("n_ctx")
+            if ctx is None:
+                raise PreparationError("EFFECTIVE_CONTEXT_UNKNOWN")
+            if type(max_tokens) is not int or not 1 <= max_tokens <= 1024 or len(tokens) + max_tokens > ctx:
+                raise PreparationError("CONTEXT_BUDGET_EXCEEDED")
+            if target_input_tokens is not None and len(tokens) != target_input_tokens:
+                raise PreparationError("TOKEN_PROFILE_TARGET_MISMATCH")
+            public = dict(preparation_id=preparation_id, prompt_sha256=prompt_sha256,
+                          model_sha256=model_sha256, template_hash=template_hash,
+                          input_tokens=len(tokens), input_tokens_exact=True,
+                          input_token_source="prepared_chat_template", effective_n_ctx=ctx,
+                          output_reserve_tokens=max_tokens)
+            if len(self._prepared_inputs) >= 32:
+                self._prepared_inputs.pop(next(iter(self._prepared_inputs)))
+            self._prepared_inputs[preparation_id] = (public, self._input_binding(message, history), completion)
+            return dict(public)
 
     def set_seed(self, seed: int) -> None:
         if self.llm is None:
@@ -684,6 +763,14 @@ class LlamaCppInferenceBackend:
         return "\n".join([*(f"{item['role'].upper()}: {item['content']}" for item in messages), "ASSISTANT:"])
 
     @staticmethod
+    def _record_finish_reason(chunk, trace):
+        choices = chunk.get("choices") or []
+        if choices and isinstance(choices[0], dict):
+            reason = choices[0].get("finish_reason")
+            if reason in {"stop", "length", "content_filter", "tool_calls", "function_call"}:
+                trace["finish_reason"] = reason
+
+    @staticmethod
     def _extract_token(chunk: Dict[str, object]) -> str:
         choices = chunk.get("choices", [{}])
         if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
@@ -706,6 +793,7 @@ class LlamaCppInferenceBackend:
         top_p: float,
         seed: Optional[int] = None,
         trace: Optional[Dict[str, object]] = None,
+        prepared_input_id: Optional[str] = None,
     ) -> Iterable[str]:
         trace = trace if trace is not None else {}
         trace.update({
@@ -727,6 +815,30 @@ class LlamaCppInferenceBackend:
             messages = self._sanitize_history(history)
             messages.append({"role": "user", "content": message.strip()})
             emitted = 0
+            trace.update(requested_max_tokens=max_tokens, effective_max_tokens=None,
+                         requested_n_ctx=self.requested_n_ctx,
+                         effective_n_ctx=self._load_metadata.get("effective_config", {}).get("n_ctx"),
+                         prompt_sha256=hashlib.sha256(message.encode()).hexdigest(), finish_reason=None)
+            if prepared_input_id is not None:
+                prepared = self._prepared_inputs.get(prepared_input_id)
+                if prepared is None:
+                    raise PreparationError("PREPARED_INPUT_MISSING_OR_STALE")
+                public, binding, completion = prepared
+                if binding != self._input_binding(message, history) or max_tokens > public["output_reserve_tokens"]:
+                    raise PreparationError("PREPARED_INPUT_MISMATCH")
+                trace.update(public)
+                trace.update(inference_path="prepared_chat_completion", effective_max_tokens=max_tokens)
+                args = dict(completion, max_tokens=max_tokens, temperature=temperature, top_p=top_p,
+                            seed=seed, stream=True)
+                for chunk in self.llm.create_completion(**args):
+                    self._record_finish_reason(chunk, trace)
+                    token = self._extract_token(chunk)
+                    if token:
+                        if not emitted:
+                            trace["prompt_eval_s"] = round(time.perf_counter() - lock_acquired, 9)
+                        emitted += 1
+                        yield token
+                return
             try:
                 stream = self.llm.create_chat_completion(
                     messages=messages,
@@ -736,6 +848,7 @@ class LlamaCppInferenceBackend:
                     stream=True,
                 )
                 for chunk in stream:
+                    self._record_finish_reason(chunk, trace)
                     token = self._extract_token(chunk)
                     if token:
                         if emitted == 0:
@@ -757,6 +870,7 @@ class LlamaCppInferenceBackend:
                 top_p=top_p,
                 stream=True,
             ):
+                self._record_finish_reason(chunk, trace)
                 token = self._extract_token(chunk)
                 if token:
                     if emitted == 0:

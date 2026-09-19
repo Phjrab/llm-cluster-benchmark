@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 DEFAULT_N_CTX = 4096
@@ -17,6 +17,9 @@ DEFAULT_MAX_TOKENS = 256
 
 
 class SelectModelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    n_threads: int | None = Field(None, ge=1, le=1024, strict=True)
+    n_batch: int | None = Field(None, ge=1, le=16384, strict=True)
     model_id: str = Field(..., description="Relative model path from the worker models directory")
     n_ctx: int = Field(DEFAULT_N_CTX, ge=128, le=16384)
     n_gpu_layers: int = Field(DEFAULT_N_GPU_LAYERS, ge=0, le=120)
@@ -49,4 +52,17 @@ class ChatStreamRequest(BaseModel):
 
 
 class ClusterChatRequest(ChatStreamRequest):
+    prepared_input_id: str | None = Field(None, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
     seed: int = Field(42, ge=-1, le=2_147_483_647)
+
+
+class PrepareInputRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    preparation_id: str = Field(max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+    message: str = Field(min_length=1, max_length=20000)
+    history: List[Dict[str, str]] = Field(default_factory=list, max_length=100)
+    max_tokens: int = Field(ge=1, le=1024, strict=True)
+    model_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    template_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    prompt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    target_input_tokens: int | None = Field(None, ge=1, le=16384, strict=True)

@@ -245,7 +245,7 @@ class SweepCapabilityTests(unittest.TestCase):
             result = plan(raw)
             self.assertEqual(result.counts.blocked_cells, 2)
             self.assertEqual([getattr(c.condition, axis) for c in result.cells], [2, 4])
-            self.assertIn('RUNTIME_AXIS_NOT_IMPLEMENTED', self.codes(result))
+            self.assertIn('WORKER_LOAD_PROFILE_UNVERIFIED', self.codes(result))
 
     def test_rpc_ordinary_gpu_is_blocked_across_combination_modes(self):
         for mode in ('grid', 'one_at_a_time', 'explicit'):

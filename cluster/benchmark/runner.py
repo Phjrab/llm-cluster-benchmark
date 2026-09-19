@@ -63,15 +63,45 @@ def _stream_rpc_request(
 
 
 def _load_model(node: Node, config: ExperimentConfig) -> Dict[str, Any]:
+    from cluster.domain.runtime_profile import require_applied_profile
+    payload = {"model_id": config.model_id, "n_ctx": config.n_ctx, "n_gpu_layers": config.n_gpu_layers}
+    payload.update({key: getattr(config, key) for key in ("n_threads", "n_batch") if getattr(config, key) is not None})
     result = request_json(
         f"{node.api_url}/api/select-model",
         method="POST",
-        payload={"model_id": config.model_id, "n_ctx": config.n_ctx, "n_gpu_layers": config.n_gpu_layers},
+        payload=payload,
         timeout=900.0,
     )
     current = result.get("current") or {}
     if result.get("ok") is not True:
         raise RuntimeError(f"{node.name} rejected model selection")
+    try:
+        require_applied_profile(current, config)
+    except ValueError:
+        # Core persists the applied evidence, then rejects before warmup. Do not
+        # prepare an adjusted model or lose its actual config in an early raise.
+        return {"node": node.name, **current}
+    if config.sweep is not None:
+        trace = config.sweep
+        try:
+            preparation = request_json(f"{node.api_url}/cluster/input/prepare", method="POST", timeout=120.0,
+                payload=dict(preparation_id=trace["attempt_id"], message=config.prompt, history=[],
+                             max_tokens=config.max_tokens, model_sha256=trace["model_sha256"],
+                             template_sha256=trace["template_sha256"], prompt_sha256=trace["prompt_sha256"],
+                             target_input_tokens=trace.get("target_input_tokens")))
+            if preparation.get("ok") is not True:
+                raise ValueError("SWEEP_INPUT_PREPARATION_FAILED")
+            current["input_preparation"] = preparation.get("preparation")
+        except Exception as exc:
+            # Retain load evidence without persisting arbitrary HTTP/body text.
+            reasons = ("CONTEXT_BUDGET_EXCEEDED", "TOKEN_PROFILE_TARGET_MISMATCH",
+                       "PREPARATION_MODEL_MISMATCH", "PREPARATION_PROMPT_MISMATCH",
+                       "PREPARATION_TEMPLATE_MISMATCH", "EFFECTIVE_CONTEXT_UNKNOWN",
+                       "TOKENIZER_VERSION_UNVERIFIED", "CHAT_HANDLER_UNVERIFIED",
+                       "CHAT_TEMPLATE_IDENTITY_UNAVAILABLE", "EXACT_INPUT_UNAVAILABLE")
+            current["input_preparation_error"] = next(
+                (code for code in reasons if code in str(exc)), "SWEEP_INPUT_PREPARATION_FAILED")
+            return {"node": node.name, **current}
     health = request_json(f"{node.api_url}/cluster/health", timeout=10.0)
     profile = health.get("profile") or {}
     return {

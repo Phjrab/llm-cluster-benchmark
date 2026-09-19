@@ -163,6 +163,8 @@ class ExperimentPayload(BaseModel):
     model_cooldown_s: float = Field(2.0, ge=0.0, le=300.0)
     n_ctx: int = Field(4096, ge=128, le=16384)
     n_gpu_layers: int = Field(30, ge=0, le=120)
+    n_threads: Optional[int] = Field(None, ge=1, le=1024, strict=True)
+    n_batch: Optional[int] = Field(None, ge=1, le=16384, strict=True)
     requests: int = Field(20, ge=1, le=10_000)
     concurrency: int = Field(4, ge=1, le=256)
     max_tokens: int = Field(128, ge=1, le=1024)

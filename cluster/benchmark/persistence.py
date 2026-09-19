@@ -130,6 +130,8 @@ class RunPersistence:
             "fallback_reason_code": record.get("fallback_reason_code"),
             "chat_template_hash": record.get("chat_template_hash"),
             "template_hash": record.get("template_hash"),
+            **{key: record.get(key) for key in ("finish_reason", "requested_n_ctx", "effective_n_ctx", "requested_max_tokens", "effective_max_tokens", "prompt_sha256", "model_sha256", "preparation_id", "output_tokens_exact", "input_tokens", "input_token_source", "input_tokens_exact")},
+            "sweep": self.config.sweep,
             "controller_executor_queue_wait_s": record.get("controller_executor_queue_wait_s"),
             "worker_inference_lock_wait_s": record.get("worker_inference_lock_wait_s"),
             "prompt_eval_s": record.get("prompt_eval_s"),

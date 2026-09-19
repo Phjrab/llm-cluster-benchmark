@@ -122,7 +122,10 @@ def _cell(spec: SweepSpec, context: ResolutionContext, condition: RunCondition, 
                 check("blocked", "TOKEN_PROFILE_TARGET_MISMATCH", prompt.ref)
     for name in ("n_threads", "n_batch"):
         if getattr(condition, name) is not None:
-            check("blocked", "RUNTIME_AXIS_NOT_IMPLEMENTED", name)
+            if rpc:
+                check("blocked", "RUNTIME_AXIS_NOT_IMPLEMENTED", name)
+            elif not workers or any(worker.load_profile != "valid" for worker in workers):
+                check("blocked", "WORKER_LOAD_PROFILE_UNVERIFIED", name)
     if profile and profile.rpc_gpu_layers != "all":
         check("blocked", "RPC_GPU_POLICY_NOT_IMPLEMENTED", profile.profile_id)
     # RPC uses rpc_gpu_layers. Keep the legacy omitted ordinary default inert,
@@ -146,13 +149,15 @@ def _cell(spec: SweepSpec, context: ResolutionContext, condition: RunCondition, 
     existing = {
         key: value for key, value in condition.to_dict().items()
         if key in {"execution_strategy", "sweep_mode", "n_ctx", "concurrency", "max_tokens",
-                   "n_gpu_layers", "temperature", "top_p", "seed", "requests",
+                   "n_gpu_layers", "n_threads", "n_batch", "temperature", "top_p", "seed", "requests",
                    "warmup_requests", "request_timeout_s", "persist_prompt", "response_storage_mode"}
     }
     existing.update(node_names=list(condition.worker_ids),
                     model_id=model.model_id if model else "unresolved.gguf",
                     prompt="sweep validation only")
     if profile:
+        existing.pop("n_threads", None)
+        existing.pop("n_batch", None)
         existing.update(rpc_coordinator_node=profile.coordinator_id,
                         rpc_split_mode=profile.split_mode, rpc_split_policy=profile.split_policy,
                         rpc_tensor_split=[dict(profile.weights_by_worker)[node] for node in profile.worker_ids]

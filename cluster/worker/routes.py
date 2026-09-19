@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Optional
@@ -19,6 +20,7 @@ from .schemas import (
     DeleteModelRequest,
     InstallModelRequest,
     SelectModelRequest,
+    PrepareInputRequest,
     VerifyModelRequest,
 )
 from .telemetry import TelemetryService
@@ -71,7 +73,11 @@ def mount_worker_routes(
     @app.post("/api/select-model")
     async def select_model(payload: SelectModelRequest) -> Dict[str, object]:
         try:
-            current = backend.load_model(payload.model_id, payload.n_ctx, payload.n_gpu_layers)
+            if runtime.platform_kind == "raspberry-pi" and payload.n_gpu_layers > 0:
+                raise ValueError("Raspberry Pi requires n_gpu_layers=0")
+            options = {name: getattr(payload, name) for name in ("n_threads", "n_batch")
+                       if getattr(payload, name) is not None}
+            current = backend.load_model(payload.model_id, payload.n_ctx, payload.n_gpu_layers, **options)
         except Exception as exc:
             failure = failure_from_exception(
                 exc, stage="model_loading", model_id=payload.model_id
@@ -88,8 +94,22 @@ def mount_worker_routes(
         backend.unload_model()
         return {"ok": True, "current": backend.current_model_info()}
 
+    @app.post("/cluster/input/prepare")
+    async def prepare_input(payload: PrepareInputRequest) -> Dict[str, object]:
+        from .prompt_preparation import PreparationError
+        prepare = getattr(backend, "prepare_input", None)
+        if not callable(prepare):
+            raise HTTPException(status_code=409, detail="EXACT_INPUT_UNAVAILABLE")
+        try:
+            return {"ok": True, "preparation": prepare(**payload.model_dump())}
+        except PreparationError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception:
+            raise HTTPException(status_code=409, detail="EXACT_INPUT_UNAVAILABLE") from None
+
     def stream_response(payload: ChatStreamRequest, *, seed: Optional[int] = None) -> StreamingResponse:
-        message = payload.message.strip()
+        prepared_id = getattr(payload, "prepared_input_id", None)
+        message = payload.message if prepared_id is not None else payload.message.strip()
         if not message:
             raise HTTPException(status_code=400, detail="Message is empty")
 
@@ -100,7 +120,7 @@ def mount_worker_routes(
             chunks = 0
             inference_trace: Dict[str, object] = {}
             try:
-                input_counter = getattr(backend, "count_input_tokens", None)
+                input_counter = None if prepared_id is not None else getattr(backend, "count_input_tokens", None)
                 try:
                     input_measurement = (
                         input_counter(message, payload.history)
@@ -113,6 +133,8 @@ def mount_worker_routes(
                         "source": "tokenizer_failed",
                         "exact": False,
                     }
+                started = time.perf_counter()  # preparation/counting is outside server timing
+                options = {"prepared_input_id": prepared_id} if prepared_id is not None else {}
                 for token in backend.stream_chat(
                     message=message,
                     history=payload.history,
@@ -121,6 +143,7 @@ def mount_worker_routes(
                     top_p=payload.top_p,
                     seed=seed,
                     trace=inference_trace,
+                    **options,
                 ):
                     now = time.perf_counter()
                     first_token_at = first_token_at or now
@@ -139,6 +162,9 @@ def mount_worker_routes(
                 ttft_s = (first_token_at - started) if first_token_at else finished - started
                 decode_time_s = max(finished - (first_token_at or finished), 0.0)
                 decode_tokens = max(token_count - (1 if first_token_at else 0), 0)
+                if prepared_id is not None:
+                    input_measurement = dict(input_tokens=inference_trace.get("input_tokens"),
+                        source=inference_trace.get("input_token_source"), exact=inference_trace.get("input_tokens_exact"))
                 input_tokens = input_measurement.get("input_tokens")
                 total_tokens = (
                     int(input_tokens) + token_count
@@ -178,6 +204,11 @@ def mount_worker_routes(
                             "template_hash": inference_trace.get("template_hash"),
                             "worker_inference_lock_wait_s": inference_trace.get("worker_inference_lock_wait_s"),
                             "prompt_eval_s": inference_trace.get("prompt_eval_s"),
+                            **{key: inference_trace.get(key) for key in (
+                                "finish_reason", "requested_n_ctx", "effective_n_ctx", "requested_max_tokens",
+                                "effective_max_tokens", "prompt_sha256", "model_sha256", "preparation_id")},
+                            "prompt_sha256": hashlib.sha256(payload.message.encode()).hexdigest(),
+                            "output_tokens_exact": False,
                             "inference_slots": 1,
                         }
                     },
@@ -233,6 +264,8 @@ def mount_worker_routes(
                 "gpu_offload": bool(runtime.profile.get("runtime_backend", {}).get("gpu_offload", False)),
                 "backend_verified": bool(runtime.profile.get("runtime_backend", {}).get("verified", False)),
                 "cpu_inference": True,
+                "load_profile_v1": callable(getattr(backend, "prepare_input", None)),
+                "input_preparation_v1": callable(getattr(backend, "prepare_input", None)),
                 "inference_ready": bool(inference_status.get("ready", False)),
                 "inference_error": inference_status.get("error"),
                 "worker_api_auth": runtime.worker_api_auth,
