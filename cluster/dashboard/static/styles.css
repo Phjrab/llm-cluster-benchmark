@@ -417,7 +417,14 @@ footer { display: flex; justify-content: space-between; padding: 25px 5vw; backg
 #nodeDialog { width: min(860px, calc(100vw - 30px)); }
 .modal::backdrop { background: rgba(6,15,10,.76); backdrop-filter: blur(5px); }
 .modal form { padding: 32px; }.modal-head { display: flex; justify-content: space-between; align-items: flex-start; }
-.modal-head h2 { margin: 8px 0 0; font-size: 29px; letter-spacing: -.055em; }.close-button { border: 0; background: transparent; font-size: 28px; }
+.modal-head h2 { margin: 8px 0 0; font-size: 29px; letter-spacing: -.055em; }.close-button { border: 1px solid #163126; background: #163126; color: #fff; width: 40px; height: 40px; flex-shrink: 0; border-radius: 8px; font-size: 28px; line-height: 1; cursor: pointer; }
+.close-button:hover { background: #294c39; }
+.close-button:focus-visible { outline: 3px solid #e57c38; outline-offset: 3px; }
+.dialog-toast-stack { max-width: calc(100vw - 44px); }
+.node-action-detail { padding: 16px; margin-bottom: 16px; border: 1px solid #607464; background: #f2f0e7; color: #163126; }
+.node-action-detail.failed { border-left: 4px solid #a32b20; background: #fff1eb; color: #712219; }
+.node-action-detail p { overflow-wrap: anywhere; line-height: 1.5; }
+.node-action-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; font-size: 12px; line-height: 1.6; }
 .modal-intro { color: var(--muted); font-size: 11px; line-height: 1.7; }
 .modal-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin: 24px 0; }
 .modal .field label { color: var(--muted); }.modal .field input, .modal .field select { border-color: var(--line); background: white; color: var(--ink); }
@@ -538,7 +545,7 @@ footer { display: flex; justify-content: space-between; padding: 25px 5vw; backg
 .publication-note { margin: 12px 0 0; padding: 10px 12px; border-left: 3px solid #0072b2; background: rgba(0,114,178,.07); color: var(--muted); font: 500 8px/1.5 var(--mono); }
 .toast-stack { position: fixed; right: 22px; bottom: 22px; z-index: 100; display: grid; gap: 9px; }
 .toast { max-width: 360px; padding: 13px 16px; background: var(--forest); color: var(--paper); box-shadow: var(--shadow); border-left: 3px solid var(--lime); font-size: 10px; animation: toast-in .25s ease; }
-.toast.error { border-left-color: var(--red); }.toast strong { display: block; margin-bottom: 3px; }.toast span { color: rgba(255,255,255,.55); }
+.toast.error { border-left-color: var(--red); }.toast strong { display: block; margin-bottom: 3px; }.toast span { color: #f3f5ed; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(7px); } }
 
 /* Phase 13: Controller, library, terminal, and durable-result surfaces. */

@@ -5,8 +5,17 @@ function toast(title, message = "", kind = "success") {
   const item = document.createElement("div");
   item.className = `toast ${kind === "error" ? "error" : ""}`;
   item.innerHTML = `<strong>${escapeHtml(title)}</strong>${message ? `<span>${escapeHtml(message)}</span>` : ""}`;
-  $("#toastStack").append(item);
-  setTimeout(() => item.remove(), 4800);
+  const dialogs = $$('dialog[open]');
+  const dialog = dialogs[dialogs.length - 1];
+  let stack = dialog ? $(".dialog-toast-stack", dialog) : $("#toastStack");
+  if (!stack) {
+    stack = document.createElement("div");
+    stack.className = "toast-stack dialog-toast-stack";
+    stack.setAttribute("aria-live", "polite");
+    dialog.append(stack);
+  }
+  stack.append(item);
+  setTimeout(() => item.remove(), kind === "error" ? 15000 : 4800);
 }
 
 function escapeHtml(value) {
@@ -513,7 +522,7 @@ function renderEnvironmentSummary() {
   const hasSelection = selected.length > 0;
   ["#checkEnvironmentButton", "#installEnvironmentButton", "#environmentCheckAllButton", "#environmentInstallAllButton"].forEach(selector => {
     const button = $(selector);
-    if (button) button.disabled = !hasSelection || state.environmentBusy;
+    if (button) button.disabled = !hasSelection || environmentRequestPending;
   });
 }
 
@@ -1562,7 +1571,7 @@ function renderEnvironmentDetail(report) {
   const missingPackages = Array.isArray(report.missing_system_packages) ? report.missing_system_packages : [];
   const manualCommands = Array.isArray(report.manual_commands) ? report.manual_commands : [];
   const backend = typeof report.backend === "object" ? report.backend?.kind : report.backend;
-  const canInstall = !state.environmentBusy && !["ready", "checking", "blocked"].includes(readiness.status);
+  const canInstall = !environmentRequestPending && !["checking", "blocked"].includes(readiness.status);
   return `
     <section class="readiness-detail" aria-labelledby="readinessDetailTitle">
       <div class="readiness-detail-head">
@@ -1589,7 +1598,7 @@ function renderEnvironmentDetail(report) {
       ${missingPackages.length ? `<div class="readiness-guidance warning"><strong>시스템 패키지 필요</strong><p>${missingPackages.map(item => `<code>${escapeHtml(item)}</code>`).join(" ")}</p><small>passwordless sudo가 가능하면 고정 허용 목록만 설치하고, 불가하면 정확한 수동 명령을 안내합니다.</small></div>` : ""}
       ${manualCommands.length ? `<div class="readiness-guidance manual"><strong>해당 노드에서 직접 실행</strong>${manualCommands.map(command => `<code>${escapeHtml(command)}</code>`).join("")}</div>` : ""}
       <div class="readiness-detail-actions">
-        <button class="button ghost compact" type="button" data-environment-node-action="environment-check" ${state.environmentBusy ? "disabled" : ""}>다시 점검</button>
+        <button class="button ghost compact" type="button" data-environment-node-action="environment-check" ${environmentRequestPending ? "disabled" : ""}>다시 점검</button>
         <button class="button secondary compact" type="button" data-environment-node-action="environment-install" ${canInstall ? "" : "disabled"}>자동 구성</button>
       </div>
     </section>`;
@@ -1611,8 +1620,11 @@ function renderNodeDetail() {
   const engines = metrics.accelerator?.engines || {};
   const fans = metrics.fans || {};
   const environment = environmentFor(node.name);
+  const latestAction = state.actions.find(action => (action.nodes || []).includes(node.name));
+  const failureLines = latestAction?.status === "failed" ? (latestAction.log || []).filter(line => !String(line).startsWith("CLUSTER_ENVIRONMENT_JSON=")) : [];
   const powerIntegrity = window.ClusterDashboard?.power?.nodeIntegrity(node, live);
   $("#nodeDetailContent").innerHTML = `
+    ${latestAction ? `<section class="node-action-detail ${latestAction.status === "failed" ? "failed" : ""}"><strong>${escapeHtml(actionName(latestAction))} · ${escapeHtml(latestAction.status)}</strong><p>${escapeHtml(node.user)}@${escapeHtml(node.host)} · ${escapeHtml(node.project_dir)}</p>${failureLines.length ? `<pre>${escapeHtml(failureLines.join("\n"))}</pre>` : `<p>${escapeHtml((latestAction.log || []).filter(line => !String(line).startsWith("CLUSTER_ENVIRONMENT_JSON=")).slice(-1)[0] || "작업 준비 중")}</p>`}</section>` : ""}
     <div class="detail-identity">
       <div><span>PLATFORM</span><strong>${escapeHtml(platformName(kind))}</strong><small>${escapeHtml(profile.board_model || "미확인")}</small></div>
       <div><span>OS / KERNEL</span><strong>${escapeHtml(profile.os || "—")}</strong><small>${escapeHtml(profile.l4t || profile.kernel || "")}</small></div>
@@ -1854,10 +1866,39 @@ async function refreshEnvironmentReports() {
   return normalizedEnvironmentItems(data);
 }
 
+let environmentPollTimer = null;
+let environmentRequestPending = false;
+
+async function reconcileEnvironmentActions() {
+  if (environmentRequestPending) return;
+  const data = await api("/api/actions");
+  if (environmentRequestPending) return;
+  state.actions = data.actions || [];
+  const active = state.actions.filter(action => actionName(action).startsWith("environment-") && ["queued", "running"].includes(action.status));
+  const wasBusy = state.environmentBusy;
+  state.environmentActionIds = new Set(active.map(actionId).filter(Boolean));
+  setEnvironmentBusy(Boolean(active.length), active.length
+    ? `환경 작업 진행 중 · ${active.flatMap(action => action.nodes || []).join(", ")}`
+    : "환경 점검 대기");
+  if (wasBusy && !active.length) await refreshEnvironmentReports();
+}
+
+function startEnvironmentPolling() {
+  if (environmentPollTimer) clearInterval(environmentPollTimer);
+  environmentPollTimer = setInterval(() => {
+    reconcileEnvironmentActions().catch(() => {});
+  }, 5000);
+}
+
 async function runEnvironmentAction(action, nodeNames = [...state.selectedNodes]) {
   const nodes = [...new Set(nodeNames)].filter(name => state.nodes.some(node => node.name === name && node.enabled));
   if (!nodes.length) return toast("노드 선택 필요", "환경을 점검할 노드를 한 대 이상 선택하세요.", "error");
-  if (state.environmentBusy) return toast("환경 작업 진행 중", "현재 작업이 끝난 뒤 다시 시도하세요.", "error");
+  if (environmentRequestPending) return;
+  try { await reconcileEnvironmentActions(); }
+  catch (error) { return toast("작업 상태 확인 실패", error.message, "error"); }
+  if (environmentRequestPending) return;
+  const busy = state.actions.filter(item => ["queued", "running"].includes(item.status) && (item.nodes || []).some(node => nodes.includes(node)));
+  if (busy.length) return toast("선택 노드 작업 진행 중", busy.map(item => `${(item.nodes || []).join(", ")} · ${actionName(item)}`).join(" / "), "error");
   const installing = action === "environment-install";
   if (installing && !confirm(`선택한 ${nodes.length}대의 LLM 실행 환경을 자동 구성합니다. Python 패키지는 각 프로젝트의 가상환경에 설치합니다. passwordless sudo가 가능하면 고정된 시스템 패키지만 설치하고, 불가하면 수동 명령만 안내합니다. 계속할까요?`)) return null;
   const previous = state.environment.map(report => ({ ...report }));
@@ -1868,6 +1909,7 @@ async function runEnvironmentAction(action, nodeNames = [...state.selectedNodes]
   setEnvironmentBusy(true, installing ? "선택 노드 자동 구성 중" : "선택 노드 환경 점검 중");
   environmentLogLine(installing ? "INSTALL" : "CHECK", `${nodes.join(", ")} · 작업 요청`);
   try {
+    environmentRequestPending = true;
     const options = installing ? { confirmed: true, models: selectedModelIds() } : {};
     const result = await api("/api/actions", { method: "POST", body: { action, node_names: nodes, options } });
     const created = result.action || result;
@@ -1882,6 +1924,8 @@ async function runEnvironmentAction(action, nodeNames = [...state.selectedNodes]
     environmentLogLine("ERROR", error.message);
     toast("환경 작업 시작 실패", error.message, "error");
     return null;
+  } finally {
+    environmentRequestPending = false;
   }
 }
 
@@ -1929,6 +1973,7 @@ async function bootstrap() {
     runningEnvironmentActions.forEach(action => { const id = actionId(action); if (id) state.environmentActionIds.add(id); });
     setEnvironmentBusy(Boolean(runningEnvironmentActions.length), runningEnvironmentActions.length ? "노드 환경 작업 진행 중" : "환경 점검 대기");
     connectEvents();
+    startEnvironmentPolling();
     window.ClusterDashboard?.research?.load?.();
     if (!location.hash) requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "instant" }));
   } catch (error) {

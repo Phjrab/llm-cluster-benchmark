@@ -122,9 +122,9 @@ assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/events.j
 assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js"), "utf8"), /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260826\.4/);
+assert.match(template, /styles\.css\?v=20260919\.1/);
 assert.match(template, /models\.js\?v=20260826\.5/);
-assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260918\.1/);
+assert.match(template, /state\.js\?v=20260824\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260919\.1/);
 assert.match(template, /results\.js\?v=20260824\.1/);
 assert.match(template, /research\.js\?v=20260828\.1/);
 const researchSource = fs.readFileSync(path.join(dashboardRoot, "static/js/research.js"), "utf8");
@@ -504,3 +504,21 @@ assert.equal(view.getUint32(45), Math.round(300 / 0.0254));
 assert.equal(encoded[49], 1);
 
 console.log("dashboard export fixtures: OK");
+
+vm.runInContext(`(async () => {
+  const originalApi = api;
+  const originalBusy = setEnvironmentBusy;
+  const originalRefresh = refreshEnvironmentReports;
+  let refreshed = false;
+  try {
+    state.environmentBusy = true;
+    state.environmentActionIds = new Set(["missed-finish"]);
+    api = async () => ({ actions: [{ id: "missed-finish", action: "environment-check", status: "completed", nodes: ["pi1"] }] });
+    setEnvironmentBusy = busy => { state.environmentBusy = busy; };
+    refreshEnvironmentReports = async () => { refreshed = true; };
+    await reconcileEnvironmentActions();
+    if (state.environmentBusy || state.environmentActionIds.size || !refreshed) throw new Error("missed completion did not recover");
+  } finally {
+    api = originalApi; setEnvironmentBusy = originalBusy; refreshEnvironmentReports = originalRefresh;
+  }
+})()`, context).catch(error => { console.error(error); process.exitCode = 1; });
