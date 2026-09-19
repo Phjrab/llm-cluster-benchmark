@@ -1040,6 +1040,12 @@ def _rsync_ssh(node: Node) -> str:
         str(node.ssh_port),
         "-o",
         "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=8",
+        "-o",
+        "ServerAliveInterval=5",
+        "-o",
+        "ServerAliveCountMax=3",
     ]
     if ssh_host_key_policy() == "pinned":
         parts.extend([

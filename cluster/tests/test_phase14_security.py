@@ -89,6 +89,9 @@ class SshBoundarySecurityTests(unittest.TestCase):
                     _worker("worker-01", "192.168.0.26", identity_file=str(identity))
                 )
             )
+        self.assertIn("ConnectTimeout=8", parts)
+        self.assertIn("ServerAliveInterval=5", parts)
+        self.assertIn("ServerAliveCountMax=3", parts)
 
         self.assertIn("BatchMode=yes", parts)
         self.assertIn("IdentitiesOnly=yes", parts)
