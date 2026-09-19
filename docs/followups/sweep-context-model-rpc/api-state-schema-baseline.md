@@ -1,11 +1,21 @@
 # API / state / schema baseline — S00
 
-> 기준 시점 정정: 본문은 `5fd444a` 당시 S00 조사/계획이다. 현재 `98b6542`에는
-> S01의 순수 SweepSpec/ResolvedPlan/compiler 및 tests가 추가되어 있다.
-> 따라서 본문의 “신규/없음/proposed” 중 S01 항목은 현재 부재 판정이 아니다.
-> 기존 Worker/JobService/RPC/Dashboard 실행 경로에는 변화가 없다.
-> 범위 이탈 및 재검사 결과는 [S00-report.md](S00-report.md)의 재확인 절을 따른다.
+## 현재 API/schema 보정 — f22f246 (원 표보다 우선)
 
+`ExperimentPayload`와 `ExperimentConfig`, Worker `SelectModelRequest`에 optional
+n_threads/n_batch가 있다. domain에는 별도 strict `sweep` trace가 있고 formal/pilot과
+혼합할 수 없다. Worker POST `/cluster/input/prepare` 및 prepared_input_id 경로가
+있으나 이는 독점 resource lease나 sweep Start 승인 API가 아니다. 기존 Worker auth를
+따른다. 새로운 `/api/sweeps` lifecycle route와 multi-active UI는 아직 없다.
+
+순수 SweepSpec/ResolvedPlan/BaseCell/Trial은 이미 존재한다. Artifact/run 연결,
+Attempt journal, ResourceReservation, idempotent Start/Resume/Retry는 구현 계획이다.
+JobService.start/cancel/watcher, CLI 직접 실행, SuiteRunner 순차 cleanup/cooldown,
+Campaign gate, direct Worker mutation의 공통 예약 공백은 원 표와 같다. 요청 CSV
+header는 유지된다. 현재 검사·범위 이탈 기록은 S00-report 최종 절을 따른다.
+
+> 아래 본문은 `5fd444a` 당시의 역사적 기준선이다. 최신 보정은 위 절과
+> [S00-report.md](S00-report.md)의 최종 재확인 절을 따른다.
 
 Source: `5fd444a6d83e4226fcc5582196f3a27e71f84160`.
 

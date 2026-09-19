@@ -1,11 +1,24 @@
 # Capability baseline — S00
 
-> 기준 시점 정정: 본문은 `5fd444a` 당시 S00 조사/계획이다. 현재 `98b6542`에는
-> S01의 순수 SweepSpec/ResolvedPlan/compiler 및 tests가 추가되어 있다.
-> 따라서 본문의 “신규/없음/proposed” 중 S01 항목은 현재 부재 판정이 아니다.
-> 기존 Worker/JobService/RPC/Dashboard 실행 경로에는 변화가 없다.
-> 범위 이탈 및 재검사 결과는 [S00-report.md](S00-report.md)의 재확인 절을 따른다.
+## 현재 기준선 보정 — f22f246 (원 표보다 우선)
 
+| 항목 | 현재 source / 판정 |
+|---|---|
+| typed sweep | `domain/sweep.py`, `application/sweep_planner.py`; immutable spec/plan과 예산 검증 존재. execution blocker 유지 |
+| threads/batch | `dashboard/schemas.py:166`, `domain/experiment.py:84`, `benchmark/runner.py:65`, `worker/schemas.py:21`, `worker/routes.py:78`, `worker/inference.py:545`; optional strict 입력→factory→effective 기록 존재 |
+| cache | `worker/inference.py:555`; binary SHA/template/context/GPU/threads/batch 기반, path만 비교하지 않음 |
+| input 준비 | `worker/prompt_preparation.py`, `worker/inference.py:656`, `worker/routes.py:98`; explicit POST 및 제한된 pinned formatter 지원. offline exactness는 unknown |
+| 조건 불일치 | `domain/runtime_profile.py`, `benchmark/core.py:295`; sweep 조정/identity/input budget 실패는 warmup 전 거부 |
+| 종료 이유 | Worker stream→routes→transport→persistence/instrumentation으로 finish_reason 보존. actual GPU placement/output exactness는 보장하지 않음 |
+| model/RPC/Job | S03 catalog resolver 미완료; RPC GPU 999 고정(`benchmark/rpc.py:259`); JobService 단일 active(`application/jobs.py:392`) 유지 |
+
+현재 근거 검사는 S00-report 최종 절의 332+4개다. 이전 표의 threads/batch 부재,
+cache path-only, finish reason 미보존 진술은 원 소스에만 해당한다. 기존 model
+library·SuiteRunner·node_sweep·formal gate와 R 접점은 유지되며 새 sweep 실행
+연결 및 공통 자원 예약은 후속 구현 계획이다.
+
+> 아래 본문은 `5fd444a` 당시의 역사적 기준선이다. 최신 보정은 위 절과
+> [S00-report.md](S00-report.md)의 최종 재확인 절을 따른다.
 
 Source: `5fd444a6d83e4226fcc5582196f3a27e71f84160`. 모든 경로는 repository-relative.
 ALREADY_SATISFIED는 해당 기존 primitive의 보존·재사용을 뜻한다.

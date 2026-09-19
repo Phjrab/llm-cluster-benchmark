@@ -1,11 +1,26 @@
 # Implementation map — S01–S10 계획만
 
-> 기준 시점 정정: 본문은 `5fd444a` 당시 S00 조사/계획이다. 현재 `98b6542`에는
-> S01의 순수 SweepSpec/ResolvedPlan/compiler 및 tests가 추가되어 있다.
-> 따라서 본문의 “신규/없음/proposed” 중 S01 항목은 현재 부재 판정이 아니다.
-> 기존 Worker/JobService/RPC/Dashboard 실행 경로에는 변화가 없다.
-> 범위 이탈 및 재검사 결과는 [S00-report.md](S00-report.md)의 재확인 절을 따른다.
+## 현재 소스에서의 계획 보정 — f22f246
 
+아래 표는 최초 S00의 단계별 설계이며 지금 실행할 목록이 아니다. S01의
+`domain/sweep.py`, `application/sweep_planner.py`, `test_sweep_planner.py`는 현재
+존재한다. S02에는 추가로 `domain/runtime_profile.py`, `worker/prompt_preparation.py`,
+`test_context_runtime.py`가 존재한다. 해당 기존 helper와 이번에 재실행한 검사를
+재사용하며 새로 같은 기능을 만들지 않는다. 완성된 전체 제품으로 판정하지 않는다.
+
+S03는 기존 model_service/catalog/inventory와 planner 연결, S04는 pinned RPC
+profile→argv 및 coordinator/session/memory 검증, S05는 모든 mutation 진입점의
+atomic reservation, S06는 기존 JobService 기반 durable supervisor, S07는 승인·보안
+API, S08는 실제 API를 쓰는 Dashboard, S09는 Trial 기반 비교·privacy export,
+S10은 fake 통합 장애검사와 사용자 수동 인수로 이어진다. 아래 exact module/test
+매핑을 유지한다. S03 미완료 변경은 제거했으며 새 scheduler/downloader는 추가하지 않았다.
+
+각 단계는 사용자가 단계 번호를 명시해 요청했을 때만 별도 작업으로 수행한다.
+이번 작업은 S00 문서 재확인 후 STOP이다. S01/S02 범위 이탈 이력이 있으므로
+아래 역사적 “구현을 시작하지 않았다”는 문장을 현재 전체 세션의 사실로 읽지 않는다.
+
+> 아래 본문은 `5fd444a` 당시의 역사적 기준선이다. 최신 보정은 위 절과
+> [S00-report.md](S00-report.md)의 최종 재확인 절을 따른다.
 
 Source baseline: `5fd444a6d83e4226fcc5582196f3a27e71f84160`.
 S00에서 아래 구현이나 테스트 신설을 시작하지 않았다. `proposed` 파일은 현재 없다.
