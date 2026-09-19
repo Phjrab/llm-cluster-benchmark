@@ -17,6 +17,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.request
 from dataclasses import asdict
@@ -649,33 +650,66 @@ def _append_install_failure(report: Dict[str, Any], detail: str) -> Dict[str, An
     return report
 
 
+def _environment_stage(node: Node, label: str, operation: Any) -> Dict[str, Any]:
+    """Retry transient transport failures at the failed, idempotent stage only."""
+    transient = ("timed out", "timeout", "not responding", "connection reset",
+                 "connection closed", "broken pipe", "host is down", "no route to host",
+                 "connection refused", "connection unexpectedly closed",
+                 "temporary failure in name resolution", "could not resolve hostname")
+    permanent = ("permission denied", "host key verification failed",
+                 "remote host identification has changed", "no space left on device")
+    for attempt in range(1, 4):
+        print(f"[{node.name}] {label} · attempt {attempt}/3", flush=True)
+        try:
+            result = operation(node)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            result = {"ok": False, "stderr": str(exc), "stdout": ""}
+        if result.get("ok"):
+            print(f"[{node.name}] {label} · completed", flush=True)
+            return result
+        detail = str(result.get("stderr") or result.get("stdout") or "Unknown failure")
+        message = detail.lower()
+        if attempt == 3 or any(term in message for term in permanent) or not any(
+            term in message for term in transient
+        ):
+            return {**result, "stderr": f"{label} (attempt {attempt}/3): {detail}"}
+        delay = 5 * attempt
+        print(f"[{node.name}] {label} · connection interrupted; retry in {delay}s: {detail[-500:]}", flush=True)
+        time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
 def install_environment_one(node: Node) -> Dict[str, Any]:
     """Install only the fixed cluster runtime, then always run a fresh check."""
-    discovery = discover_node(node, timeout=20)
-    if not discovery.get("ssh"):
-        return check_environment_one(node)
+    def probe(target: Node) -> Dict[str, Any]:
+        discovered = discover_node(target, timeout=20)
+        return {"ok": bool(discovered.get("ssh")), "stderr": discovered.get("error", "")}
+
+    discovery = _environment_stage(node, "SSH connection", probe)
+    if not discovery.get("ok"):
+        return _append_install_failure(check_environment_one(node), discovery["stderr"])
 
     # Bootstrap every node before worker_setup. In particular, a minimal head
     # may not have util-linux/flock yet, which worker_setup needs to serialize
     # installation safely. Only remote workers need a project code sync.
-    bootstrap = bootstrap_system_one(node)
+    bootstrap = _environment_stage(node, "System dependencies", bootstrap_system_one)
     if not bootstrap.get("ok"):
         return _append_install_failure(
             check_environment_one(node),
             str(bootstrap.get("stderr") or bootstrap.get("stdout") or "System bootstrap failed"),
         )
     if node.role == "worker":
-        sync = sync_code_one(node)
+        sync = _environment_stage(node, "Project synchronization", sync_code_one)
         if not sync.get("ok"):
             return _append_install_failure(
                 check_environment_one(node),
                 str(sync.get("stderr") or sync.get("stdout") or "Project synchronization failed"),
             )
 
-    setup = _setup_one(node)
+    setup = _environment_stage(node, "Python / CUDA runtime", _setup_one)
     rpc: Optional[Dict[str, Any]] = None
     if setup.get("ok") and node.role == "worker":
-        rpc = _ensure_rpc_runtime_one(node)
+        rpc = _environment_stage(node, "Pinned RPC runtime", _ensure_rpc_runtime_one)
     lifecycle: Optional[Dict[str, Any]] = None
     if setup.get("ok") and (rpc is None or rpc.get("ok")):
         # A running API has imported the old Python/native libraries. Restart it
@@ -995,7 +1029,7 @@ def _setup_one(node: Node) -> Dict[str, Any]:
         proc = run_on_node(
             node,
             [script, "--install", "--project-dir", node.project_dir],
-            timeout=3600,
+            timeout=14400,
         )
         return {
             "name": node.name,
@@ -1516,7 +1550,7 @@ def _check_rpc_runtime_one(node: Node) -> Dict[str, Any]:
 
 
 def _prepare_rpc_one(node: Node) -> Dict[str, Any]:
-    return _rpc_runtime_command(node, "prepare", 7200)
+    return _rpc_runtime_command(node, "prepare", 14400)
 
 
 def _ensure_rpc_runtime_one(node: Node) -> Dict[str, Any]:

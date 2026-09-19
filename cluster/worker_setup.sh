@@ -318,7 +318,8 @@ if [[ "$MODE" == "install" ]]; then
     if command -v flock >/dev/null 2>&1; then
       exec 9>"$PROJECT_DIR/.run/cluster/environment-setup.lock"
       chmod 600 "$PROJECT_DIR/.run/cluster/environment-setup.lock" 2>/dev/null || true
-      if flock -w 30 9; then
+      echo "[INFO] waiting for any existing environment installation (up to 7200s)"
+      if flock -w 7200 9; then
         LOCK_FD_OPEN=1
       else
         add_check "install_lock" "환경 구성 잠금" "fail" "true" "다른 설치 작업이 실행 중입니다."

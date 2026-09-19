@@ -403,7 +403,7 @@ class EnvironmentReadinessTests(unittest.TestCase):
                 f"{worker.project_dir}/cluster/rpc/runtime.sh",
                 "prepare",
             ],
-            timeout=7200,
+            timeout=14400,
         )
 
     def test_legacy_success_without_structured_marker_is_not_ready(self) -> None:

@@ -338,6 +338,16 @@ check_runtime() {
 }
 
 prepare_runtime() {
+  command -v flock >/dev/null || die "flock is required for safe RPC preparation"
+  prepare_private_file "$RUN_DIR/rpc-prepare.lock" "RPC prepare lock"
+  exec 8>>"$RUN_DIR/rpc-prepare.lock"
+  echo "[INFO] waiting for any existing RPC build (up to 7200s)"
+  flock -w 7200 8 || die "another RPC build is still running; timed out waiting for preparation lock"
+  # A prior SSH session may have finished while this caller waited.
+  if (check_runtime) >/dev/null 2>&1; then
+    check_runtime
+    return
+  fi
   kind="$(platform_kind)"
   [[ "$kind" != unsupported ]] || die "only Jetson and Raspberry Pi are supported"
   command -v git >/dev/null || die "git is required"
