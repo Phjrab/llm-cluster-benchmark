@@ -139,6 +139,7 @@ assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*p
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
 assert.match(template, /styles\.css\?v=20260919\.3/);
 assert.match(template, /models\.js\?v=20260826\.5/);
+assert.match(template, /power\.js\?v=20260920\.1/);
 assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260919\.3[\s\S]*sweep-builder\.js\?v=20260919\.1[\s\S]*sweep-control\.js\?v=20260919\.1[\s\S]*sweep-results\.js\?v=20260920\.1/);
 assert.match(template, /results\.js\?v=20260824\.1/);
 assert.match(template, /research\.js\?v=20260828\.1/);
@@ -386,7 +387,7 @@ const powerHistory = vm.runInContext(`ClusterDashboard.power.normalizeIntegrity(
 assert.equal(powerHistory.quality.quality, "warning");
 assert.equal(powerHistory.current.length, 0);
 assert.deepEqual(JSON.parse(JSON.stringify(powerHistory.history)), ["저전압", "스로틀"]);
-assert.match(vm.runInContext(`ClusterDashboard.power.detailHtml(${JSON.stringify(powerHistory)})`, context), /현재 상태가 감지된 것은 아니며 실험은 계속할 수 있습니다/);
+assert.match(vm.runInContext(`ClusterDashboard.power.detailHtml(${JSON.stringify(powerHistory)})`, context), /일반 실험과 정식 Campaign 모두 이력만으로 차단하지 않으며/);
 
 const powerActive = vm.runInContext(`ClusterDashboard.power.normalizeIntegrity({
   available: true, status: "active_degraded", current: { throttled: true }, history: {}
@@ -394,6 +395,8 @@ const powerActive = vm.runInContext(`ClusterDashboard.power.normalizeIntegrity({
 assert.equal(powerActive.quality.quality, "degraded");
 assert.match(vm.runInContext(`ClusterDashboard.power.pillHtml(${JSON.stringify(powerActive)})`, context), /POWER DEGRADED/);
 assert.match(vm.runInContext(`ClusterDashboard.power.pillHtml(${JSON.stringify(powerActive)})`, context), /aria-label=/);
+assert.match(vm.runInContext(`ClusterDashboard.power.detailHtml(${JSON.stringify(powerActive)})`, context), /일반 실험은 비차단 warning/);
+assert.match(vm.runInContext(`ClusterDashboard.power.detailHtml(${JSON.stringify(powerActive)})`, context), /PI_POWER_ACTIVE로 차단/);
 
 const powerUnavailable = vm.runInContext(`ClusterDashboard.power.normalizeIntegrity(null, "raspberry-pi")`, context);
 assert.equal(powerUnavailable.quality.quality, "unknown");

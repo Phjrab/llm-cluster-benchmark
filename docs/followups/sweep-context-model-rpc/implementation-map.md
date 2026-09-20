@@ -10,9 +10,10 @@ start, cleanup quarantine를 통과했다. 전체 A01–A65 매핑과 실제 명
 [S10-report.md](S10-report.md), 사용자 인수 절차는
 [sweep-context-model-rpc.md](../../manual/sweep-context-model-rpc.md)에 있다.
 
-R01/R03는 기존 gate를 재사용한다. R02의 scenario 내부 계측 gap은 schema v4
-`bounded-power-gap-v1`과 fail-closed reader로 완료했다. R04 formal Campaign live control
-adapter, R05 multipart artifact set, R06 실제 hardware compatibility evidence는 남아 있다.
+R01 gate를 재사용한다. R02의 scenario 내부 계측 gap은 schema v4
+`bounded-power-gap-v1`과 fail-closed reader로 완료했다. R03은 기존 ordinary/formal Pi
+정책을 유지하면서 Dashboard 설명을 같은 경계로 정렬했다. R04 formal Campaign live
+control adapter, R05 multipart artifact set, R06 실제 hardware compatibility evidence는 남아 있다.
 이 항목은 exploratory sweep software 완료를 뒤집지 않지만 hardware/formal 완료로 승격할 수
 없다. R/H hardware 단계는 자동으로 시작하지 않았다.
 

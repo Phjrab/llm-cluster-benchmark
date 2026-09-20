@@ -90,7 +90,7 @@ R package 전체 적용 여부를 파일명/과거 보고서만으로 선언하�
 |---|---|---|---|
 | R01 source gate | ALREADY_SATISFIED primitive | `research/locks.py:assess_formal_eligibility` 및 source 검사 helper, `research/eligibility.py`; `test_deployment_identity.py` missing/tampered/cross-worker gate | S10 회귀, lock 재승인 금지 |
 | R02 energy coverage | SOFTWARE_COMPLETE | `benchmark/instrumentation.py:_energy_coverage/_scenario_energy_coverage`; 내부 long-gap·missing-power·slow-cache tests, result/publication reader tests | `bounded-power-gap-v1`로 scenario 간 및 내부 gap을 fail closed 처리. 실제 sensor/hardware acceptance는 별도 |
-| R03 Pi 정책 | ALREADY_SATISFIED primitive | `benchmark/power.py`, `research/eligibility.py`; `test_power_policy.py` | ordinary warning 비차단, formal active gate 보존 |
+| R03 Pi 정책 | SOFTWARE_COMPLETE | `benchmark/power.py`, `research/eligibility.py`; power-policy/Campaign tests와 Dashboard fixture/E2E | ordinary active warning 비차단, formal fresh-preflight active gate 보존; UI에 동일 경계 명시. 실제 Pi acceptance는 별도 |
 | R04 Campaign control | PARTIAL | `research/campaign.py:CampaignRunner`; `test_research_campaign.py`; Dashboard routes는 GET list/detail/compare/readiness | backend state machine 재사용; live production adapter/API start-control는 있다고 가정 금지 |
 | R05 multipart | NOT_IMPLEMENTED / blocked model only | `domain/model.py` multipart unsupported, `test_model_library_followup.py` 70B multipart fixture | single-file 진행 가능. logical artifact set 없으면 해당 모델 차단 |
 | R06 compatibility | PARTIAL | `application/model_service.py:validate_model_preflight`, catalog evidence/tests | 설치/SHA/license와 runtime verified/formal approved를 분리, pinned mode capability 추가 |

@@ -178,6 +178,10 @@ MAXN 결과는 장치 차이가 섞인 탐색 비교다.
   있다. 일반 run은 degraded로 보존하고 formal preflight에서는 차단한다.
 - `unavailable` 또는 unknown bits: 0으로 바꾸지 않고 quality unknown으로 취급한다.
 
+Dashboard의 Worker 상세와 일반 실험 warning banner도 같은 경계를 표시한다. 일반 실험의
+active 상태는 실행을 중단시키지 않지만 결과를 degraded로 남기며, 정식 Campaign 시작 전
+active 상태만 `PI_POWER_ACTIVE`로 차단한다. history-only 상태는 양쪽 모두 비차단이다.
+
 Pi의 psutil 및 `get_throttled`에서 watt를 추정하지 않는다. 외부 전력 센서가 없으면
 Pi energy metric은 `null`이고 reason은 `raspberry_pi_power_sensor_unavailable`이다.
 

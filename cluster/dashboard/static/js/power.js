@@ -1,4 +1,4 @@
-/* Raspberry Pi power-integrity presentation only. It never changes admission or run state. */
+/* Raspberry Pi power-integrity presentation only. Admission remains server-owned. */
 (() => {
   const dashboard = window.ClusterDashboard || (window.ClusterDashboard = {});
   const CONDITIONS = [
@@ -115,9 +115,9 @@
     const currentText = model.current?.length ? model.current.join(", ") : "현재 감지된 상태 없음";
     const historyText = model.history?.length ? model.history.join(", ") : "과거 기록 없음";
     let explanation;
-    if (meta.quality === "warning") explanation = "0x50000 같은 과거 저전압·스로틀 기록입니다. 현재 상태가 감지된 것은 아니며 실험은 계속할 수 있습니다.";
-    else if (meta.quality === "degraded") explanation = "현재 전력 또는 열 상태가 감지되었습니다. 결과를 해석할 때 이 측정 품질 정보를 함께 확인하세요. 실험은 계속할 수 있습니다.";
-    else if (meta.quality === "unknown") explanation = "전력 상태를 읽을 수 없습니다. 이 정보는 실험 실행을 막지 않습니다.";
+    if (meta.quality === "warning") explanation = "0x50000 같은 과거 저전압·스로틀 기록입니다. 현재 상태가 아니므로 일반 실험과 정식 Campaign 모두 이력만으로 차단하지 않으며 실험은 계속할 수 있습니다.";
+    else if (meta.quality === "degraded") explanation = "현재 전력 또는 열 상태가 감지되었습니다. 일반 실험은 비차단 warning으로 계속하고 결과를 DEGRADED로 기록하지만, 정식 Campaign의 실행 전 active fault는 PI_POWER_ACTIVE로 차단합니다.";
+    else if (meta.quality === "unknown") explanation = "전력 상태를 읽을 수 없습니다. 일반 실험은 차단하지 않으며, 정식 분석에서는 UNKNOWN 품질로 구분합니다.";
     else explanation = "전력 상태에서 현재 또는 과거 조건이 보고되지 않았습니다.";
     const raw = model.rawHex ? `<code>${dashboard.escapeHtml(model.rawHex)}</code>` : "raw 값 없음";
     return `<section class="power-integrity-detail ${meta.tone}" aria-labelledby="powerIntegrityTitle">
@@ -141,7 +141,7 @@
     if (unknown.length) items.push(`${unknown.map(item => item.name).join(", ")} · 상태 미확인`);
     supplied.forEach(item => { const message = text(item?.message); if (message && !items.includes(message)) items.push(message); });
     const tone = active.length ? "degraded" : history.length || supplied.length ? "warning" : "unknown";
-    return { hidden: false, tone, html: `<strong>PI POWER QUALITY · ${tone.toUpperCase()}</strong><span>${dashboard.escapeHtml(items.join(" · ") || "선택한 Pi 전력 상태를 확인하세요.")}</span><small>이 표시는 측정 품질 맥락이며 실험 실행을 차단하지 않습니다.</small>` };
+    return { hidden: false, tone, html: `<strong>PI POWER QUALITY · ${tone.toUpperCase()}</strong><span>${dashboard.escapeHtml(items.join(" · ") || "선택한 Pi 전력 상태를 확인하세요.")}</span><small>일반 실험에서는 비차단 측정 품질입니다. 정식 Campaign은 실행 전 active fault만 PI_POWER_ACTIVE로 차단합니다.</small>` };
   }
 
   function resultEnvironment(run) {

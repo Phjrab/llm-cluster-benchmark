@@ -124,6 +124,8 @@ test("Dashboard core flow renders workers, models, power warning, creates and re
 
   await expect(page.locator('[data-node-card="jetson-worker-01"]')).toBeVisible();
   await expect(page.locator('[data-node-card="pi-worker-02"]')).toContainText("POWER WARNING · HISTORY");
+  await expect(page.locator("#experimentPowerBanner")).toContainText("일반 실험에서는 비차단 측정 품질");
+  await expect(page.locator("#experimentPowerBanner")).toContainText("PI_POWER_ACTIVE");
   await expect(page.locator("#orbitWorkers [data-orbit-worker]")).toHaveCount(2);
   await expect(page.locator('#orbitWorkers [data-orbit-worker="jetson-worker-01"]')).toContainText("ONLINE");
   await expect(page.locator('#orbitWorkers [data-orbit-worker="pi-worker-02"]')).toContainText("ONLINE");
