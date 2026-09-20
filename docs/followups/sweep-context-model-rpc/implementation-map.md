@@ -1,6 +1,15 @@
 # Implementation map — S01–S10 구현·인수 상태
 
-## R07 회귀·문서 종료 — 2026-09-20
+## H01 hardware checkpoint — 2026-09-20
+
+사용자 승인 후 Raspberry Pi 4대만 연결된 조건에서 Pi 02–04를 사용하는
+`formal-study-v1-pi-only-revalidation-v7`을 durable resume했다. 19개 completed
+observation을 확보하고 pending을 0으로 만들었지만 failure/request-success 정책과
+precision 기준을 통과하지 못해 `freeze_ready=false`다. Jetson scope도 없으므로 source/runtime
+relock과 formal gate 개방은 수행하지 않았다. 상세 증거는
+[H01-report.md](H01-report.md)에 있다.
+
+## R07 회귀·문서 종료 — 2026-09-20 (역사적 기록)
 
 R01–R06 후속 구현과 S01–S10 통합 경로를 현재 source에서 다시 회귀 검증하고, S10 이후 상태
 표와 사용자 가이드를 실제 software 상태에 맞췄다. 새 scheduler, API, Dashboard 기능 또는

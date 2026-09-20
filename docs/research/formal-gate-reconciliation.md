@@ -1,6 +1,21 @@
 # Formal Gate Reconciliation — 2026-08-28
 
-## Outcome
+## H01 Pi-only checkpoint — 2026-09-20
+
+The operator later authorized the predeclared v7 Raspberry Pi-only pilot. It
+finished with 22 recorded attempts, 19 completed observations, and no pending
+runs. Each variance cell has five completed observations, but the attempt
+failure rate is 13.64%, five runs miss the 0.95 request-success policy, and
+several precision estimates reach the 30-repeat cap. The final decision is
+`freeze_ready=false`.
+
+The v7 hardware scope excludes Jetson Workers and cannot replace incomplete v6
+evidence. No checked-in source/runtime lock was changed. The formal gate remains
+closed with `CURRENT_SOURCE_PILOT_REVALIDATION` and `RUNTIME_SOURCE_RELOCK`
+applicable. Full operational and metric evidence is recorded in
+[`H01-report.md`](../followups/sweep-context-model-rpc/H01-report.md).
+
+## Historical v5 outcome
 
 Phase 09 v5 completed after the earlier Phase 10 stop report. Its historical
 decision is now represented exactly in the checked-in matrix, protocol, and
@@ -76,7 +91,13 @@ cells. Jetson Worker 02 is not a participant. The `HARDWARE_SCOPE_CHANGE`
 reason makes this scope reduction explicit; v7 cannot replace Jetson evidence,
 does not pool with v6, and leaves the formal execution gate closed.
 
-## Work intentionally not performed
+H01 later completed the durable v7 manifest with three preserved failed or
+interrupted attempts and three appended retry attempts. All declared cells now
+have their required completed observations, but the failure-rate,
+request-success, and precision decisions keep the freeze blocked. Runtime
+evidence was preserved and was not promoted into the checked-in lock files.
+
+## Work intentionally not performed at the 2026-08-28 reconciliation
 
 - no model load or inference request;
 - no RPC process or port;

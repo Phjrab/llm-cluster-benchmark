@@ -1,6 +1,18 @@
 # Capability baseline — S00
 
-## R07 종료 기준선 — daa6b60
+## H01 hardware checkpoint — 2026-09-20
+
+사용자 승인으로 Pi 02–04에서 predeclared v7 Pi-only pilot을 완료했다. durable
+manifest는 22 attempts, 19 completed observations, pending 0이며 각 variance cell에
+5개 completed observation이 있다. 그러나 attempt failure rate 13.64%, 다섯 run의
+request-success 정책 미달과 precision cap 때문에 `freeze_ready=false`다. v7은 Jetson
+범위를 포함하지 않으므로 v6를 대체하지 않는다.
+
+따라서 H01은 **hardware executed / relock blocked**다. 연구 lock, formal matrix,
+protocol과 inventory는 변경하지 않았고 formal gate는 닫혀 있다. 실제 identity,
+수치, 전원 교체·재부팅·cleanup 기록은 [H01-report.md](H01-report.md)에 있다.
+
+## R07 종료 기준선 — daa6b60 (역사적 기록)
 
 S01–S10 exploratory Sweep software와 R02–R06 reliability 후속 구현은 현재 feature source에
 통합됐다. typed plan, runtime profile/input preparation, catalog model identity, RPC profile,
