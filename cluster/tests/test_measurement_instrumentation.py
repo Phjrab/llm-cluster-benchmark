@@ -84,6 +84,7 @@ class MeasurementNormalizationTests(unittest.TestCase):
         self.assertEqual(sample["node"], "jetson-01")
         self.assertEqual(sample["monotonic_elapsed_s"], 1.0125)
         self.assertEqual(sample["collection_overhead_s"], 0.025)
+        self.assertIsNone(sample["controller_collection_interval_s"])
         self.assertEqual(sample["worker_collection_overhead_s"], 0.004)
         self.assertEqual(sample["platform_kind"], None)
         self.assertEqual(sample["power_w"], 12.5)
@@ -158,6 +159,8 @@ class MeasurementSummaryTests(unittest.TestCase):
         self.assertEqual(node["average_power_w"], 15.0)
         self.assertEqual(node["peak_power_w"], 20.0)
         self.assertEqual(node["energy_j"], 30.0)
+        self.assertTrue(node["energy_coverage"]["complete"])
+        self.assertEqual(node["energy_coverage"]["coverage_ratio"], 1.0)
         self.assertEqual(node["measurement_energy_j"], 30.0)
         self.assertEqual(node["joules_per_request"], 15.0)
         self.assertEqual(node["joules_per_generated_token"], round(30 / 45, 9))
@@ -269,6 +272,59 @@ class MeasurementSummaryTests(unittest.TestCase):
         summary = summarize_measurements(samples, [])
         self.assertEqual(summary["nodes"]["pi-02"]["energy_j"], 30.0)
 
+    def test_energy_fails_closed_for_long_gap_inside_scenario(self) -> None:
+        samples = [
+            {"node": "jetson-01", "scenario_id": "single", "sample_kind": "measurement", "power_w": 10, "monotonic_elapsed_s": 0},
+            {"node": "jetson-01", "scenario_id": "single", "sample_kind": "measurement", "power_w": 10, "monotonic_elapsed_s": 1},
+            {"node": "jetson-01", "scenario_id": "single", "sample_kind": "measurement", "power_w": 10, "monotonic_elapsed_s": 10},
+        ]
+        node = summarize_measurements(samples, [
+            {"node": "jetson-01", "ok": True, "generated_tokens": 20}
+        ])["nodes"]["jetson-01"]
+        self.assertIsNone(node["energy_j"])
+        self.assertIsNone(node["generated_tokens_per_j"])
+        self.assertFalse(node["energy_coverage"]["complete"])
+        self.assertEqual(node["energy_coverage"]["coverage_ratio"], 0.1)
+        self.assertIn(
+            "power_sampling_gap_exceeded",
+            node["energy_coverage"]["reason_codes"],
+        )
+        self.assertEqual(
+            node["availability"]["energy_j"]["reason"],
+            "power_sampling_gap_exceeded",
+        )
+
+    def test_energy_fails_closed_when_power_sample_is_missing(self) -> None:
+        samples = [
+            {"node": "jetson-01", "scenario_id": "single", "sample_kind": "measurement", "power_w": 10, "monotonic_elapsed_s": 0},
+            {"node": "jetson-01", "scenario_id": "single", "sample_kind": "measurement", "power_w": None, "monotonic_elapsed_s": 1},
+            {"node": "jetson-01", "scenario_id": "single", "sample_kind": "measurement", "power_w": 10, "monotonic_elapsed_s": 2},
+        ]
+        summary = summarize_measurements(samples, [])
+        node = summary["nodes"]["jetson-01"]
+        self.assertIsNone(node["energy_j"])
+        self.assertEqual(node["energy_coverage"]["coverage_ratio"], 0.0)
+        self.assertIn(
+            "power_sample_unavailable",
+            node["energy_coverage"]["reason_codes"],
+        )
+        self.assertFalse(summary["overall"]["energy_coverage"]["complete"])
+
+    def test_declared_slow_worker_interval_allows_matching_sample_gap(self) -> None:
+        samples = [
+            {"node": "pi-02", "scenario_id": "single", "sample_kind": "measurement", "power_w": 5, "monotonic_elapsed_s": 0, "controller_collection_interval_s": 1, "worker_collection_interval_s": 10},
+            {"node": "pi-02", "scenario_id": "single", "sample_kind": "measurement", "power_w": 5, "monotonic_elapsed_s": 10, "controller_collection_interval_s": 1, "worker_collection_interval_s": 10},
+        ]
+        node = summarize_measurements(samples, [
+            {"node": "pi-02", "ok": True, "generated_tokens": 25}
+        ])["nodes"]["pi-02"]
+        self.assertEqual(node["energy_j"], 50.0)
+        self.assertEqual(node["generated_tokens_per_j"], 0.5)
+        self.assertEqual(
+            node["energy_coverage"]["scenarios"]["single"]["allowed_gap_s"],
+            25.0,
+        )
+
     def test_rpc_lifecycle_fields_are_additive(self) -> None:
         summary = summarize_measurements(
             [], [], rpc_topology={"model_load_s": 4.5, "cleanup_s": 0.75}
@@ -316,6 +372,7 @@ class MeasurementPersistenceTests(unittest.TestCase):
         self.assertEqual(records[0]["sample_kind"], "idle")
         self.assertEqual(records[1]["scenario_id"], "single")
         self.assertGreaterEqual(float(records[1]["collection_overhead_s"]), 0.0)
+        self.assertEqual(records[1]["controller_collection_interval_s"], 0.05)
 
     def test_rpc_session_records_cleanup_duration_even_when_cleanup_fails(self) -> None:
         topology: dict[str, object] = {}

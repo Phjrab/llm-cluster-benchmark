@@ -111,13 +111,19 @@
         const condition = trial.condition || {};
         const evidence = attempt.request_evidence || {};
         const energy = attempt.energy || {};
+        const energyCoverage = energy.coverage || {};
+        const energyCoverageLabel = Number.isFinite(Number(energyCoverage.coverage_ratio))
+          ? `${Math.round(Number(energyCoverage.coverage_ratio) * 100)}% coverage`
+          : "coverage unknown";
+        const energyCoverageReasons = Object.values(energyCoverage.unavailable_nodes || {}).filter(Boolean);
+        const energyReason = energyCoverageReasons.join(", ") || energy.reason;
         const parallel = attempt.parallel_context || {};
         const canRetry = ["failed", "cancelled", "blocked"].includes(trial.status);
         const metrics = attempt.metrics || {};
         return `<tr data-sweep-trial="${esc(trial.trial_id)}"><td><b>repeat ${esc(trial.repeat_index ?? "—")}</b><small>${esc(attempt.attempt_id || "unrun")}${attempt.representative ? " · representative" : " · preserved"}</small><small>${esc(attempt.run_id || "run N/A")}</small></td>
           <td>${esc(trial.model_identity?.model_id || "unknown model")}<small>sha ${esc((trial.model_identity?.artifact_sha256 || "N/A").slice(0, 12))} · template ${esc((trial.prompt_identity?.template_sha256 || "N/A").slice(0, 12))}</small><small>ctx ${esc(condition.n_ctx ?? "N/A")} · input ${esc((evidence.actual_input_tokens || []).join("/") || "N/A")} · c${esc(condition.concurrency ?? "N/A")} · gpu ${esc(condition.n_gpu_layers ?? "N/A")}</small><small>${esc(condition.execution_strategy || "N/A")} · ${esc(trial.rpc_profile?.profile_id || "no RPC")}</small></td>
           <td>${attempt.condition_mismatch ? `<span class="condition-mismatch">CONDITION MISMATCH</span>` : `<span class="condition-match">MATCH / N/A</span>`}<small>requested ${esc(JSON.stringify(attempt.requested_config || {}))}</small><small>effective ${esc(JSON.stringify(attempt.effective_config || {}))}</small></td>
-          <td><b>${esc(metrics.cluster_tokens_per_s ?? "N/A")}</b> physical tok/s<small>${esc(metrics.effective_user_tokens_per_s ?? "N/A")} effective user tok/s</small><small>TTFT ${esc(metrics.ttft_p50_s ?? "N/A")} · E2E ${esc(metrics.e2e_p50_s ?? "N/A")}</small><small>energy ${esc(energy.generated_tokens_per_j ?? "N/A")} tok/J · ${esc(energy.quality || "unknown")}</small></td>
+          <td><b>${esc(metrics.cluster_tokens_per_s ?? "N/A")}</b> physical tok/s<small>${esc(metrics.effective_user_tokens_per_s ?? "N/A")} effective user tok/s</small><small>TTFT ${esc(metrics.ttft_p50_s ?? "N/A")} · E2E ${esc(metrics.e2e_p50_s ?? "N/A")}</small><small>energy ${esc(energy.generated_tokens_per_j ?? "N/A")} tok/J · ${esc(energy.quality || "unknown")}</small><small>${esc(energyCoverageLabel)}${energyReason ? ` · ${esc(energyReason)}` : ""}</small></td>
           <td>${responseRows(attempt)}<small>${esc(evidence.finish_reasons?.join(", ") || "finish N/A")} · early EOS ${esc(evidence.early_eos_count ?? "N/A")}</small><small>warmup ${esc(condition.warmup_requests ?? "N/A")} · cache ${esc(result.cache_policy || "N/A")} · measurements ${esc(attempt.measurement_count ?? "N/A")}</small><small>prefill ${esc(evidence.prefill_semantics || "N/A")} · RTT ${esc(evidence.rtt_semantics || "N/A")}</small>${attempt.measurements?.length ? `<details><summary>node × scenario measurements</summary><pre>${esc(JSON.stringify(attempt.measurements, null, 2))}</pre></details>` : ""}<small>${esc(parallel.label || "exploratory")} · overlap ${esc((parallel.overlapping_run_ids || []).join(", ") || "none observed")}</small></td>
           <td><span class="trial-state ${esc(attempt.status || trial.status || "unknown")}">${esc(attempt.status || trial.status || "unknown")}</span><small>${esc(attempt.failure_code || trial.failure_code || "no failure")}</small>${canRetry ? `<button type="button" class="button ghost compact" data-retry-trial="${esc(trial.trial_id)}">수동 Retry</button>` : ""}<button type="button" class="button ghost compact" data-clone-trial="${esc(trial.trial_id)}">이 조건 새 draft</button></td></tr>`;
       }).join("") : `<tr><td colspan="6">Trial 없음</td></tr>`}</tbody></table></div>`;

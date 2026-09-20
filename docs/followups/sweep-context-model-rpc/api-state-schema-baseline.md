@@ -66,7 +66,7 @@ Source: `5fd444a6d83e4226fcc5582196f3a27e71f84160`.
 | experiment_job | schema_version 1; queued/running/completed/failed/cancelled/orphaned | single-job default 보존; owner/job/attempt targeted 제어 |
 | suite document | 모델별 ordered summaries/errors/cleanup_status, partial 상태 | 모델 loop는 한 계층이 소유; sweep와 중복 확장 금지 |
 | Campaign manifest | config/research/campaign_manifest.schema.json; formal gate/retry/pause | 별도 namespace/승인 경계 유지 |
-| measurement | instrumentation schema version 3, v1–3 reader contract | sweep additive trace 별도 version, legacy 데이터 rewrite 금지 |
+| measurement | instrumentation schema version 4, v1–4 reader contract; R02 `bounded-power-gap-v1` coverage | sweep additive trace 별도 version, legacy 데이터 rewrite 금지 |
 | requests.csv | 기존 19 columns, test_measurement_instrumentation의 exact-header test | header 유지. sweep index/manifest 또는 additive JSON으로 연결 |
 | results/privacy | config prompt hash, raw response full/hash_only/none, private store | plan/events/export도 같은 privacy; terminal recovery input scrub 재사용 |
 

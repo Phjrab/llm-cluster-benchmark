@@ -49,8 +49,9 @@ class SweepResultTests(unittest.TestCase):
             "response_storage_mode": storage,
             "actual_model_config": [{"effective_config": {"n_ctx": 768, "n_gpu_layers": 4}}],
             "measurement_instrumentation": {"overall": {
-                "generated_tokens_per_j": None,
+                "generated_tokens_per_j": 99.0,
                 "unavailable_node_reasons": [{"node": "j1", "reason": "sensor unavailable"}],
+                "energy_coverage": {"policy": "bounded-power-gap-v1", "complete": False, "coverage_ratio": 0.5},
                 "availability": {"energy_j": {"available": False, "reason": "one_or_more_nodes_unavailable"}},
             }},
         })
@@ -85,6 +86,9 @@ class SweepResultTests(unittest.TestCase):
         self.assertEqual(attempts[1]["request_evidence"]["early_eos_count"], 1)
         self.assertNotIn("response", attempts[1]["responses"][0])
         self.assertFalse(attempts[1]["energy"]["available"])
+        self.assertIsNone(attempts[1]["energy"]["generated_tokens_per_j"])
+        self.assertEqual(attempts[1]["energy"]["quality"], "partial")
+        self.assertEqual(attempts[1]["energy"]["coverage"]["coverage_ratio"], 0.5)
         self.assertEqual(attempts[1]["measurements"], [])
         self.assertEqual(attempts[1]["parallel_context"]["label"], "parallel exploratory")
         self.assertEqual(attempts[1]["parallel_context"]["overlapping_run_ids"], ["run_02"])

@@ -336,7 +336,7 @@ function installSweepApi(fixture) {
           requested_config: { n_ctx: 4096, n_gpu_layers: 30 }, effective_config: { n_ctx: 3072, n_gpu_layers: 30 },
           condition_mismatch: true, mismatch_fields: ["n_ctx"],
           metrics: { cluster_tokens_per_s: 12.5, effective_user_tokens_per_s: 11.2, requests_per_s: 1.2, ttft_p50_s: 0.4, e2e_p50_s: 1.3, success_rate: 1, generated_tokens_per_j: null },
-          energy: { generated_tokens_per_j: null, quality: "unknown", available: false }, measurement_count: 0,
+          energy: { generated_tokens_per_j: null, quality: "partial", available: false, reason: "one_or_more_nodes_unavailable", coverage: { complete: false, coverage_ratio: 0.5, unavailable_nodes: { "jetson-worker-01": "power_sampling_gap_exceeded" } } }, measurement_count: 0,
           request_evidence: { actual_input_tokens: [64], finish_reasons: ["stop"], early_eos_count: 1, input_tokens_exact: true, output_tokens_exact: true },
           responses: [{ request_id: 1, input_tokens: 64, input_tokens_exact: true, generated_tokens: 8, output_tokens_exact: true, finish_reason: "stop", response_storage_status: "stored", response: "fixture response" }],
           parallel_context: { label: "parallel exploratory", overlapping_run_ids: [`${sweepId}-run-2`], isolation: "shared controller/network/storage are not isolated" },
@@ -411,6 +411,8 @@ test("Sweep Builder previews 108 trials and controls disjoint durable runs witho
   await expect(page.locator("#sweepTrialResults")).toContainText("CONDITION MISMATCH");
   await expect(page.locator("#sweepTrialResults")).toContainText("fixture response");
   await expect(page.locator("#sweepTrialResults")).toContainText("parallel exploratory");
+  await expect(page.locator("#sweepTrialResults")).toContainText("50% coverage");
+  await expect(page.locator("#sweepTrialResults")).toContainText("power_sampling_gap_exceeded");
   await expect(page.locator("#sweepTrialResults svg")).toBeVisible();
   await page.locator("[data-clone-trial]").click();
   await expect(page.locator(".toast-stack")).toContainText("실행되지 않음");

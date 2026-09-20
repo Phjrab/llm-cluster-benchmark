@@ -15,10 +15,13 @@ from statistics import mean
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 
-MEASUREMENT_SCHEMA_VERSION = 3
+MEASUREMENT_SCHEMA_VERSION = 4
 STEADY_STATE_POLICY = "phase09-pilot-window-v1"
 STEADY_STATE_WINDOW_SAMPLES = 3
 STEADY_STATE_TEMPERATURE_SPAN_C = 1.5
+ENERGY_COVERAGE_POLICY = "bounded-power-gap-v1"
+ENERGY_GAP_MULTIPLIER = 2.5
+DEFAULT_TELEMETRY_INTERVAL_S = 1.0
 TelemetryProbe = Callable[[Any], Mapping[str, Any]]
 MeasurementWriter = Callable[[Mapping[str, Any]], None]
 
@@ -171,6 +174,7 @@ def normalize_telemetry_sample(
     probe_started: float,
     probe_finished: float,
     sample_kind: str = "measurement",
+    controller_collection_interval_s: Optional[float] = None,
 ) -> Dict[str, Any]:
     metrics = raw.get("metrics") if isinstance(raw.get("metrics"), Mapping) else raw
     metrics = metrics if isinstance(metrics, Mapping) else {}
@@ -237,6 +241,9 @@ def normalize_telemetry_sample(
             ((probe_started + probe_finished) / 2.0) - run_started_monotonic, 9
         ),
         "collection_overhead_s": round(probe_finished - probe_started, 9),
+        "controller_collection_interval_s": _number(
+            controller_collection_interval_s
+        ),
         "worker_collection_overhead_s": _number(
             metrics.get("telemetry_collection_overhead_s")
         ),
@@ -301,29 +308,129 @@ def _temperature(sample: Mapping[str, Any]) -> Optional[float]:
     return max((value for value in valid if value is not None), default=None)
 
 
-def _energy(samples: Sequence[Mapping[str, Any]]) -> Optional[float]:
-    valid = [
+def _declared_collection_interval(samples: Sequence[Mapping[str, Any]]) -> float:
+    intervals = [
+        value
+        for item in samples
+        for value in (
+            _number(item.get("controller_collection_interval_s")),
+            _number(item.get("worker_collection_interval_s")),
+        )
+        if value is not None and value > 0
+    ]
+    return max(intervals, default=DEFAULT_TELEMETRY_INTERVAL_S)
+
+
+def _energy_coverage(samples: Sequence[Mapping[str, Any]]) -> tuple[Optional[float], Dict[str, Any]]:
+    """Integrate only a complete, bounded power series for one scenario."""
+    interval_s = _declared_collection_interval(samples)
+    allowed_gap_s = round(interval_s * ENERGY_GAP_MULTIPLIER, 9)
+    timestamped = [
         (_number(item.get("monotonic_elapsed_s")), _number(item.get("power_w")))
         for item in samples
     ]
-    points = sorted((at, watts) for at, watts in valid if at is not None and watts is not None)
+    missing_timestamp_count = sum(1 for at, _ in timestamped if at is None)
+    points = sorted((float(at), watts) for at, watts in timestamped if at is not None)
+    reasons: set[str] = set()
+    if missing_timestamp_count:
+        reasons.add("measurement_timestamp_unavailable")
     if len(points) < 2:
-        return None
+        reasons.add("fewer_than_two_power_samples")
+    if any(watts is None for _, watts in points):
+        reasons.add("power_sample_unavailable")
+
     joules = 0.0
+    covered_duration_s = 0.0
+    maximum_gap_s = 0.0
+    gap_count = 0
     for (left_t, left_w), (right_t, right_w) in zip(points, points[1:]):
-        joules += max(right_t - left_t, 0.0) * (left_w + right_w) / 2.0
-    return round(joules, 9)
+        gap_s = right_t - left_t
+        maximum_gap_s = max(maximum_gap_s, gap_s)
+        if gap_s <= 0:
+            reasons.add("non_increasing_measurement_timestamp")
+            continue
+        if gap_s > allowed_gap_s:
+            reasons.add("power_sampling_gap_exceeded")
+            gap_count += 1
+            continue
+        if left_w is None or right_w is None:
+            continue
+        covered_duration_s += gap_s
+        joules += gap_s * (left_w + right_w) / 2.0
+
+    observed_duration_s = (
+        max(points[-1][0] - points[0][0], 0.0) if len(points) >= 2 else 0.0
+    )
+    complete = not reasons and observed_duration_s > 0
+    coverage_ratio = (
+        min(covered_duration_s / observed_duration_s, 1.0)
+        if observed_duration_s > 0
+        else 0.0
+    )
+    coverage = {
+        "policy": ENERGY_COVERAGE_POLICY,
+        "complete": complete,
+        "sample_count": len(samples),
+        "valid_power_sample_count": sum(1 for _, watts in points if watts is not None),
+        "declared_collection_interval_s": round(interval_s, 9),
+        "allowed_gap_s": allowed_gap_s,
+        "maximum_observed_gap_s": round(maximum_gap_s, 9),
+        "gap_count": gap_count,
+        "observed_duration_s": round(observed_duration_s, 9),
+        "covered_duration_s": round(covered_duration_s, 9),
+        "coverage_ratio": round(coverage_ratio, 9),
+        "reason_codes": sorted(reasons),
+    }
+    return (round(joules, 9) if complete else None), coverage
 
 
-def _scenario_energy(samples: Sequence[Mapping[str, Any]]) -> Optional[float]:
+def _scenario_energy_coverage(
+    samples: Sequence[Mapping[str, Any]],
+) -> tuple[Optional[float], Dict[str, Any]]:
     by_scenario: Dict[str, list[Mapping[str, Any]]] = {}
     for item in samples:
         by_scenario.setdefault(str(item.get("scenario_id") or "unknown"), []).append(item)
-    energies = [_energy(values) for values in by_scenario.values()]
-    valid = [value for value in energies if value is not None]
-    if not energies or len(valid) != len(energies):
-        return None
-    return round(sum(valid), 9)
+    scenarios: Dict[str, Any] = {}
+    energies: list[float] = []
+    for scenario, values in sorted(by_scenario.items()):
+        energy, coverage = _energy_coverage(values)
+        scenarios[scenario] = coverage
+        if energy is not None:
+            energies.append(energy)
+    complete = bool(scenarios) and all(
+        item["complete"] for item in scenarios.values()
+    )
+    observed_duration_s = sum(
+        float(item["observed_duration_s"]) for item in scenarios.values()
+    )
+    covered_duration_s = sum(
+        float(item["covered_duration_s"]) for item in scenarios.values()
+    )
+    reason_codes = sorted({
+        reason
+        for item in scenarios.values()
+        for reason in item["reason_codes"]
+    })
+    coverage = {
+        "policy": ENERGY_COVERAGE_POLICY,
+        "complete": complete,
+        "scenario_count": len(scenarios),
+        "complete_scenario_count": sum(
+            bool(item["complete"]) for item in scenarios.values()
+        ),
+        "observed_duration_s": round(observed_duration_s, 9),
+        "covered_duration_s": round(covered_duration_s, 9),
+        "coverage_ratio": round(
+            covered_duration_s / observed_duration_s, 9
+        ) if observed_duration_s > 0 else 0.0,
+        "reason_codes": reason_codes,
+        "scenarios": scenarios,
+    }
+    return (round(sum(energies), 9) if complete else None), coverage
+
+
+def _scenario_energy(samples: Sequence[Mapping[str, Any]]) -> Optional[float]:
+    return _scenario_energy_coverage(samples)[0]
 
 
 def _scenario_duration(samples: Sequence[Mapping[str, Any]]) -> Optional[float]:
@@ -401,7 +508,7 @@ def summarize_measurements(
         temperatures = [value for value in temperatures if value is not None]
         steady_state_start = _steady_state_start(measured)
         # Never bridge unsampled cooldown time between sequential scenarios.
-        energy_j = _scenario_energy(measured)
+        energy_j, energy_coverage = _scenario_energy_coverage(measured)
         power_duration_s = _scenario_duration(measured)
         generated = sum(int(item.get("generated_tokens") or 0) for item in node_requests if item.get("ok"))
         successful = sum(1 for item in node_requests if item.get("ok"))
@@ -513,11 +620,14 @@ def summarize_measurements(
             if energy_j is not None and energy_j > 0
             else None
         )
+        coverage_reasons = energy_coverage["reason_codes"]
         power_unavailable_reason = (
             "raspberry_pi_power_sensor_unavailable"
             if platforms == ["raspberry-pi"] and not power_providers
             else "telemetry_provider_degraded"
             if telemetry_degraded
+            else coverage_reasons[0]
+            if coverage_reasons
             else "fewer_than_two_power_samples"
         )
         per_node[node] = {
@@ -527,6 +637,7 @@ def summarize_measurements(
             "peak_power_w": round(max(powers), 6) if powers else None,
             "energy_j": energy_j,
             "measurement_energy_j": energy_j,
+            "energy_coverage": energy_coverage,
             "joules_per_request": joules_per_request,
             "joules_per_generated_token": joules_per_token,
             "tokens_per_joule": tokens_per_joule,
@@ -620,6 +731,23 @@ def summarize_measurements(
         for node, value in per_node.items()
         if not value["availability"]["energy_j"]["available"]
     }
+    node_coverages = {
+        node: value["energy_coverage"] for node, value in per_node.items()
+    }
+    overall_energy_coverage = {
+        "policy": ENERGY_COVERAGE_POLICY,
+        "complete": all_energy_available,
+        "node_count": len(per_node),
+        "complete_node_count": sum(
+            bool(value.get("complete")) for value in node_coverages.values()
+        ),
+        "coverage_ratio": min(
+            (float(value.get("coverage_ratio") or 0.0) for value in node_coverages.values()),
+            default=0.0,
+        ),
+        "unavailable_nodes": unavailable_node_reasons,
+        "nodes": node_coverages,
+    }
     overall_joules_per_request = (
         round(overall_energy / successful_requests, 9)
         if overall_energy is not None and successful_requests > 0
@@ -666,6 +794,7 @@ def summarize_measurements(
             "peak_power_w": round(sum(peak_values), 6) if all_peak_available else None,
             "energy_j": overall_energy,
             "measurement_energy_j": overall_energy,
+            "energy_coverage": overall_energy_coverage,
             "joules_per_request": overall_joules_per_request,
             "joules_per_generated_token": overall_joules_per_token,
             "tokens_per_joule": overall_tokens_per_joule,
@@ -739,6 +868,7 @@ class RunInstrumentation:
                 probe_started=started,
                 probe_finished=finished,
                 sample_kind=kind,
+                controller_collection_interval_s=self.interval_s,
             )
             if raw.get("probe_error"):
                 sample["probe_error"] = raw["probe_error"]
@@ -790,6 +920,7 @@ class RunInstrumentation:
 
 __all__ = [
     "MEASUREMENT_SCHEMA_VERSION",
+    "ENERGY_COVERAGE_POLICY",
     "RunInstrumentation",
     "normalize_telemetry_sample",
     "request_measurement",

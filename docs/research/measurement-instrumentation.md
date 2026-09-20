@@ -1,6 +1,6 @@
 # Measurement Instrumentation Contract
 
-Status: Phase 05 contract with WS-01/WS-04 additive extensions, schema version 3
+Status: Phase 05 contract with WS-01/WS-04/R02 additive extensions, schema version 4
 
 This contract adds research measurements without changing the existing
 19-column `requests.csv`. Each run may now contain a private
@@ -28,8 +28,9 @@ valid and readable.
 - Run-level measured wall time is the sum of `ScenarioExecutor` request
   intervals. Event persistence, sampler start/stop, and node-sweep cooldown
   gaps do not dilute request throughput.
-- Telemetry is sampled once per second, plus a scenario boundary sample. Energy
-  is integrated within each scenario and then summed; unsampled cooldown time
+- Telemetry is sampled at the configured Controller interval, plus a scenario
+  boundary sample. Schema v4 records that interval on every sample. Energy is
+  integrated within each scenario and then summed; unsampled cooldown time
   between node-sweep scenarios is never bridged.
 
 ## 2. Request and prefill/decode metrics
@@ -71,7 +72,8 @@ of the physical metrics for existing readers.
 | `idle_power_w` | W | Descriptive post-warmup, pre-measurement snapshot; never subtracted from energy |
 | `average_power_w` | W | Time-weighted measured energy divided by covered scenario duration |
 | `peak_power_w` | W | Maximum valid measurement sample |
-| `energy_j` | J | Trapezoidal integration of consecutive valid power samples inside each scenario |
+| `energy_j` | J | Trapezoidal integration of a complete bounded power series inside each scenario |
+| `energy_coverage` | ratio + evidence | Versioned gap policy, observed/covered duration, maximum gap, reason codes, and per-scenario/per-node coverage |
 | `measurement_energy_j` | J | Explicit alias of `energy_j` for the bounded measurement interval |
 | `joules_per_request` | J/request | Measured energy divided by successful physical requests |
 | `joules_per_generated_token` | J/token | Measured energy divided by successful generated tokens |
@@ -80,11 +82,21 @@ of the physical metrics for existing readers.
 | `generated_tokens_per_j` | tokens/J | Successful generated tokens divided by energy |
 | `requests_per_j` | requests/J | Successful physical requests divided by energy |
 
-Energy requires at least two valid power samples in every measured scenario.
-If one node lacks power telemetry, cluster-wide energy and efficiency are null;
-available per-node values remain intact. Cluster power values are sums of the
-per-node values. Peak is therefore a conservative sum of node peaks rather
-than a claim that every peak occurred simultaneously.
+The `bounded-power-gap-v1` policy requires at least two timestamped power
+samples in every measured scenario. An adjacent interval is covered only when
+both endpoint watts are present and its duration is no greater than 2.5 times
+the declared collection interval. The larger of the Controller and Worker
+cache intervals is used; legacy samples without either declaration use one
+second. A missing watt, missing/non-increasing timestamp, or longer interval
+makes the node's full-run energy and all derived efficiencies null. The summary
+retains observed duration, covered duration, coverage ratio, maximum gap, and
+stable reason codes instead of presenting partial integration as full-run
+energy.
+
+If one node lacks complete power coverage, cluster-wide energy and efficiency
+are null; complete per-node values remain intact. Cluster power values are sums
+of the per-node values. Peak is therefore a conservative sum of node peaks
+rather than a claim that every peak occurred simultaneously.
 
 Every telemetry sample records `telemetry_provider`, `power_provider`, provider
 degradation/error evidence, Jetson power mode, and `jetson_clocks`. Valid Jetson
@@ -138,7 +150,7 @@ unsupported runtime counter, insufficient samples, or an unfrozen policy is
 <run>/events.jsonl
 <run>/responses.jsonl
 <run>/requests.csv          # unchanged 19 columns
-<run>/measurements.jsonl    # additive schema v3; schema v1/v2 remain readable
+<run>/measurements.jsonl    # additive schema v4; schema v1/v2/v3 remain readable
 <run>/summary.json          # additive measurement_instrumentation
 ```
 
@@ -153,7 +165,7 @@ inside a mode 0700 run directory and contain no prompt or response text.
 - Worker prefill is a disclosed TTFT proxy, not a native prompt-eval timer.
 - Exact Worker input token count remains unavailable across chat templates in
   the pinned llama-cpp-python API; the deterministic fallback prompt is counted.
-- One-second polling can miss short peaks.
+- The configured polling interval can miss shorter peaks.
 - Pi has no board power sensor in the current stack, so energy is normally
   unavailable even though undervoltage/throttling integrity remains visible.
 - RTT and internal RPC coordinator wait remain unavailable.

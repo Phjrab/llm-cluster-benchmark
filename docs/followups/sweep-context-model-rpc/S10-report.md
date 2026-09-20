@@ -148,7 +148,7 @@ Sandbox에서 localhost bind와 Chromium Mach port는 거절됐으므로 S10/lau
 | Package | 현재 feature와의 overlap | S10 이후 상태 |
 |---|---|---|
 | R01 source gate | 기존 formal source/identity gate를 그대로 회귀 | 충족; lock 재승인·완화 없음 |
-| R02 energy coverage | scenario 간 gap 분리와 S09 unknown/partial 표시 | **잔여:** 같은 scenario 내부의 긴 계측 gap을 완전한 coverage로 해석할 수 있는 기존 한계 |
+| R02 energy coverage | scenario 간 gap 분리와 S09 unknown/partial 표시 | **후속 완료:** schema v4 `bounded-power-gap-v1`이 내부 결측/긴 gap을 fail closed 처리하고 coverage를 UI/export에 전달함. [R02 report](R02-report.md) |
 | R03 Pi policy | ordinary warning 비차단, formal active/missing evidence gate | software 회귀 PASS; 실제 Pi acceptance 미실행 |
 | R04 Campaign control | JobService/state-machine/resource primitives 공유 | **잔여:** formal Campaign용 live Dashboard start/control adapter는 이번 exploratory sweep 범위 밖 |
 | R05 multipart | 해당 model만 명시적으로 blocked | **잔여:** logical multipart artifact-set 설치/loader 미구현 |

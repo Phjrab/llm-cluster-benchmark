@@ -203,6 +203,17 @@ def _instrumentation(summary: Mapping[str, Any]) -> tuple[float | None, float | 
         return None, None
     overall = instrumentation.get("overall")
     energy = _number(overall.get("generated_tokens_per_j")) if isinstance(overall, Mapping) else None
+    if isinstance(overall, Mapping):
+        availability = overall.get("availability")
+        energy_availability = (
+            availability.get("energy_j") if isinstance(availability, Mapping) else None
+        )
+        coverage = overall.get("energy_coverage")
+        if (
+            isinstance(energy_availability, Mapping)
+            and energy_availability.get("available") is False
+        ) or (isinstance(coverage, Mapping) and coverage.get("complete") is False):
+            energy = None
     nodes = instrumentation.get("nodes")
     peaks: list[float] = []
     if isinstance(nodes, Mapping):

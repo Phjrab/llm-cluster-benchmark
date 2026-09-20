@@ -10,8 +10,9 @@ start, cleanup quarantine를 통과했다. 전체 A01–A65 매핑과 실제 명
 [S10-report.md](S10-report.md), 사용자 인수 절차는
 [sweep-context-model-rpc.md](../../manual/sweep-context-model-rpc.md)에 있다.
 
-R01/R03는 기존 gate를 재사용하고 R02의 scenario 내부 계측 gap, R04 formal Campaign live
-control adapter, R05 multipart artifact set, R06 실제 hardware compatibility evidence는 남아 있다.
+R01/R03는 기존 gate를 재사용한다. R02의 scenario 내부 계측 gap은 schema v4
+`bounded-power-gap-v1`과 fail-closed reader로 완료했다. R04 formal Campaign live control
+adapter, R05 multipart artifact set, R06 실제 hardware compatibility evidence는 남아 있다.
 이 항목은 exploratory sweep software 완료를 뒤집지 않지만 hardware/formal 완료로 승격할 수
 없다. R/H hardware 단계는 자동으로 시작하지 않았다.
 
@@ -68,7 +69,8 @@ S00에서 아래 구현이나 테스트 신설을 시작하지 않았다. `propo
    quarantine한다. formal readiness가 단순 미완료인 것은 ordinary blocker가 아니다.
 5. S06는 SuiteRunner와 모델 반복을 이중으로 곱하지 않는다. 각 concrete cell은 모델 하나,
    반복은 Trial, 재시도는 새 Attempt이다. 자동 retry 기본 off; 이유 없이 실패 기록 삭제 금지.
-6. R01 검증은 그대로 사용한다. R02 내부 energy gap debt를 S09 표시/집계의 한계로 취급한다.
+6. R01 검증은 그대로 사용한다. R02 내부 energy gap debt는 후속
+   `bounded-power-gap-v1`에서 해소됐으며 S09 결과 UI는 coverage와 reason을 표시한다.
    R04의 미연결 API를 이미 완성됐다고 가정하지 않으며 필요한 공통 adapter만 해당 단계에서
    설계한다. R00–R07/H01 전체 실행으로 범위를 확대하지 않는다.
 7. S10에서 global resource/worker protocol 경로가 미완성이면 unit test만으로 완료 처리하지

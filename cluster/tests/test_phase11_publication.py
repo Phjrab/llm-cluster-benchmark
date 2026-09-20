@@ -142,6 +142,20 @@ class InputSeparationTests(unittest.TestCase):
             with self.assertRaisesRegex(PublicationError, "formal or pilot"):
                 load_result_dataset(Path(temp), experiment_type="smoke")
 
+    def test_incomplete_energy_coverage_is_not_exported_as_efficiency(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            create_run(root, "run1", experiment_type="pilot")
+            summary_path = root / "run1" / "summary.json"
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            summary["measurement_instrumentation"]["overall"]["energy_coverage"] = {
+                "complete": False,
+                "coverage_ratio": 0.5,
+            }
+            write_json(summary_path, summary)
+            dataset = load_result_dataset(root, experiment_type="pilot")
+            self.assertIsNone(dataset.runs[0]["generated_tokens_per_j"])
+
 
 class PublicationBundleTests(unittest.TestCase):
     def plan(self) -> dict:

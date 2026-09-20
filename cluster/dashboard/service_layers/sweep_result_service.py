@@ -70,10 +70,23 @@ def _energy(summary: Mapping[str, Any]) -> dict[str, Any]:
     overall = instrumentation.get("overall") if isinstance(instrumentation, Mapping) else {}
     availability = overall.get("availability") if isinstance(overall, Mapping) else {}
     energy_availability = availability.get("energy_j") if isinstance(availability, Mapping) else {}
+    coverage = overall.get("energy_coverage") if isinstance(overall, Mapping) else {}
     value = _metric(summary, "generated_tokens_per_j")
     unavailable = list(overall.get("unavailable_node_reasons") or []) if isinstance(overall, Mapping) else []
-    quality = summary.get("measurement_quality") or (
-        "partial" if unavailable else "unknown" if value is None else "available"
+    incomplete_coverage = (
+        isinstance(coverage, Mapping) and coverage.get("complete") is False
+    )
+    explicitly_unavailable = (
+        isinstance(energy_availability, Mapping)
+        and energy_availability.get("available") is False
+    )
+    if incomplete_coverage or explicitly_unavailable:
+        value = None
+    quality = (
+        "partial"
+        if unavailable or incomplete_coverage or explicitly_unavailable
+        else summary.get("measurement_quality")
+        or ("unknown" if value is None else "available")
     )
     return {
         "generated_tokens_per_j": value,
@@ -81,6 +94,7 @@ def _energy(summary: Mapping[str, Any]) -> dict[str, Any]:
         "available": value is not None and (not isinstance(energy_availability, Mapping) or energy_availability.get("available") is not False),
         "reason": (energy_availability or {}).get("reason") if isinstance(energy_availability, Mapping) else None,
         "unavailable_nodes": unavailable,
+        "coverage": dict(coverage) if isinstance(coverage, Mapping) else {},
     }
 
 

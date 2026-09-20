@@ -120,7 +120,8 @@ Broadcast에서는 `physical_cluster_tokens_per_s`가 Worker 수에 따라 복�
 | `tokens_per_s` | 성공 요청의 `generated_tokens / generation_s` | 요청별 생성 속도이며 cluster wall-time 처리량이 아니다 |
 | `connection_setup_s` | client 시작부터 HTTP response header까지 | TCP·server queue·초기 처리가 섞인 관측이며 순수 RTT가 아니다 |
 | `effective_bandwidth_bytes_s` | `(body bytes sent + received) / E2E` 또는 host counter delta / sampled duration | HTTP body 기준은 protocol header 제외, host 기준은 다른 트래픽 포함 |
-| `energy_j` | scenario 내부 연속 전력 sample의 사다리꼴 적분 합 | 각 scenario에 유효 sample 2개 이상이 필요하며 cooldown 간격을 잇지 않는다 |
+| `energy_j` | 완전한 scenario 내부 전력 series의 사다리꼴 적분 합 | 각 scenario에 timestamp와 watt가 있는 sample 2개 이상이 필요하며, 선언 수집 주기의 2.5배를 넘는 간격이나 결측이 있으면 전체 run 값은 `null`이다 |
+| `energy_coverage` | 관측·적분 시간 비율과 gap 근거 | `bounded-power-gap-v1` 정책, 최대 간격, reason code, scenario/node별 완전성을 보존한다 |
 | `average_power_w` | `energy_j / covered scenario duration` | idle power를 빼지 않은 측정 구간 평균이다 |
 | `peak_power_w` | 유효 sample의 최대값 | cluster peak는 node별 peak 합이라 동시 peak라는 보수적 상한이다 |
 | `joules_per_request` | `energy_j / successful physical requests` | logical request당 에너지가 아니며 broadcast 복제를 포함한다 |

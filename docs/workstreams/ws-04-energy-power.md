@@ -121,3 +121,13 @@ wall과 처리량 분모에 telemetry 지연이 포함되지 않는다.
 - cluster `peak_power_w`는 node별 peak의 보수적 합이며 동시 peak 주장값이 아니다.
 - Pi의 실제 에너지 비교에는 향후 검증된 외부 power sensor provider가 필요하다.
 - 실제 Jetson/Pi inference 및 native RPC hardware 검증은 실행하지 않는다.
+
+## R02 reliability follow-up — 2026-09-20
+
+R02에서 schema v4의 `bounded-power-gap-v1` coverage 계약을 추가했다. 같은 scenario
+안에서도 watt 결측, timestamp 결측·역행, 또는 Controller/Worker 선언 수집 주기의
+2.5배를 넘는 간격이 있으면 `energy_j`와 모든 효율값을 null로 둔다. 관측 시간,
+실제로 적분 가능한 시간, coverage ratio, 최대 gap과 reason code는 per-scenario,
+per-node, overall summary에 남긴다. 과거 schema v1–v3 record는 계속 읽을 수 있으며
+선언 주기가 없는 record에는 1초 기준을 적용한다. 세부 구현·검사 결과는
+[R02-report](../followups/sweep-context-model-rpc/R02-report.md)에 있다.

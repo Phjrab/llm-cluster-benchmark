@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://llm-cluster-benchmark.local/schemas/measurement-artifact-v3.json",
+  "$id": "https://llm-cluster-benchmark.local/schemas/measurement-artifact-v4.json",
   "title": "LLM Cluster additive measurement record",
   "type": "object",
   "required": ["schema_version", "record_type", "sampled_at", "run_id", "scenario_id", "node"],
   "properties": {
-    "schema_version": {"enum": [1, 2, 3]},
+    "schema_version": {"enum": [1, 2, 3, 4]},
     "record_type": {"enum": ["request_metrics", "telemetry_sample", "rpc_lifecycle"]},
     "sampled_at": {"type": "string", "format": "date-time"},
     "run_id": {"type": "string", "minLength": 1},
@@ -16,6 +16,7 @@
     "sample_kind": {"enum": ["idle", "measurement"]},
     "monotonic_elapsed_s": {"type": ["number", "null"]},
     "collection_overhead_s": {"type": ["number", "null"], "minimum": 0},
+    "controller_collection_interval_s": {"type": ["number", "null"], "exclusiveMinimum": 0},
     "input_tokens": {"type": ["integer", "null"], "minimum": 0},
     "prefill_time_s": {"type": ["number", "null"], "minimum": 0},
     "prefill_tokens_per_s": {"type": ["number", "null"], "minimum": 0},
