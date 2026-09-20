@@ -119,7 +119,10 @@
 
   function rootError(error) {
     const root = byId("activeSweepGrid");
-    if (root) root.innerHTML = `<div class="empty-result"><strong>Sweep 상태를 불러오지 못했습니다.</strong><span>${dashboard.escapeHtml(error.message)}</span></div>`;
+    const message = ["Not Found", "HTTP 404"].includes(error.message)
+      ? "현재 Controller에서 스윕 API를 찾을 수 없습니다. 최신 코드가 적용된 Controller인지 확인하세요."
+      : error.message;
+    if (root) root.innerHTML = `<div class="empty-result"><strong>Sweep 상태를 불러오지 못했습니다.</strong><span>${dashboard.escapeHtml(message)}</span></div>`;
   }
 
   async function lifecycle(sweepId, operation) {

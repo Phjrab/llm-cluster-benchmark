@@ -195,6 +195,7 @@ class WheelInstallationTests(unittest.TestCase):
                     "cluster/config/nodes.example.csv",
                     "cluster/dashboard/templates/index.html",
                     "cluster/dashboard/static/app.js",
+                    "cluster/dashboard/static/sweeps.css",
                     "cluster/dashboard/static/js/results.js",
                     "cluster/dashboard/static/js/sweep-builder.js",
                     "cluster/dashboard/static/js/sweep-control.js",

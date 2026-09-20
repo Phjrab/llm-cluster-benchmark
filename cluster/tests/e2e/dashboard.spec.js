@@ -369,6 +369,102 @@ function installSweepApi(fixture) {
   };
 }
 
+for (const width of [390, 768, 1440]) {
+  test(`Sweep light theme and controls remain readable at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const fixture = fixtureState();
+    installSweepApi(fixture);
+    fixture.sweepDetails.clear();
+    await installApiFixture(page, fixture);
+    await page.goto("/#sweeps");
+    await expect(page.locator("[data-sweep-worker]")).toHaveCount(2);
+    await expect(page.locator("#sweepResultToolbar")).toBeHidden();
+    await expect(page.locator("#sweepPreviewContent")).toBeHidden();
+    await expect(page.locator("#sweepRpcEditor")).toBeHidden();
+
+    // Guard against dark-form inheritance on the light builder, including
+    // text that the ordinary visibility assertion still considers visible.
+    const contrast = await page.locator("#sweeps").evaluate(section => {
+      const luminance = color => {
+        const channels = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(value => {
+          const channel = value / 255;
+          return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        });
+        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+      };
+      const selectors = ["#sweepIdInput", 'label[for="sweepIdInput"]', ".sweep-choice strong", "#sweepWorkerHint"];
+      return selectors.map(selector => {
+        const element = section.querySelector(selector);
+        const foreground = getComputedStyle(element).color;
+        let parent = element;
+        while (parent && getComputedStyle(parent).backgroundColor === "rgba(0, 0, 0, 0)") parent = parent.parentElement;
+        const background = getComputedStyle(parent).backgroundColor;
+        const a = luminance(foreground), b = luminance(background);
+        return { selector, foreground, ratio: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) };
+      });
+    });
+    for (const sample of contrast) {
+      expect(sample.foreground, sample.selector).not.toMatch(/^rgba/);
+      expect(sample.ratio, sample.selector).toBeGreaterThanOrEqual(4.5);
+    }
+    // Read geometry in one frame: anchor navigation can still be scrolling.
+    const layout = await page.locator("#sweeps").evaluate(section => {
+      const input = section.querySelector("#sweepIdInput").getBoundingClientRect();
+      const picker = section.querySelector("#sweepWorkerPicker").getBoundingClientRect();
+      const checkbox = section.querySelector("[data-sweep-worker]").getBoundingClientRect();
+      return { verticalGap: picker.top - input.bottom, widthDifference: picker.width - input.width,
+        checkboxWidth: checkbox.width, checkboxHeight: checkbox.height };
+    });
+    expect(layout.verticalGap).toBeGreaterThan(0);
+    expect(Math.abs(layout.widthDifference)).toBeLessThan(2);
+    expect(layout.checkboxWidth).toBeLessThanOrEqual(20);
+    expect(layout.checkboxHeight).toBeLessThanOrEqual(20);
+
+    await page.locator("[data-sweep-worker]").first().press("Space");
+    await expect(page.locator("[data-sweep-worker]").first()).not.toBeChecked();
+    await page.locator("[data-sweep-worker]").first().check();
+    await page.locator(".sweep-advanced summary").click();
+    await expect(page.locator("#sweepRequestsInput")).toBeVisible();
+    await page.locator("#sweepThreadsInput").fill("4");
+    await page.locator('[data-prompt-field="text"]').fill("테마와 입력 검증용 fixture prompt");
+    await page.locator("#sweepStrategySelect").selectOption("model_parallel_rpc");
+    await page.locator("#addRpcProfileButton").click();
+    await expect(page.locator("#sweepRpcEditor")).toBeVisible();
+    await page.locator('[data-rpc-field="split_policy"]').selectOption("custom");
+    await expect(page.locator("[data-rpc-weight]")).toHaveCount(2);
+    await page.locator(`[data-sweep-model="${MODEL_ID}"]`).check();
+    await page.locator("#sweepPreviewButton").click();
+    await expect(page.locator("#sweepPreviewContent")).toBeVisible();
+    await expect(page.locator("#sweepPreviewEmpty")).toBeHidden();
+    await expect(page.locator("#sweepApprovalCheck")).not.toBeChecked();
+    await expect(page.locator("#sweepSaveButton")).toBeDisabled();
+    const overflow = await page.locator("#sweeps").evaluate(section => ({
+      width: section.clientWidth, scroll: section.scrollWidth,
+      clippedCards: [...section.querySelectorAll(".sweep-choice, .sweep-model-option, .sweep-rpc-profile")]
+        .filter(card => card.scrollWidth > card.clientWidth + 2).length,
+    }));
+    expect(overflow.scroll).toBeLessThanOrEqual(overflow.width + 2);
+    expect(overflow.clippedCards).toBe(0);
+    await page.locator(".nav-link[href='#sweeps']").click();
+    await page.screenshot({ path: testInfo.outputPath(`sweep-ui-${width}.png`) });
+    expect(fixture.savedSweepPayload).toBeUndefined();
+    expect(fixture.experimentPayload).toBeNull();
+  });
+}
+
+test("Sweep API unavailable is explained without displaying an empty success state", async ({ page }) => {
+  const fixture = fixtureState();
+  fixture.sweepApi = async ({ path, json }) => {
+    if (path.startsWith("/api/sweeps")) return json({ detail: "Not Found" }, 404), true;
+    return false;
+  };
+  await installApiFixture(page, fixture);
+  await page.goto("/#sweeps");
+  await expect(page.locator("#activeSweepGrid")).toContainText("현재 Controller에서 스윕 API를 찾을 수 없습니다.");
+  await expect(page.locator("#activeSweepGrid")).not.toContainText("저장된 sweep 없음");
+  await expect(page.locator("#sweepResultToolbar")).toBeHidden();
+});
+
 test("Sweep Builder previews 108 trials and controls disjoint durable runs without hidden authority", async ({ page }, testInfo) => {
   const fixture = fixtureState();
   const third = { ...fixture.nodes[0], name: "jetson-worker-03", host: "192.168.0.28" };
