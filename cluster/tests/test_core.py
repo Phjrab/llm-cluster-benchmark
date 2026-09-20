@@ -563,6 +563,7 @@ class ExperimentTests(unittest.TestCase):
                     "model_count", "model_id", "model_index", "model_placement", "name", "nodes",
                     "ignored_config_keys", "logical_requests_per_s", "measurement_instrumentation",
                     "participant_nodes", "per_node", "physical_cluster_tokens_per_s",
+                    "model_compatibility",
                     "physical_requests", "physical_requests_per_s", "requests", "requests_per_s",
                     "result_dir", "run_id",
                     "response_storage_mode",

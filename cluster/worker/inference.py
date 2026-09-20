@@ -895,6 +895,12 @@ class LlamaCppInferenceBackend:
             "requested_n_ctx": self.requested_n_ctx,
             "requested_n_gpu_layers": self.requested_n_gpu_layers,
             "chat_template_hash": metadata.get("chat_template_hash", ""),
+            "source_revision": metadata.get("source_revision", ""),
+            "architecture": metadata.get("architecture", ""),
+            "quantization": metadata.get("quantization"),
+            "metadata_contract": metadata.get("metadata_contract", ""),
+            "artifact_kind": metadata.get("artifact_kind", "single_gguf"),
+            "artifact_count": int(metadata.get("artifact_count") or 1),
         }
 
     def _reported_integer(self, name):

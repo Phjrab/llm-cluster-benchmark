@@ -65,7 +65,10 @@
     const catalog = model.catalog || {};
     const workers = [...builder.selectedWorkers];
     const recommendations = workers.map(worker => recommendationFor(model.id, worker)).filter(item => item.status);
-    const runtime = recommendations.length && recommendations.every(item => ["recommended", "compatible"].includes(item.status));
+    const runtime = recommendations.length && recommendations.every(item =>
+      item.compatibility?.runtime_smoke === "valid"
+      && item.compatibility?.artifact_identity === "valid"
+      && item.compatibility?.architecture === "valid");
     const downloadable = Boolean(catalog.download_eligibility?.eligible || catalog.download_eligible || catalog.source_url || catalog.artifact_url || catalog.official_gguf);
     const formal = Boolean(catalog.formal_approved || catalog.formal_identity_approved);
     return { runtime, downloadable, formal };

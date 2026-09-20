@@ -498,9 +498,139 @@ class ModelRecommendation:
     cautions_ko: tuple[str, ...]
     memory: MemoryFitEstimate
     catalog: ModelCatalogEntry
+    compatibility: "ModelCompatibilityEvidence"
 
     def to_dict(self) -> dict[str, Any]:
-        return {"id": self.model_id, "status": self.status.value, "reasons_ko": list(self.reasons_ko), "cautions_ko": list(self.cautions_ko), "memory": self.memory.to_dict(), "catalog": self.catalog.to_dict()}
+        return {"id": self.model_id, "status": self.status.value, "reasons_ko": list(self.reasons_ko), "cautions_ko": list(self.cautions_ko), "memory": self.memory.to_dict(), "catalog": self.catalog.to_dict(), "compatibility": self.compatibility.to_dict()}
+
+
+@dataclass(frozen=True)
+class ModelCompatibilityEvidence:
+    """Independent compatibility dimensions for one model/Worker snapshot.
+
+    ``compatible`` is a prediction from immutable identity, backend capability,
+    and memory facts.  ``verified`` additionally requires the exact installed
+    artifact and an explicit catalog smoke record for the current platform and
+    runtime fingerprint.  Formal approval is deliberately outside this type.
+    """
+
+    status: str
+    installation: str
+    artifact_identity: str
+    architecture: str
+    backend: str
+    memory: str
+    runtime_smoke: str
+    formal_approval: str
+    reason_codes: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        states = {"valid", "blocked", "unknown"}
+        if self.status not in {"verified", "compatible", "candidate", "blocked"}:
+            raise DomainValidationError("Unsupported model compatibility status")
+        for field in ("installation", "artifact_identity", "architecture", "backend", "memory", "runtime_smoke"):
+            if getattr(self, field) not in states:
+                raise DomainValidationError(f"Unsupported compatibility state: {field}")
+        if self.formal_approval not in {"not_assessed", "approved", "blocked"}:
+            raise DomainValidationError("Unsupported formal approval state")
+        object.__setattr__(self, "reason_codes", tuple(dict.fromkeys(_as_tuple(self.reason_codes))))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "installation": self.installation,
+            "artifact_identity": self.artifact_identity,
+            "architecture": self.architecture,
+            "backend": self.backend,
+            "memory": self.memory,
+            "runtime_smoke": self.runtime_smoke,
+            "formal_approval": self.formal_approval,
+            "reason_codes": list(self.reason_codes),
+        }
+
+
+def assess_model_compatibility(
+    entry: ModelCatalogEntry,
+    *,
+    platform: str,
+    backend_verified: bool,
+    runtime_commit: str,
+    installed_model: ModelInventoryEntry | None,
+    memory: MemoryFitEstimate,
+) -> ModelCompatibilityEvidence:
+    """Classify cached facts without treating installation as runtime proof."""
+
+    reasons: list[str] = []
+    installation = "valid" if installed_model is not None else "unknown"
+    if installed_model is None:
+        reasons.append("MODEL_NOT_INSTALLED")
+
+    if installed_model is None:
+        artifact_identity = "unknown"
+    elif not installed_model.checksum_valid or (
+        entry.identity_sha256 and installed_model.sha256 != entry.identity_sha256
+    ) or (
+        entry.identity_locked
+        and installed_model.source_revision != entry.download_revision
+    ):
+        artifact_identity = "blocked"
+        reasons.append("MODEL_ARTIFACT_IDENTITY_MISMATCH")
+    else:
+        artifact_identity = "valid"
+
+    if installed_model is None or not installed_model.architecture or not entry.architecture:
+        architecture = "unknown"
+        reasons.append("MODEL_ARCHITECTURE_UNVERIFIED")
+    elif installed_model.architecture != entry.architecture:
+        architecture = "blocked"
+        reasons.append("MODEL_ARCHITECTURE_MISMATCH")
+    else:
+        architecture = "valid"
+
+    backend = "valid" if backend_verified else "blocked"
+    if backend == "blocked":
+        reasons.append("MODEL_BACKEND_UNVERIFIED")
+
+    memory_state = "valid" if memory.fits is True else "blocked" if memory.fits is False else "unknown"
+    if memory_state != "valid":
+        reasons.append("MODEL_MEMORY_EXCEEDED" if memory_state == "blocked" else "MODEL_MEMORY_UNKNOWN")
+
+    normalized_platform = str(platform or "").strip().lower()
+    smoke = bool(
+        installed_model is not None
+        and artifact_identity == "valid"
+        and architecture == "valid"
+        and backend == "valid"
+        and runtime_commit
+        and runtime_commit in entry.verified_llama_cpp_commits
+        and normalized_platform in entry.verified_platforms
+        and entry.verification_status
+        in {ModelVerificationStatus.VERIFIED, ModelVerificationStatus.RECOMMENDED}
+    )
+    runtime_smoke = "valid" if smoke else "unknown"
+    if not smoke:
+        reasons.append("MODEL_RUNTIME_SMOKE_UNVERIFIED")
+
+    hard_states = (artifact_identity, architecture, backend, memory_state)
+    if "blocked" in hard_states:
+        status = "blocked"
+    elif all(value == "valid" for value in (installation, *hard_states, runtime_smoke)):
+        status = "verified"
+    elif entry.identity_locked and backend == "valid" and memory_state == "valid":
+        status = "compatible"
+    else:
+        status = "candidate"
+    return ModelCompatibilityEvidence(
+        status=status,
+        installation=installation,
+        artifact_identity=artifact_identity,
+        architecture=architecture,
+        backend=backend,
+        memory=memory_state,
+        runtime_smoke=runtime_smoke,
+        formal_approval="not_assessed",
+        reason_codes=tuple(reasons),
+    )
 
 
 def estimate_memory_fit(
@@ -536,6 +666,14 @@ def recommend_model_candidates(
     for entry in entries:
         observed = installed.get(entry.id)
         fit = estimate_memory_fit(entry, memory_total_mb=memory_total_mb, memory_available_mb=memory_available_mb, context_length=context_length, observed_size_bytes=observed.size_bytes if observed else None)
+        compatibility = assess_model_compatibility(
+            entry,
+            platform=normalized_platform,
+            backend_verified=backend_verified,
+            runtime_commit=runtime_commit,
+            installed_model=observed,
+            memory=fit,
+        )
         reasons, cautions = list(entry.recommendation_reason_ko), list(entry.cautions_ko)
         if normalized_platform in {"controller", "mac", "macos", ""}:
             status = ModelVerificationStatus.UNSUPPORTED; cautions.append("Mac Controller는 추론 및 모델 추천 대상이 아닙니다.")
@@ -553,13 +691,14 @@ def recommend_model_candidates(
             status = ModelVerificationStatus.CANDIDATE; cautions.append(fit.reason)
         elif not entry.identity_locked:
             status = ModelVerificationStatus.CANDIDATE; cautions.append("고정 revision·파일명·SHA-256이 없어 재현 가능한 설치 대상으로 아직 잠기지 않았습니다.")
+        elif compatibility.status == "blocked":
+            status = ModelVerificationStatus.UNSUPPORTED; cautions.append("설치 artifact, architecture, backend 또는 memory compatibility가 일치하지 않습니다.")
         else:
-            smoke = normalized_platform in entry.verified_platforms and bool(runtime_commit) and runtime_commit in entry.verified_llama_cpp_commits
-            if smoke and entry.verification_status in {ModelVerificationStatus.VERIFIED, ModelVerificationStatus.RECOMMENDED}:
+            if compatibility.status == "verified":
                 status = ModelVerificationStatus.RECOMMENDED; reasons.append("현재 Worker 플랫폼과 pinned runtime에서 smoke 검증된 조합입니다.")
             else:
                 status = ModelVerificationStatus.COMPATIBLE; cautions.append("현재 플랫폼/pinned runtime smoke 검증 전에는 권장 상태로 승격되지 않습니다.")
-        values.append(ModelRecommendation(entry.id, status, tuple(dict.fromkeys(reasons or ["카탈로그 메타데이터와 Worker capability로 계산한 결정론적 판정입니다."])), tuple(dict.fromkeys(cautions)), fit, entry))
+        values.append(ModelRecommendation(entry.id, status, tuple(dict.fromkeys(reasons or ["카탈로그 메타데이터와 Worker capability로 계산한 결정론적 판정입니다."])), tuple(dict.fromkeys(cautions)), fit, entry, compatibility))
     rank = {ModelVerificationStatus.RECOMMENDED: 0, ModelVerificationStatus.COMPATIBLE: 1, ModelVerificationStatus.CANDIDATE: 2, ModelVerificationStatus.STRESS_TEST: 3, ModelVerificationStatus.RPC_ONLY: 4, ModelVerificationStatus.UNSUPPORTED: 5, ModelVerificationStatus.DEPRECATED: 6, ModelVerificationStatus.VERIFIED: 1}
     return sorted(values, key=lambda item: (rank[item.status], item.memory.required_mb if item.memory.required_mb is not None else 10**12, item.model_id))
 
@@ -579,4 +718,4 @@ def parse_catalog_entries(values: Iterable[Mapping[str, Any]]) -> tuple[ModelCat
     return parsed
 
 
-__all__ = ["DownloadPolicy", "MemoryFitEstimate", "ModelCatalogEntry", "ModelInventoryEntry", "ModelRecommendation", "ModelTier", "ModelVerificationStatus", "ProvenanceStatus", "estimate_memory_fit", "infer_quantization", "parse_catalog_entries", "recommend_model_candidates", "recommend_models", "validate_model_checksum", "validate_quantization"]
+__all__ = ["DownloadPolicy", "MemoryFitEstimate", "ModelCatalogEntry", "ModelCompatibilityEvidence", "ModelInventoryEntry", "ModelRecommendation", "ModelTier", "ModelVerificationStatus", "ProvenanceStatus", "assess_model_compatibility", "estimate_memory_fit", "infer_quantization", "parse_catalog_entries", "recommend_model_candidates", "recommend_models", "validate_model_checksum", "validate_quantization"]

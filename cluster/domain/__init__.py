@@ -13,7 +13,7 @@ from .experiment import (
 )
 from .identifiers import validate_experiment_id, validate_node_id, validate_run_id, validate_suite_id
 from .layout import ProjectLayout
-from .model import DownloadPolicy, ModelCatalogEntry, ModelInventoryEntry, infer_quantization, recommend_models, validate_model_checksum
+from .model import DownloadPolicy, ModelCatalogEntry, ModelCompatibilityEvidence, ModelInventoryEntry, assess_model_compatibility, infer_quantization, recommend_models, validate_model_checksum
 from .power import (
     MeasurementQuality,
     PowerConditionBits,
@@ -55,6 +55,7 @@ __all__ = [
     "ExperimentConfig",
     "FailureRecord",
     "ModelCatalogEntry",
+    "ModelCompatibilityEvidence",
     "ModelInventoryEntry",
     "MeasurementQuality",
     "PowerConditionBits",
@@ -70,6 +71,7 @@ __all__ = [
     "WorkerPlatform",
     "WarningRecord",
     "config_fingerprint",
+    "assess_model_compatibility",
     "normalized_config_identity",
     "normalize_model_ids",
     "failure_from_exception",

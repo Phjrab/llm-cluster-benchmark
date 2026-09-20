@@ -51,6 +51,16 @@
     return memory.fits ? `FIT ${required} / ${safe} MB` : `MEMORY ${required} / ${safe} MB`;
   }
 
+  function compatibilityLabel(evidence) {
+    if (!evidence || typeof evidence !== "object") return "COMPATIBILITY PENDING";
+    return ({
+      verified: "RUNTIME VERIFIED",
+      compatible: "COMPATIBLE · SMOKE PENDING",
+      candidate: "COMPATIBILITY PENDING",
+      blocked: "COMPATIBILITY BLOCKED",
+    })[evidence.status] || "COMPATIBILITY PENDING";
+  }
+
   function tagsFor(model) {
     const catalog = model.catalog || {}; const parameters = Number(catalog.parameters_total_b || catalog.parameter_count_b || 0);
     const tags = new Set((catalog.capability_tags || []).map(value => String(value).toLowerCase()));
@@ -233,7 +243,7 @@
         <div class="library-model-head"><div><div class="model-badge-stack"><div class="model-status-row">${badge(recommendation.status)}<span class="model-tier">${dashboard.escapeHtml(String(catalog.recommendation_tier || "unclassified").toUpperCase())}</span></div>${specialBadges(catalog)}</div><h3 title="${dashboard.escapeHtml(model.id)}">${dashboard.escapeHtml(catalog.display_name || model.filename || model.id)}</h3><p>${dashboard.escapeHtml(catalog.summary_ko || catalog.description || "이 모델의 추가 설명이 카탈로그에 없습니다.")}</p></div><strong>${dashboard.utils.bytes(model.size_bytes || catalog.size_bytes || 0)}</strong></div>
         <div class="library-facts">${facts.map(item => `<span>${dashboard.escapeHtml(item)}</span>`).join("")}</div>
         <div class="library-runtime">${runtime.map(item => `<span>${dashboard.escapeHtml(item)}</span>`).join("")}</div>
-        <div class="library-placement"><strong>WORKER INSTALLATION</strong><p>${installedNodes.length ? installedNodes.map(name => `<span class="worker-install">${dashboard.escapeHtml(name)}</span>`).join("") : "아직 설치된 Worker 없음"}</p><small>${dashboard.escapeHtml(fitLabel(recommendation.memory))} · ${recommendation.workers.length ? `적합 Worker ${recommendation.workers.join(", ")}` : "Worker smoke 확인 필요"}</small></div>
+        <div class="library-placement"><strong>WORKER INSTALLATION</strong><p>${installedNodes.length ? installedNodes.map(name => `<span class="worker-install">${dashboard.escapeHtml(name)}</span>`).join("") : "아직 설치된 Worker 없음"}</p><small>${dashboard.escapeHtml(fitLabel(recommendation.memory))} · ${dashboard.escapeHtml(compatibilityLabel(recommendation.compatibility))} · formal 승인 별도</small></div>
         ${detailList("추천 이유", recommendation.reasons_ko, "reasons")}${detailList("주의사항", recommendation.cautions_ko, "cautions")}
         <details class="library-source-details"><summary>상세 정보 · source / license / identity</summary><dl>${sourceRows.map(([key,value]) => `<dt>${dashboard.escapeHtml(key)}</dt><dd>${dashboard.escapeHtml(value)}</dd>`).join("")}</dl>${large ? `<p class="download-disabled-reason">대형 모델은 선택 Worker 전체에 복제하지 않습니다. intended RPC coordinator 한 대에 먼저 설치하세요. Estimated fit은 실행 보장이 아닙니다.</p>` : ""}</details>
         ${licenseConsentHtml(model)}
@@ -318,7 +328,7 @@
   }
 
   dashboard.renderModelLibrary = render;
-  dashboard.modelLibrary = { refresh, render, sync, install, remove, acceptLicense, revokeLicense, refreshHuggingFaceStatus, recordProgress, tagsFor, specialBadges, vendorName, groupByVendor, packPreviewData };
+  dashboard.modelLibrary = { refresh, render, sync, install, remove, acceptLicense, revokeLicense, refreshHuggingFaceStatus, recordProgress, tagsFor, specialBadges, vendorName, groupByVendor, packPreviewData, compatibilityLabel };
   document.addEventListener("DOMContentLoaded", () => {
     dashboard.$?.("#libraryModelSearch")?.addEventListener("input", () => { modelCurrentPage = 1; render(); });
     dashboard.$?.("#modelLibraryFilters")?.querySelectorAll("[data-model-filter]").forEach(button => button.addEventListener("click", () => { activeFilter = button.dataset.modelFilter || "all"; modelCurrentPage = 1; dashboard.$("#modelLibraryFilters").querySelectorAll("[data-model-filter]").forEach(item => item.classList.toggle("active", item === button)); render(); }));

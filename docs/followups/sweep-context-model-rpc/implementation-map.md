@@ -15,8 +15,10 @@ R01 gate를 재사용한다. R02의 scenario 내부 계측 gap은 schema v4
 정책을 유지하면서 Dashboard 설명을 같은 경계로 정렬했다. R04는 기존 CampaignRunner와
 JobService를 Dashboard API/control 및 재시작 복구에 연결했다. shipped formal gate가 닫혀
 있으므로 실제 Campaign 실행은 하지 않았다. R05는 ordered manifest 기반 logical artifact set의
-설치/inventory/preflight/loader software 경로를 추가했다. 현재 70B catalog identity와 R06 실제
-hardware compatibility evidence는 남아 있다.
+설치/inventory/preflight/loader software 경로를 추가했다. R06는 model selector, preflight,
+result에 설치/artifact/architecture/backend/memory/runtime evidence를 분리해 연결하고 단순 설치
+또는 catalog smoke를 runtime verified로 승격하던 표시를 제거했다. 현재 70B catalog identity와
+실제 hardware compatibility evidence는 남아 있다.
 이 항목은 exploratory sweep software 완료를 뒤집지 않지만 hardware/formal 완료로 승격할 수
 없다. R/H hardware 단계는 자동으로 시작하지 않았다.
 

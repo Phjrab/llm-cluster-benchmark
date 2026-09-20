@@ -93,7 +93,7 @@ R package 전체 적용 여부를 파일명/과거 보고서만으로 선언하�
 | R03 Pi 정책 | SOFTWARE_COMPLETE | `benchmark/power.py`, `research/eligibility.py`; power-policy/Campaign tests와 Dashboard fixture/E2E | ordinary active warning 비차단, formal fresh-preflight active gate 보존; UI에 동일 경계 명시. 실제 Pi acceptance는 별도 |
 | R04 Campaign control | SOFTWARE_COMPLETE | `research/campaign.py:CampaignRunner`, `integrations/campaign_jobs.py`, `dashboard/service_layers/research_service.py`, Campaign POST routes/UI; campaign/service/route/static tests | 기존 JobService와 formal manifest를 재사용하고 gate-first start/resume/retry, pause/cancel, 수동 사유 retry, running 재시작 복구를 제공. shipped gate는 닫힌 상태이며 실제 hardware 실행은 미검증 |
 | R05 multipart | SOFTWARE_COMPLETE / catalog identity pending | `domain/model.py` ordered manifest, Worker atomic set install/inventory/load, model preflight/sweep resolver, `test_multipart_models.py` | exact manifest가 있는 direct artifact set 지원. 현재 70B는 manifest가 없어 해당 모델만 차단; 단일 GGUF 계속 가능. 실제 download/load/RPC 미검증 |
-| R06 compatibility | PARTIAL | `application/model_service.py:validate_model_preflight`, catalog evidence/tests | 설치/SHA/license와 runtime verified/formal approved를 분리, pinned mode capability 추가 |
+| R06 compatibility | SOFTWARE_COMPLETE / hardware evidence pending | `domain/model.py:assess_model_compatibility`, `dashboard/services.py:validate_catalog_execution_preflight`, `benchmark/core.py:model_compatibility_evidence`, Model Library/Sweep/Results UI, `test_model_compatibility.py` | 설치/artifact/architecture/backend/memory/runtime 실행/formal approval을 분리. catalog 또는 설치만으로 runtime verified 승격 금지; 실제 hardware smoke와 formal approval은 별도 |
 
 현 source에는 SweepSpec/ResolvedPlan/ResourceReservation/rpc_gpu_layers/sweep_attempt_id
 구현 검색 결과가 없다. 이를 S01–S10의 신규 계약으로 계획하며 S00에서 추가하지 않는다.

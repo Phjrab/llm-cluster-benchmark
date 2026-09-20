@@ -95,6 +95,77 @@ def research_identity(config: ExperimentConfig) -> Optional[Dict[str, Any]]:
     }
 
 
+def model_compatibility_evidence(
+    config: ExperimentConfig,
+    participants: Sequence[Dict[str, Any]],
+    loaded: Sequence[Dict[str, Any]],
+    records: Sequence[Dict[str, Any]],
+    *,
+    status: str,
+) -> List[Dict[str, Any]]:
+    """Persist observed execution facts without granting catalog/formal approval."""
+
+    participant_by_node = {str(item.get("name") or ""): item for item in participants}
+    expected = (config.sweep or {}).get("model_identity") or {}
+    expected_sha = str(expected.get("artifact_sha256") or (config.sweep or {}).get("model_sha256") or "")
+    expected_architecture = str(expected.get("architecture") or "")
+    values: List[Dict[str, Any]] = []
+    for actual in loaded:
+        node = str(actual.get("node") or "")
+        participant = participant_by_node.get(node, {})
+        runtime = participant.get("runtime_backend") or {}
+        if not isinstance(runtime, dict):
+            runtime = {"kind": runtime}
+        actual_sha = str(actual.get("model_sha256") or "")
+        actual_architecture = str(actual.get("architecture") or "")
+        identity = (
+            "valid" if expected_sha and actual_sha == expected_sha
+            else "blocked" if expected_sha and actual_sha and actual_sha != expected_sha
+            else "unknown"
+        )
+        architecture = (
+            "valid" if expected_architecture and actual_architecture == expected_architecture
+            else "blocked" if expected_architecture and actual_architecture and actual_architecture != expected_architecture
+            else "unknown"
+        )
+        backend = (
+            "valid" if runtime.get("verified") is True
+            else "blocked" if runtime.get("verified") is False
+            else "unknown"
+        )
+        node_records = [
+            item for item in records
+            if str(item.get("node") or item.get("assigned_node") or "") == node
+        ]
+        execution = (
+            "valid" if status == "completed" and any(item.get("ok") is True for item in node_records)
+            else "blocked" if status == "failed" and node_records and not any(item.get("ok") is True for item in node_records)
+            else "unknown"
+        )
+        verified = all(value == "valid" for value in (identity, architecture, backend, execution))
+        values.append({
+            "schema_version": 1,
+            "node": node,
+            "model_id": str(actual.get("model_id") or config.model_id),
+            "artifact_identity": identity,
+            "architecture": architecture,
+            "backend": backend,
+            "execution": execution,
+            "runtime_smoke": "valid" if verified else "unknown",
+            "status": "verified" if verified else "observed_unverified",
+            "artifact_sha256": actual_sha or None,
+            "source_revision": actual.get("source_revision") or None,
+            "model_architecture": actual_architecture or None,
+            "platform": participant.get("detected_platform") or participant.get("configured_platform"),
+            "runtime_kind": runtime.get("kind"),
+            "runtime_fingerprint": runtime.get("runtime_fingerprint"),
+            "llama_cpp_python": runtime.get("llama_cpp_python"),
+            "formal_approval": "not_assessed",
+            "evidence_source": "completed_run" if status == "completed" else "noncompleted_run",
+        })
+    return values
+
+
 class BenchmarkRunner:
     def __init__(
         self,
@@ -406,6 +477,7 @@ class BenchmarkRunner:
                 if warning not in warnings:
                     warnings.append(warning)
 
+            final_status = "cancelled" if cancel_event.is_set() else "completed"
             summary.update({
                 "schema_version": 2,
                 "run_id": run_id,
@@ -417,12 +489,15 @@ class BenchmarkRunner:
                 "model_count": config.model_count,
                 "execution_strategy": config.execution_strategy,
                 "model_placement": strategy.result_model_placement,
-                "status": "cancelled" if cancel_event.is_set() else "completed",
+                "status": final_status,
                 "started_at": started_event["at"],
                 "finished_at": utc_now(),
                 "nodes": [node.name for node in nodes],
                 "participant_nodes": participant_nodes,
                 "actual_model_config": loaded,
+                "model_compatibility": model_compatibility_evidence(
+                    config, participant_nodes, loaded, records, status=final_status
+                ),
                 "benchmark_parameters": benchmark_parameters(config),
                 "config_fingerprint_sha256": config_fingerprint(config),
                 "ignored_config_keys": config.ignored_config_keys,
@@ -484,6 +559,7 @@ class BenchmarkRunner:
                 stage="run",
                 model_id=config.model_id,
             )
+            failure_status = "cancelled" if cancelled else "failed"
             failure = {
                 "schema_version": 2,
                 "run_id": run_id,
@@ -495,11 +571,14 @@ class BenchmarkRunner:
                 "model_count": config.model_count,
                 "execution_strategy": config.execution_strategy,
                 "model_placement": strategy.result_model_placement,
-                "status": "cancelled" if cancelled else "failed",
+                "status": failure_status,
                 "finished_at": utc_now(),
                 "nodes": [node.name for node in nodes],
                 "participant_nodes": participant_nodes,
                 "actual_model_config": loaded,
+                "model_compatibility": model_compatibility_evidence(
+                    config, participant_nodes, loaded, records, status=failure_status
+                ),
                 "benchmark_parameters": benchmark_parameters(config),
                 "config_fingerprint_sha256": config_fingerprint(config),
                 "ignored_config_keys": config.ignored_config_keys,
@@ -571,4 +650,4 @@ class BenchmarkRunner:
                     persistence.emit("rpc_cleanup_failed", errors=[str(cleanup_exc)])
 
 
-__all__ = ["BenchmarkRunner", "benchmark_parameters", "research_identity"]
+__all__ = ["BenchmarkRunner", "benchmark_parameters", "model_compatibility_evidence", "research_identity"]

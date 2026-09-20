@@ -47,6 +47,8 @@ assert.match(template, /id="sweepBuilderForm"[\s\S]*id="sweepPreviewContent"[\s\
 assert.match(sweepBuilderSource, /\/api\/sweeps\/preview/);
 assert.match(sweepBuilderSource, /\/api\/sweeps\/readiness\/refresh/);
 assert.match(sweepBuilderSource, /저장한 plan을 수정했습니다[\s\S]*새 Sweep ID/);
+assert.match(sweepBuilderSource, /compatibility\?\.runtime_smoke === "valid"/);
+assert.doesNotMatch(sweepBuilderSource, /\["recommended", "compatible"\]\.includes\(item\.status\)/);
 assert.doesNotMatch(sweepBuilderSource, /\/api\/models\/[^\n]*install/);
 assert.match(sweepControlSource, /Last-Event-ID/);
 assert.match(sweepControlSource, /sessionStorage\.getItem\(`sweepApproval:/);
@@ -57,6 +59,7 @@ assert.equal(vm.runInContext(`ClusterDashboard.terminals.limit`, context), 200);
 assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.recordProgress`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.groupByVendor`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.modelLibrary.packPreviewData`, context), "function");
+assert.equal(vm.runInContext(`ClusterDashboard.modelLibrary.compatibilityLabel({status:"compatible"})`, context), "COMPATIBLE · SMOKE PENDING");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.setSelectedModels`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.copyText`, context), "function");
 assert.equal(vm.runInContext(`typeof ClusterDashboard.paginateItems`, context), "function");
@@ -138,10 +141,10 @@ assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js")
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
 assert.match(template, /styles\.css\?v=20260920\.sweep-ui[\s\S]*sweeps\.css\?v=20260920\.1/);
-assert.match(template, /models\.js\?v=20260920\.1/);
+assert.match(template, /models\.js\?v=20260920\.2/);
 assert.match(template, /power\.js\?v=20260920\.1/);
-assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260920\.1[\s\S]*sweep-builder\.js\?v=20260919\.1[\s\S]*sweep-control\.js\?v=20260920\.1[\s\S]*sweep-results\.js\?v=20260920\.1/);
-assert.match(template, /results\.js\?v=20260824\.1/);
+assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260920\.1[\s\S]*sweep-builder\.js\?v=20260920\.2[\s\S]*sweep-control\.js\?v=20260920\.1[\s\S]*sweep-results\.js\?v=20260920\.1/);
+assert.match(template, /results\.js\?v=20260920\.2/);
 assert.match(template, /research\.js\?v=20260920\.1/);
 const researchSource = fs.readFileSync(path.join(dashboardRoot, "static/js/research.js"), "utf8");
 assert.match(researchSource, /blocking_requirements/);
@@ -186,7 +189,8 @@ const participantHtml = vm.runInContext(`ClusterDashboard.results.renderParticip
     git_commit: "abc123", capture_status: "captured",
     runtime_backend: { kind: "cuda", verified: true, llama_cpp_python: "0.3.20" }
   }],
-  actual_model_config: [{ node: "jetson-worker-01", n_ctx: 2048, n_gpu_layers: 30, n_batch: 512 }]
+  actual_model_config: [{ node: "jetson-worker-01", n_ctx: 2048, n_gpu_layers: 30, n_batch: 512 }],
+  model_compatibility: [{ node: "jetson-worker-01", status: "verified" }]
 })`, context);
 assert.match(participantHtml, /PARTICIPANT NODE SNAPSHOT/);
 assert.match(participantHtml, /jetson-worker-01/);
@@ -194,6 +198,7 @@ assert.match(participantHtml, /192\.168\.0\.26:8000/);
 assert.match(participantHtml, /Orin Nano/);
 assert.match(participantHtml, /llama-cpp-python 0\.3\.20/);
 assert.match(participantHtml, /ctx 2048 · GPU layers 30 · batch 512/);
+assert.match(participantHtml, /VERIFIED EXECUTION/);
 assert.doesNotMatch(participantHtml, /secret-user|identity_file/);
 const legacyParticipants = vm.runInContext(`ClusterDashboard.results.participantNodes({
   nodes: ["old-worker"], actual_model_config: [{ node: "old-worker", runtime_backend: "openblas" }]

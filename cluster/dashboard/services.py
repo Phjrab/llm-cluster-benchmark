@@ -95,7 +95,7 @@ from cluster.clusterctl import (
 from cluster.integrations.runtime_layout import resolve_runtime_paths
 from cluster.domain.errors import ClusterError, ErrorCode, FailureRecord
 from cluster.domain.failures import http_status_for_failure
-from cluster.domain.model import ModelCatalogEntry, estimate_memory_fit, recommend_model_candidates, recommend_models
+from cluster.domain.model import ModelCatalogEntry, assess_model_compatibility, estimate_memory_fit, recommend_model_candidates, recommend_models
 from cluster.domain.power import (
     normalize_power_integrity_snapshot,
     power_semantic_signature,
@@ -784,7 +784,7 @@ def validate_catalog_execution_preflight(
     n_ctx: int,
     execution_strategy: str,
     rpc_coordinator_node: Optional[str],
-) -> None:
+) -> List[Dict[str, Any]]:
     """Apply context and conservative memory admission after file integrity checks.
 
     Legacy/unmanaged models remain readable for backward compatibility. Catalog
@@ -795,6 +795,7 @@ def validate_catalog_execution_preflight(
     required = list(nodes)
     if execution_strategy == "model_parallel_rpc":
         required = [node for node in nodes if node.name == rpc_coordinator_node]
+    evidence: List[Dict[str, Any]] = []
     for node in required:
         profile = (live_status.get(node.name) or {}).get("profile") or {}
         inventory = inventories.get(node.name)
@@ -823,6 +824,16 @@ def validate_catalog_execution_preflight(
                 context_length=n_ctx,
                 observed_size_bytes=model.size_bytes,
             )
+            backend = profile.get("runtime_backend") or {}
+            assessment = assess_model_compatibility(
+                entry,
+                platform=str(profile.get("platform_kind") or node.platform),
+                backend_verified=isinstance(backend, dict) and backend.get("verified") is True,
+                runtime_commit=str(backend.get("runtime_fingerprint") or "") if isinstance(backend, dict) else "",
+                installed_model=model,
+                memory=estimate,
+            )
+            evidence.append({"node": node.name, "model_id": model_id, **assessment.to_dict()})
             if estimate.fits is False:
                 raise ModelPreflightError(
                     f"{node.name}: model does not fit safe available memory: {model_id}",
@@ -830,9 +841,10 @@ def validate_catalog_execution_preflight(
                     stage="model_preflight",
                     node=node.name,
                     model_id=model_id,
-                    evidence=estimate.to_dict(),
+                    evidence={**estimate.to_dict(), "compatibility": assessment.to_dict()},
                     solutions=("더 작은 GGUF, 더 작은 n_ctx 또는 더 낮은 GPU layer 설정을 사용하세요.",),
                 )
+    return evidence
 
 
 def experiment_power_warnings(

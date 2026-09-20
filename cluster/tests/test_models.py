@@ -87,16 +87,23 @@ class ModelDomainTests(unittest.TestCase):
             id="catalog/locked-Q4_K_M.gguf", size_bytes=256 * 1024 * 1024,
             kv_cache_bytes_per_token=16 * 1024, hf_repo="owner/repo", hf_revision="f" * 40,
             gguf_filename="locked-Q4_K_M.gguf", sha256=MODEL_HASH, quantization="Q4_K_M",
-            license="Apache-2.0",
+            license="Apache-2.0", architecture="qwen2",
             recommended_platforms=("jetson", "raspberry-pi"), verification_status="verified",
             verified_platforms=("jetson",), verified_llama_cpp_commits=("runtime-1",),
         )
-        controller = recommend_model_candidates([entry], platform="controller", memory_total_mb=8192, memory_available_mb=7000, backend_verified=True, runtime_commit="runtime-1")[0]
+        installed = {entry.id: ModelInventoryEntry(
+            entry.id, entry.gguf_filename, int(entry.size_bytes or 0), MODEL_HASH,
+            "Q4_K_M", True, source_revision="f" * 40,
+            architecture="qwen2", metadata_inspected=True,
+        )}
+        controller = recommend_model_candidates([entry], platform="controller", memory_total_mb=8192, memory_available_mb=7000, backend_verified=True, runtime_commit="runtime-1", installed_models=installed)[0]
         self.assertEqual(controller.status, ModelVerificationStatus.UNSUPPORTED)
-        pi = recommend_model_candidates([entry], platform="raspberry-pi", memory_total_mb=8192, memory_available_mb=7000, backend_verified=True, runtime_commit="runtime-1")[0]
+        pi = recommend_model_candidates([entry], platform="raspberry-pi", memory_total_mb=8192, memory_available_mb=7000, backend_verified=True, runtime_commit="runtime-1", installed_models=installed)[0]
         self.assertEqual(pi.status, ModelVerificationStatus.COMPATIBLE)
-        jetson = recommend_model_candidates([entry], platform="jetson", memory_total_mb=8192, memory_available_mb=7000, backend_verified=True, runtime_commit="runtime-1")[0]
+        jetson = recommend_model_candidates([entry], platform="jetson", memory_total_mb=8192, memory_available_mb=7000, backend_verified=True, runtime_commit="runtime-1", installed_models=installed)[0]
         self.assertEqual(jetson.status, ModelVerificationStatus.RECOMMENDED)
+        self.assertEqual(jetson.compatibility.runtime_smoke, "valid")
+        self.assertEqual(jetson.compatibility.formal_approval, "not_assessed")
         large = ModelCatalogEntry(id="catalog/large-Q4_K_M.gguf", size_bytes=7 * 1024 ** 3, kv_cache_bytes_per_token=256 * 1024, recommended_platforms=("jetson",))
         pi_large = recommend_model_candidates([large], platform="raspberry-pi", memory_total_mb=8192, memory_available_mb=4000, backend_verified=True)[0]
         self.assertEqual(pi_large.status, ModelVerificationStatus.UNSUPPORTED)

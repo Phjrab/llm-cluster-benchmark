@@ -48,9 +48,11 @@
     const participants = participantNodes(run);
     if (!participants.length) return "";
     const configs = Array.isArray(run?.actual_model_config) ? run.actual_model_config : [];
+    const compatibility = Array.isArray(run?.model_compatibility) ? run.model_compatibility : [];
     const coordinator = run?.topology?.coordinator;
     const cards = participants.map(node => {
       const actual = configs.find(item => item?.node === node.name) || {};
+      const evidence = compatibility.find(item => item?.node === node.name) || {};
       const backend = node.runtime_backend && typeof node.runtime_backend === "object"
         ? node.runtime_backend : { kind: node.runtime_backend };
       const platform = node.detected_platform || node.platform_kind || node.configured_platform || "unknown";
@@ -67,6 +69,7 @@
         <div><dt>CPU / MEMORY</dt><dd>${dashboard.escapeHtml([node.cpu_model, node.cpu_cores_logical ? `${node.cpu_cores_logical} threads` : "", memoryGb].filter(value => value && value !== "—").join(" · ") || "기록 없음")}</dd></div>
         <div><dt>INFERENCE BACKEND</dt><dd>${dashboard.escapeHtml([backend.kind, backend.llama_cpp_python ? `llama-cpp-python ${backend.llama_cpp_python}` : "", node.inference_threads ? `${node.inference_threads} inference threads` : ""].filter(Boolean).join(" · ") || "기록 없음")}</dd></div>
         <div><dt>MODEL RUNTIME</dt><dd>${dashboard.escapeHtml(modelRuntime)}</dd></div>
+        <div><dt>COMPATIBILITY EVIDENCE</dt><dd>${dashboard.escapeHtml(evidence.status === "verified" ? "VERIFIED EXECUTION" : evidence.status === "observed_unverified" ? "OBSERVED · NOT VERIFIED" : "LEGACY / UNAVAILABLE")}</dd></div>
         <div><dt>POWER / REVISION</dt><dd>${dashboard.escapeHtml([mode, node.git_commit ? `git ${node.git_commit}` : ""].filter(Boolean).join(" · ") || "기록 없음")}</dd></div>
       </dl>${node.capture_error ? `<p>${dashboard.escapeHtml(node.capture_error)}</p>` : ""}</article>`;
     }).join("");
