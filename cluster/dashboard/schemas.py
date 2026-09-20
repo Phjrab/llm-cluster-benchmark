@@ -152,6 +152,17 @@ class ModelLicenseAcceptancePayload(BaseModel):
     license_fingerprint: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
 
 
+class CampaignControlPayload(BaseModel):
+    """Explicit operator acknowledgement for a formal campaign mutation."""
+
+    model_config = ConfigDict(extra="forbid")
+    confirmed: Literal[True]
+
+
+class CampaignRetryPayload(CampaignControlPayload):
+    reason: str = Field(min_length=1, max_length=512)
+
+
 class ExperimentPayload(BaseModel):
     model_config = ConfigDict(extra="allow")
     experiment_id: str = Field("", max_length=80, pattern=r"^[a-z0-9][a-z0-9_-]*$|^$")

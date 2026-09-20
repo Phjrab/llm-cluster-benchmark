@@ -21,6 +21,8 @@ from cluster.dashboard.dependencies import (
 )
 from cluster.dashboard.schemas import (
     ActionPayload,
+    CampaignControlPayload,
+    CampaignRetryPayload,
     ClusterSettingsPayload,
     ExperimentPayload,
     JetsonPowerModePayload,
@@ -337,6 +339,66 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
     ) -> Dict[str, Any]:
         try:
             return dashboard.campaign(campaign_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @research_router.post("/api/campaigns/{campaign_id}/start")
+    async def start_campaign(
+        campaign_id: str,
+        payload: CampaignControlPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.start_campaign(campaign_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @research_router.post("/api/campaigns/{campaign_id}/pause")
+    async def pause_campaign(
+        campaign_id: str,
+        payload: CampaignControlPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.pause_campaign(campaign_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @research_router.post("/api/campaigns/{campaign_id}/resume")
+    async def resume_campaign(
+        campaign_id: str,
+        payload: CampaignControlPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.resume_campaign(campaign_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @research_router.post("/api/campaigns/{campaign_id}/cancel")
+    async def cancel_campaign(
+        campaign_id: str,
+        payload: CampaignControlPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.cancel_campaign(campaign_id)
+        except ValueError as exc:
+            return _error_response(exc)
+
+    @research_router.post(
+        "/api/campaigns/{campaign_id}/cells/{campaign_cell_id}/retry"
+    )
+    async def retry_campaign_cell(
+        campaign_id: str,
+        campaign_cell_id: str,
+        payload: CampaignRetryPayload,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        try:
+            return dashboard.retry_campaign_cell(
+                campaign_id, campaign_cell_id, reason=payload.reason
+            )
         except ValueError as exc:
             return _error_response(exc)
 

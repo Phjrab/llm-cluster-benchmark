@@ -17,7 +17,7 @@
     compare: { runs: [], filters: {}, legacy_run_count: 0 },
     readiness: null,
     filters: Object.fromEntries(FILTER_KEYS.map(key => [key, "all"])),
-    metric: "throughput_tokens_s", baseline: "", loading: false, bound: false,
+    metric: "throughput_tokens_s", baseline: "", loading: false, actionPending: false, bound: false,
   };
 
   const apiSurface = () => global.ClusterDashboard || {};
@@ -150,10 +150,51 @@
     const coverage = campaign.coverage || {};
     const drift = campaign.current_drift || [];
     const cells = campaign.cells || [];
+    const status = String(campaign.status || "unknown");
+    const executionAllowed = researchState.readiness?.execution_gate?.formal_execution_allowed === true;
+    const gateTitle = executionAllowed ? "" : "formal execution gate가 닫혀 있습니다";
+    const disabled = researchState.actionPending ? "disabled" : "";
+    const gatedDisabled = researchState.actionPending || !executionAllowed ? "disabled" : "";
+    const controls = [];
+    if (status === "ready") controls.push(`<button type="button" class="button primary compact" data-campaign-action="start" ${gatedDisabled} title="${esc(gateTitle)}">Start</button>`);
+    if (status === "running") controls.push(`<button type="button" class="button ghost compact" data-campaign-action="pause" ${disabled}>Pause</button>`);
+    if (status === "paused") controls.push(`<button type="button" class="button primary compact" data-campaign-action="resume" ${gatedDisabled} title="${esc(gateTitle)}">Resume</button>`);
+    if (["ready", "running", "paused"].includes(status)) controls.push(`<button type="button" class="button ghost compact danger-text" data-campaign-action="cancel" ${disabled}>Cancel</button>`);
     target.innerHTML = `<div class="campaign-detail-head"><div><span>${esc(campaign.phase.toUpperCase())}</span><h3>${esc(campaign.campaign_id)}</h3><p>${timestamp(campaign.updated_at)} · 반복 ${campaign.repeat_progress.completed}/${campaign.repeat_progress.total}</p></div><b class="research-eligibility ${campaign.formal_eligible ? "ready" : "blocked"}">${campaign.formal_eligible ? "FORMAL ELIGIBLE" : "DRIFT BLOCKED"}</b></div>
+      <div class="campaign-controls"><div>${controls.join("") || `<span>종료된 campaign입니다.</span>`}</div><small>Start, Resume, Retry는 formal execution gate가 열려 있을 때만 가능합니다.</small></div>
       <div class="campaign-stat-grid"><div><span>PENDING</span><strong>${coverage.pending || 0}</strong></div><div><span>RUNNING</span><strong>${coverage.running || 0}</strong></div><div><span>FAILED</span><strong>${coverage.failed || 0}</strong></div><div><span>REMAINING</span><strong>${campaign.estimated_remaining?.cells || 0}</strong><small>${duration(campaign.estimated_remaining?.runtime_seconds)} · ${bytes(campaign.estimated_remaining?.storage_bytes)}</small></div></div>
       <div class="campaign-drift ${drift.length ? "warning" : "clean"}"><strong>CURRENT DRIFT · ${drift.length}</strong>${drift.length ? `<ul>${drift.map(item => `<li>${esc(item.code || "UNKNOWN_DRIFT")}${item.node ? ` · ${esc(item.node)}` : ""}</li>`).join("")}</ul>` : `<span>저장된 현재 drift 없음</span>`}</div>
-      <div class="table-wrap campaign-cell-table"><table><thead><tr><th>#</th><th>REPEAT / CELL</th><th>MODEL / PROMPT</th><th>TOPOLOGY</th><th>QUALITY</th><th>STATUS / RUN</th></tr></thead><tbody>${cells.slice(0, 100).map(cell => `<tr><td>${cell.order_index || "—"}</td><td><strong>R${cell.repeat_index || "?"}</strong><br><small>${esc(short(cell.campaign_cell_id, 28))}</small></td><td>${esc(short(cell.model_lock_key, 26))}<br><small>${esc(cell.prompt_id || "—")}</small></td><td>${esc(cell.strategy || "—")}<br><small>${esc((cell.node_set || []).join(", "))}</small></td><td><span class="quality-badge ${esc(cell.measurement_quality || "unknown")}">${esc((cell.measurement_quality || "unknown").toUpperCase())}</span></td><td><span class="run-status ${esc(cell.status || "unknown")}">${esc((cell.status || "unknown").toUpperCase())}</span><br><small>${esc(cell.run_id || cell.failure_code || "—")}</small></td></tr>`).join("")}</tbody></table></div>${cells.length > 100 ? `<p class="research-limit-note">첫 100개 cell만 표시 · 전체 ${cells.length}개는 manifest에 보존</p>` : ""}`;
+      <div class="table-wrap campaign-cell-table"><table><thead><tr><th>#</th><th>REPEAT / CELL</th><th>MODEL / PROMPT</th><th>TOPOLOGY</th><th>QUALITY</th><th>STATUS / RUN</th><th>CONTROL</th></tr></thead><tbody>${cells.slice(0, 100).map(cell => `<tr><td>${cell.order_index || "—"}</td><td><strong>R${cell.repeat_index || "?"}</strong><br><small>${esc(short(cell.campaign_cell_id, 28))}</small></td><td>${esc(short(cell.model_lock_key, 26))}<br><small>${esc(cell.prompt_id || "—")}</small></td><td>${esc(cell.strategy || "—")}<br><small>${esc((cell.node_set || []).join(", "))}</small></td><td><span class="quality-badge ${esc(cell.measurement_quality || "unknown")}">${esc((cell.measurement_quality || "unknown").toUpperCase())}</span></td><td><span class="run-status ${esc(cell.status || "unknown")}">${esc((cell.status || "unknown").toUpperCase())}</span><br><small>${esc(cell.run_id || cell.failure_code || "—")}</small></td><td>${["failed", "cancelled"].includes(cell.status) ? `<button type="button" class="button ghost compact" data-campaign-action="retry" data-campaign-cell-id="${esc(cell.campaign_cell_id)}" ${gatedDisabled} title="${esc(gateTitle)}">Retry</button>` : "—"}</td></tr>`).join("")}</tbody></table></div>${cells.length > 100 ? `<p class="research-limit-note">첫 100개 cell만 표시 · 전체 ${cells.length}개는 manifest에 보존</p>` : ""}`;
+  }
+
+  async function controlCampaign(action, campaignCellId = "") {
+    const campaignId = researchState.campaign?.campaign_id;
+    if (!campaignId || researchState.actionPending) return;
+    let body = { confirmed: true };
+    let path = `/api/campaigns/${encodeURIComponent(campaignId)}/${action}`;
+    if (action === "retry") {
+      const reason = prompt("이 cell을 다시 실행하는 이유를 입력하세요.");
+      if (!reason?.trim()) return;
+      body = { ...body, reason: reason.trim() };
+      path = `/api/campaigns/${encodeURIComponent(campaignId)}/cells/${encodeURIComponent(campaignCellId)}/retry`;
+    } else if (!confirm(`${campaignId} campaign에 ${action.toUpperCase()} 명령을 적용할까요?`)) {
+      return;
+    }
+    researchState.actionPending = true;
+    renderCampaignDetail();
+    try {
+      researchState.campaign = await apiSurface().api(path, { method: "POST", body });
+      apiSurface().toast?.("Campaign 제어 반영", `${campaignId} · ${action}`);
+      renderCampaignDetail();
+      const campaigns = await apiSurface().api("/api/campaigns");
+      researchState.campaigns = campaigns.campaigns || [];
+      renderCampaignSummary();
+    } catch (error) {
+      apiSurface().toast?.("Campaign 제어 실패", error.message, "error");
+    } finally {
+      researchState.actionPending = false;
+      renderCampaignDetail();
+    }
   }
 
   async function selectCampaign(campaignId) {
@@ -298,6 +339,10 @@
     if (researchState.bound) return;
     researchState.bound = true;
     document.querySelector("#refreshResearchButton")?.addEventListener("click", load);
+    document.querySelector("#campaignDetail")?.addEventListener("click", event => {
+      const button = event.target.closest("[data-campaign-action]");
+      if (button) controlCampaign(button.dataset.campaignAction, button.dataset.campaignCellId || "");
+    });
     document.querySelectorAll("[data-compare-filter]").forEach(select => select.addEventListener("change", event => {
       researchState.filters[event.currentTarget.dataset.compareFilter] = event.currentTarget.value;
       renderCompare();
@@ -328,6 +373,7 @@
       compareChartModel,
       compareCsv,
       baselineRatio,
+      controlCampaign,
     },
   });
 })(globalThis);

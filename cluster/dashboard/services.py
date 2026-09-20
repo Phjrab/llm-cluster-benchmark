@@ -64,6 +64,12 @@ from cluster.application.sweep_runner import (
     SweepRepository,
     SweepSupervisor,
 )
+from cluster.integrations.campaign_jobs import (
+    CampaignJobDocumentFactory,
+    DurableJobRunBackend,
+)
+from cluster.research.campaign import CampaignRepository, CampaignRunner
+from cluster.research.eligibility import assess_campaign_cell
 from cluster.domain.events import ClusterEvent, EventChannel
 from cluster.domain.identifiers import validate_node_id
 from cluster.benchmark.runner import (
@@ -151,7 +157,9 @@ PRIVATE_RUN_ARTIFACTS = frozenset(
 def _read_research_document(name: str) -> Dict[str, Any]:
     """Read one checked-in research document without accepting path input."""
     allowed = {
+        "experiment_conditions.json",
         "model_lock.json",
+        "prompt_set.json",
         "runtime_lock.json",
         "formal_experiment_matrix.json",
     }
@@ -2332,6 +2340,93 @@ reconcile_interrupted_suites(
 )
 
 
+def _campaign_runner(campaign_id: str) -> CampaignRunner:
+    """Bind a formal campaign to the existing durable JobService path."""
+
+    repository = CampaignRepository(CAMPAIGNS_DIR)
+    manifest = repository.read(campaign_id)
+    matrix = _read_research_document("formal_experiment_matrix.json")
+    model_lock = _read_research_document("model_lock.json")
+    prompt_lock = _read_research_document("prompt_set.json")
+    runtime_lock = _read_research_document("runtime_lock.json")
+    experiment_conditions = _read_research_document("experiment_conditions.json")
+    factory = CampaignJobDocumentFactory(
+        campaign_id=campaign_id,
+        matrix=matrix,
+        model_lock=model_lock,
+        prompt_lock=prompt_lock,
+        runtime_lock=runtime_lock,
+        experiment_conditions=experiment_conditions,
+        model_ids=manifest.get("model_ids") or {},
+    )
+
+    def preflight(cell: Mapping[str, Any]) -> Dict[str, Any]:
+        live_by_name = {
+            str(item.get("name")): dict(item)
+            for item in status_monitor.snapshot()
+            if item.get("name")
+        }
+        manifest_now = repository.read(campaign_id)
+        selected_names = [str(item) for item in cell.get("node_set") or []]
+        nodes_by_name = {node.name: node for node in read_enabled_nodes()}
+        selected_nodes = [
+            nodes_by_name[name] for name in selected_names if name in nodes_by_name
+        ]
+        inventories = {
+            item.node: item
+            for item in collect_worker_model_inventories(selected_nodes, timeout=10.0)
+        }
+        model_id = str(
+            (manifest_now.get("model_ids") or {}).get(cell.get("model_lock_key")) or ""
+        )
+        snapshots: Dict[str, Dict[str, Any]] = {}
+        for node_name in selected_names:
+            live = dict(live_by_name.get(node_name) or {})
+            profile = live.get("profile") if isinstance(live.get("profile"), Mapping) else {}
+            capabilities = (
+                live.get("capabilities")
+                if isinstance(live.get("capabilities"), Mapping)
+                else {}
+            )
+            backend = (
+                profile.get("runtime_backend")
+                if isinstance(profile.get("runtime_backend"), Mapping)
+                else {}
+            )
+            live["backend_verified"] = (
+                capabilities.get("backend_verified") is True
+                or backend.get("verified") is True
+            )
+            live["power_mode"] = profile.get("power_mode")
+            live["jetson_clocks"] = profile.get("jetson_clocks")
+            inventory = inventories.get(node_name)
+            model = inventory.by_id().get(model_id) if inventory and inventory.online else None
+            if model is not None and model.checksum_valid:
+                live["model_sha256"] = model.sha256
+            snapshots[node_name] = live
+        return assess_campaign_cell(
+            cell=cell,
+            manifest=manifest_now,
+            experiment_conditions=_read_research_document("experiment_conditions.json"),
+            model_lock=_read_research_document("model_lock.json"),
+            prompt_lock=_read_research_document("prompt_set.json"),
+            runtime_lock=_read_research_document("runtime_lock.json"),
+            live_preflight_snapshot=snapshots,
+        )
+
+    def cooldown_gate(_cell: Mapping[str, Any]) -> Dict[str, Any]:
+        # CampaignRunner enforces the frozen cooldown. Active Pi/Jetson power
+        # integrity is checked from the fresh snapshot by assess_campaign_cell.
+        return {"eligible": True, "blocking_issues": [], "warnings": []}
+
+    return CampaignRunner(
+        repository,
+        DurableJobRunBackend(experiments._jobs, factory),
+        preflight,
+        cooldown_gate,
+    )
+
+
 class DashboardFacade:
     """Application service facade consumed by route adapters.
 
@@ -2347,6 +2442,7 @@ class DashboardFacade:
             status_snapshot=status_monitor.snapshot,
             read_environment=read_environment_reports,
             controller_commit=_controller_git_commit,
+            runner_factory=_campaign_runner,
         )
         self._results = ResultService(
             run_repository=_run_repository,
@@ -2388,9 +2484,11 @@ class DashboardFacade:
             [str(job.get("suite_id")) for job in experiments.active_jobs()]
         )
         status_monitor.start()
+        self._research.recover_active_campaigns()
 
     def shutdown(self) -> None:
         status_monitor.stop()
+        self._research.shutdown()
         experiments.shutdown()
 
     def dashboard_health(self) -> Dict[str, Any]:
@@ -3002,6 +3100,25 @@ class DashboardFacade:
 
     def campaign(self, campaign_id: str) -> Dict[str, Any]:
         return self._research.campaign(campaign_id)
+
+    def start_campaign(self, campaign_id: str) -> Dict[str, Any]:
+        return self._research.start_campaign(campaign_id)
+
+    def pause_campaign(self, campaign_id: str) -> Dict[str, Any]:
+        return self._research.pause_campaign(campaign_id)
+
+    def resume_campaign(self, campaign_id: str) -> Dict[str, Any]:
+        return self._research.resume_campaign(campaign_id)
+
+    def cancel_campaign(self, campaign_id: str) -> Dict[str, Any]:
+        return self._research.cancel_campaign(campaign_id)
+
+    def retry_campaign_cell(
+        self, campaign_id: str, campaign_cell_id: str, *, reason: str
+    ) -> Dict[str, Any]:
+        return self._research.retry_campaign_cell(
+            campaign_id, campaign_cell_id, reason=reason
+        )
 
     def compare_runs(self) -> Dict[str, Any]:
         return self._research.compare_runs()

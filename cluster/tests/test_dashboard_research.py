@@ -399,6 +399,88 @@ class ResearchRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 404)
             self.assertFalse((root / "runtime" / "controller" / "campaigns").exists())
 
+    def test_campaign_start_requires_confirmation_and_respects_formal_gate(self) -> None:
+        from fastapi.testclient import TestClient
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dashboard = self.load_dashboard(root)
+            jobs = root / "runtime" / "controller" / "jobs"
+            before = sorted(path.name for path in jobs.glob("*") if path.is_file())
+            with TestClient(dashboard.app) as client:
+                missing_confirmation = client.post("/api/campaigns/formal-v1/start", json={})
+                denied = client.post(
+                    "/api/campaigns/formal-v1/start", json={"confirmed": True}
+                )
+            after = sorted(path.name for path in jobs.glob("*") if path.is_file())
+            self.assertEqual(missing_confirmation.status_code, 422)
+            self.assertEqual(denied.status_code, 409)
+            self.assertEqual(
+                denied.json()["detail"]["code"], "FORMAL_EXECUTION_GATE_CLOSED"
+            )
+            self.assertEqual(before, after)
+
+    def test_campaign_control_routes_delegate_to_facade(self) -> None:
+        from fastapi.testclient import TestClient
+
+        class Facade:
+            def __init__(self):
+                self.calls = []
+
+            def start_campaign(self, campaign_id):
+                self.calls.append(("start", campaign_id))
+                return {"campaign_id": campaign_id, "status": "running"}
+
+            def pause_campaign(self, campaign_id):
+                self.calls.append(("pause", campaign_id))
+                return {"campaign_id": campaign_id, "status": "paused"}
+
+            def resume_campaign(self, campaign_id):
+                self.calls.append(("resume", campaign_id))
+                return {"campaign_id": campaign_id, "status": "running"}
+
+            def cancel_campaign(self, campaign_id):
+                self.calls.append(("cancel", campaign_id))
+                return {"campaign_id": campaign_id, "status": "cancelled"}
+
+            def retry_campaign_cell(self, campaign_id, cell_id, *, reason):
+                self.calls.append(("retry", campaign_id, cell_id, reason))
+                return {"campaign_id": campaign_id, "status": "ready"}
+
+        with tempfile.TemporaryDirectory() as directory:
+            dashboard = self.load_dashboard(Path(directory))
+            facade = Facade()
+            with TestClient(dashboard.app) as client:
+                original = dashboard.app.state.dashboard_services
+                dashboard.app.state.dashboard_services = facade
+                try:
+                    responses = [
+                        client.post(
+                            f"/api/campaigns/campaign-a/{action}",
+                            json={"confirmed": True},
+                        )
+                        for action in ("start", "pause", "resume", "cancel")
+                    ]
+                    responses.append(
+                        client.post(
+                            "/api/campaigns/campaign-a/cells/cell-a/retry",
+                            json={"confirmed": True, "reason": "operator reviewed drift"},
+                        )
+                    )
+                finally:
+                    dashboard.app.state.dashboard_services = original
+            self.assertTrue(all(response.status_code == 200 for response in responses))
+            self.assertEqual(
+                facade.calls,
+                [
+                    ("start", "campaign-a"),
+                    ("pause", "campaign-a"),
+                    ("resume", "campaign-a"),
+                    ("cancel", "campaign-a"),
+                    ("retry", "campaign-a", "cell-a", "operator reviewed drift"),
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

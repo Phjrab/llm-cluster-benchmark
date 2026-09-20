@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import threading
 import unittest
 
 from cluster.dashboard.service_layers import (
@@ -198,6 +199,123 @@ class ExtractedServiceTests(unittest.TestCase):
         self.assertEqual(requested, [{"limit": 10_000}])
         readiness = service.readiness()
         self.assertEqual(readiness["controller_source"]["observed_commit"], "a" * 40)
+
+    def test_campaign_start_is_gate_first_and_single_driver(self) -> None:
+        class Repository:
+            def __init__(self):
+                self.manifest = {
+                    "campaign_id": "campaign-a", "matrix_id": "matrix-a",
+                    "status": "ready", "phase": "ready", "cells": [],
+                    "coverage": {"planned": 0},
+                }
+
+            def read(self, _campaign_id):
+                return dict(self.manifest)
+
+            def read_events(self, _campaign_id):
+                return []
+
+            def list(self):
+                return [dict(self.manifest)]
+
+            def append_event(self, _campaign_id, _event):
+                pass
+
+        class Runner:
+            def __init__(self, started, release):
+                self.started = started
+                self.release = release
+                self.ticks = 0
+
+            def tick(self, _campaign_id):
+                self.ticks += 1
+                self.started.set()
+                self.release.wait(2)
+                return {"status": "paused"}
+
+        repository = Repository()
+        started = threading.Event()
+        release = threading.Event()
+        runners = []
+
+        def runner_factory(_campaign_id):
+            runner = Runner(started, release)
+            runners.append(runner)
+            return runner
+
+        allowed = {"value": False}
+        service = ResearchService(
+            campaigns_dir=Path("/tmp/campaigns"),
+            read_runs=lambda **_kwargs: [],
+            read_research_document=lambda _name: {
+                "execution_gate": {"formal_execution_allowed": allowed["value"]}
+            },
+            status_snapshot=lambda: [],
+            read_environment=lambda: [],
+            controller_commit=lambda: "a" * 40,
+            repository_factory=lambda _path: repository,
+            runner_factory=runner_factory,
+            drive_interval_s=0.05,
+        )
+        with self.assertRaises(DashboardServiceError) as blocked:
+            service.start_campaign("campaign-a")
+        self.assertEqual(blocked.exception.status_code, 409)
+        self.assertEqual(runners, [])
+
+        allowed["value"] = True
+        service.start_campaign("campaign-a")
+        self.assertTrue(started.wait(1))
+        service.start_campaign("campaign-a")
+        self.assertEqual(len(runners), 1)
+        release.set()
+        service.shutdown()
+
+    def test_campaign_recovery_requires_open_gate_and_running_manifest(self) -> None:
+        started = threading.Event()
+        manifests = [
+            {"campaign_id": "running-a", "status": "running"},
+            {"campaign_id": "ready-b", "status": "ready"},
+        ]
+
+        class Repository:
+            def list(self):
+                return [dict(item) for item in manifests]
+
+            def append_event(self, _campaign_id, _event):
+                pass
+
+        class Runner:
+            def tick(self, campaign_id):
+                started.set()
+                return {"campaign_id": campaign_id, "status": "paused"}
+
+        repository = Repository()
+        gate = {"open": False}
+        requested = []
+        service = ResearchService(
+            campaigns_dir=Path("/tmp/campaigns"),
+            read_runs=lambda **_kwargs: [],
+            read_research_document=lambda _name: {
+                "execution_gate": {"formal_execution_allowed": gate["open"]}
+            },
+            status_snapshot=lambda: [],
+            read_environment=lambda: [],
+            controller_commit=lambda: "a" * 40,
+            repository_factory=lambda _path: repository,
+            runner_factory=lambda campaign_id: requested.append(campaign_id) or Runner(),
+            drive_interval_s=0.05,
+        )
+        self.assertTrue(service.recover_active_campaigns()["gate_blocked"])
+        self.assertEqual(requested, [])
+        gate["open"] = True
+        self.assertEqual(
+            service.recover_active_campaigns(),
+            {"recovered": ["running-a"], "gate_blocked": False},
+        )
+        self.assertTrue(started.wait(1))
+        self.assertEqual(requested, ["running-a"])
+        service.shutdown()
+
 
     def test_settings_service_rolls_back_failed_worker_restart(self) -> None:
         import threading

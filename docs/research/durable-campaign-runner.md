@@ -140,3 +140,37 @@ measurement, energy, admission, and LAN-safety changes. A bounded current-source
 pilot must revalidate affected primary metrics and instrumentation overhead;
 the refreshed runtime/source lock and an explicit gate review must then open
 the gate. A caller cannot use the Phase 06 API to bypass this state.
+
+## Dashboard control API
+
+The token-protected Dashboard exposes the durable state machine without a
+second scheduler:
+
+```text
+GET  /api/campaigns
+GET  /api/campaigns/{campaign_id}
+POST /api/campaigns/{campaign_id}/start
+POST /api/campaigns/{campaign_id}/pause
+POST /api/campaigns/{campaign_id}/resume
+POST /api/campaigns/{campaign_id}/cancel
+POST /api/campaigns/{campaign_id}/cells/{campaign_cell_id}/retry
+```
+
+Every mutation requires `{"confirmed": true}`. Retry also requires a nonempty
+`reason`. Start, resume, and retry check `formal_execution_allowed` before a
+runner or durable job is created. With the shipped gate they return HTTP 409
+and `FORMAL_EXECUTION_GATE_CLOSED`; pause and cancel remain available as safe
+stop controls.
+
+When the gate is open, each campaign runner uses the existing `JobService`,
+`CampaignJobDocumentFactory`, and durable campaign claim. Fresh status and
+research-lock evidence are evaluated before every new cell. Controller startup
+recovers only manifests already marked `running`; it never auto-starts a
+`ready` campaign. Duplicate Start requests in one Dashboard process share one
+driver, while the manifest lock prevents a second process from claiming the
+same cell.
+
+The Campaign screen shows Start, Pause, Resume, Cancel, and per-cell Retry. It
+disables execution-producing controls while the formal gate is closed. These
+controls do not create a campaign, approve locks, install models, or alter the
+inventory.
