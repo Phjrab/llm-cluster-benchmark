@@ -150,11 +150,12 @@ Sandbox에서 localhost bind와 Chromium Mach port는 거절됐으므로 S10/lau
 | R01 source gate | 기존 formal source/identity gate를 그대로 회귀 | 충족; lock 재승인·완화 없음 |
 | R02 energy coverage | scenario 간 gap 분리와 S09 unknown/partial 표시 | **후속 완료:** schema v4 `bounded-power-gap-v1`이 내부 결측/긴 gap을 fail closed 처리하고 coverage를 UI/export에 전달함. [R02 report](R02-report.md) |
 | R03 Pi policy | ordinary warning 비차단, formal active/missing evidence gate | **후속 완료:** Dashboard가 ordinary 비차단과 formal `PI_POWER_ACTIVE` 차단 경계를 함께 설명함. 실제 Pi acceptance는 미실행. [R03 report](R03-report.md) |
-| R04 Campaign control | JobService/state-machine/resource primitives 공유 | **잔여:** formal Campaign용 live Dashboard start/control adapter는 이번 exploratory sweep 범위 밖 |
-| R05 multipart | 해당 model만 명시적으로 blocked | **잔여:** logical multipart artifact-set 설치/loader 미구현 |
-| R06 compatibility | 설치/checksum/license, runtime verified, formal approval을 분리 | **잔여:** 실제 architecture/runtime/model 조합은 hardware evidence 필요 |
-| R07/H01 | S10 fake integration과 수동 인수 문서가 경계를 제공 | hardware 단계는 자동 시작하지 않음 |
+| R04 Campaign control | JobService/state-machine/resource primitives 공유 | **후속 완료:** gate-first Dashboard start/control, restart recovery와 기존 formal runner adapter를 연결함. shipped gate는 닫혀 있고 실제 Campaign은 미실행. [R04 report](R04-report.md) |
+| R05 multipart | 해당 model만 명시적으로 blocked | **후속 완료:** exact ordered manifest가 있는 logical artifact set의 atomic install/inventory/preflight/loader를 지원함. 현재 70B record는 manifest가 없어 계속 차단. [R05 report](R05-report.md) |
+| R06 compatibility | 설치/checksum/license, runtime verified, formal approval을 분리 | **후속 완료:** selector/preflight/result에 독립 evidence를 연결하고 설치/catalog만으로 runtime verified 승격을 금지함. 실제 hardware smoke는 별도. [R06 report](R06-report.md) |
+| R07 regression/docs | S10 fake integration과 수동 인수 문서가 경계를 제공 | **후속 완료:** 현재 source 전체 regression과 문서 상태를 재조정함. H01/hardware 단계는 미실행. [R07 report](R07-report.md) |
 
 사용자 가이드는 `docs/manual/sweep-context-model-rpc.md`, 실제 API 필드 기반 비실행 예제는
 `docs/manual/examples/*.template.json`에 저장했다. 실제 model hash/endpoint 증거가 없으므로
-예제는 unresolved template 상태다. S10 이후 새로운 software phase를 시작하지 않는다.
+예제는 unresolved template 상태다. R07 종료 후 H01 또는 새로운 software phase를 자동 시작하지
+않는다.

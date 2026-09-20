@@ -1,5 +1,13 @@
 # Implementation map — S01–S10 구현·인수 상태
 
+## R07 회귀·문서 종료 — 2026-09-20
+
+R01–R06 후속 구현과 S01–S10 통합 경로를 현재 source에서 다시 회귀 검증하고, S10 이후 상태
+표와 사용자 가이드를 실제 software 상태에 맞췄다. 새 scheduler, API, Dashboard 기능 또는
+source of truth는 추가하지 않았다. software regression 완료와 실제 hardware/formal 승인을
+분리하며 H01 current-source pilot/relock은 실행하지 않았다. 상세 결과는
+[R07-report.md](R07-report.md)에 있다.
+
 ## S10 통합 인수 — 2026-09-19
 
 S01–S09 product 경로는 S10에서 loopback fake Worker, injected fake native runtime,
@@ -22,13 +30,12 @@ result에 설치/artifact/architecture/backend/memory/runtime evidence를 분리
 이 항목은 exploratory sweep software 완료를 뒤집지 않지만 hardware/formal 완료로 승격할 수
 없다. R/H hardware 단계는 자동으로 시작하지 않았다.
 
-## 현재 소스에서의 계획 보정 — f22f246
+## S02 시점의 계획 보정 — f22f246 (역사적 기록)
 
-아래 표는 최초 S00의 단계별 설계이며 지금 실행할 목록이 아니다. S01의
-`domain/sweep.py`, `application/sweep_planner.py`, `test_sweep_planner.py`는 현재
-존재한다. S02에는 추가로 `domain/runtime_profile.py`, `worker/prompt_preparation.py`,
-`test_context_runtime.py`가 존재한다. 해당 기존 helper와 이번에 재실행한 검사를
-재사용하며 새로 같은 기능을 만들지 않는다. 완성된 전체 제품으로 판정하지 않는다.
+아래 표는 최초 S00의 단계별 설계이며 지금 실행할 목록이 아니다. `f22f246` 시점에는 S01의
+`domain/sweep.py`, `application/sweep_planner.py`, `test_sweep_planner.py`와 S02의
+`domain/runtime_profile.py`, `worker/prompt_preparation.py`, `test_context_runtime.py`까지 존재했다.
+현재는 S01–S10이 구현·검증됐으며 위 R07/S10 절과 단계별 report가 최신 상태를 정의한다.
 
 S03는 기존 model_service/catalog/inventory와 planner 연결, S04는 pinned RPC
 profile→argv 및 coordinator/session/memory 검증, S05는 모든 mutation 진입점의

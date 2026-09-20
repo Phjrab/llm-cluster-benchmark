@@ -1,8 +1,19 @@
 # Capability baseline — S00
 
-## 현재 기준선 보정 — f22f246 (원 표보다 우선)
+## R07 종료 기준선 — daa6b60
 
-| 항목 | 현재 source / 판정 |
+S01–S10 exploratory Sweep software와 R02–R06 reliability 후속 구현은 현재 feature source에
+통합됐다. typed plan, runtime profile/input preparation, catalog model identity, RPC profile,
+durable resource reservation/supervisor, lifecycle API, Dashboard, result comparison과 R06
+compatibility evidence가 모두 존재한다. 전체 현재 증거는 [R07-report.md](R07-report.md)에 있다.
+
+이 완료 판정은 software와 fake/loopback regression 범위다. 실제 Worker/model/RPC/hardware
+acceptance, 현재 manifest가 없는 70B 실행, formal gate 개방과 H01 relock은 포함하지 않는다.
+아래 `f22f246` 및 `5fd444a` 절은 구현 전 상태를 보존한 역사적 기준선이다.
+
+## S02 시점 기준선 보정 — f22f246 (역사적 기록)
+
+| 항목 | `f22f246` source / 당시 판정 |
 |---|---|
 | typed sweep | `domain/sweep.py`, `application/sweep_planner.py`; immutable spec/plan과 예산 검증 존재. execution blocker 유지 |
 | threads/batch | `dashboard/schemas.py:166`, `domain/experiment.py:84`, `benchmark/runner.py:65`, `worker/schemas.py:21`, `worker/routes.py:78`, `worker/inference.py:545`; optional strict 입력→factory→effective 기록 존재 |
@@ -12,7 +23,7 @@
 | 종료 이유 | Worker stream→routes→transport→persistence/instrumentation으로 finish_reason 보존. actual GPU placement/output exactness는 보장하지 않음 |
 | model/RPC/Job | S03 catalog resolver 미완료; RPC GPU 999 고정(`benchmark/rpc.py:259`); JobService 단일 active(`application/jobs.py:392`) 유지 |
 
-현재 근거 검사는 S00-report 최종 절의 332+4개다. 이전 표의 threads/batch 부재,
+당시 근거 검사는 S00-report 최종 절의 332+4개다. 이전 표의 threads/batch 부재,
 cache path-only, finish reason 미보존 진술은 원 소스에만 해당한다. 기존 model
 library·SuiteRunner·node_sweep·formal gate와 R 접점은 유지되며 새 sweep 실행
 연결 및 공통 자원 예약은 후속 구현 계획이다.
@@ -94,6 +105,8 @@ R package 전체 적용 여부를 파일명/과거 보고서만으로 선언하�
 | R04 Campaign control | SOFTWARE_COMPLETE | `research/campaign.py:CampaignRunner`, `integrations/campaign_jobs.py`, `dashboard/service_layers/research_service.py`, Campaign POST routes/UI; campaign/service/route/static tests | 기존 JobService와 formal manifest를 재사용하고 gate-first start/resume/retry, pause/cancel, 수동 사유 retry, running 재시작 복구를 제공. shipped gate는 닫힌 상태이며 실제 hardware 실행은 미검증 |
 | R05 multipart | SOFTWARE_COMPLETE / catalog identity pending | `domain/model.py` ordered manifest, Worker atomic set install/inventory/load, model preflight/sweep resolver, `test_multipart_models.py` | exact manifest가 있는 direct artifact set 지원. 현재 70B는 manifest가 없어 해당 모델만 차단; 단일 GGUF 계속 가능. 실제 download/load/RPC 미검증 |
 | R06 compatibility | SOFTWARE_COMPLETE / hardware evidence pending | `domain/model.py:assess_model_compatibility`, `dashboard/services.py:validate_catalog_execution_preflight`, `benchmark/core.py:model_compatibility_evidence`, Model Library/Sweep/Results UI, `test_model_compatibility.py` | 설치/artifact/architecture/backend/memory/runtime 실행/formal approval을 분리. catalog 또는 설치만으로 runtime verified 승격 금지; 실제 hardware smoke와 formal approval은 별도 |
+| R07 regression/docs | SOFTWARE_COMPLETE | current full Python/JS/browser/package/repository gates, hosted Required CI, `R07-report.md` | S10 중복 기능 없이 R01–R06와 Sweep 통합 범위를 검증. H01 current-source pilot/relock과 hardware acceptance는 별도이며 미실행 |
 
-현 source에는 SweepSpec/ResolvedPlan/ResourceReservation/rpc_gpu_layers/sweep_attempt_id
-구현 검색 결과가 없다. 이를 S01–S10의 신규 계약으로 계획하며 S00에서 추가하지 않는다.
+최초 S00 source에는 SweepSpec/ResolvedPlan/ResourceReservation/rpc_gpu_layers/sweep_attempt_id가
+없었다. 현재 source에는 해당 계약과 실행 경로가 구현되어 있으며 R07 종료 기준선과 각
+S01–S10 report가 현재 상태를 정의한다.

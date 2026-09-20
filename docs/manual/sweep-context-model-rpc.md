@@ -50,6 +50,8 @@ child 수다. 기본은 순차 실행과 1 job이다. `disjoint_parallel`과 2 j
 
 - requested/effective context와 실제 template 적용 input token 수
 - model artifact SHA, quantization, template/tokenizer identity
+- Worker별 compatibility evidence: artifact/architecture/backend/execution이 모두 관측된 경우와
+  설치됐지만 아직 검증되지 않은 경우를 구분하고, formal approval은 별도로 확인한다
 - output 상한과 실제 output token, finish reason, early EOS
 - 처리량 의미: replicated, broadcast, node sweep, RPC는 같은 숫자라도 의미가 다르다
 - 독립 repeat를 표본으로 계산한 통계와 CI; request 여러 개를 repeat로 세지 않는다
