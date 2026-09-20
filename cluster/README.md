@@ -227,8 +227,12 @@ cache에 exact revision을 인증 다운로드하고 size/SHA-256을 다시 확�
 표시하지 않는다. 인증 정보는 `huggingface_hub`의 공식 로그인 저장소가 관리한다.
 접근권한이 없거나 token이 만료됐거나 checksum이 다르면 파일을 게시하지 않고 실패한다.
 
-`multipart_unsupported`인 Llama 3.3 70B 한 항목은 여러 shard를 안전하게 원자 설치하는
-경로가 아직 없어 정보와 권장 배치만 표시한다. 14B 이상 모델은 선택한 모든 Worker에 기본
+Multipart GGUF는 exact revision, 표준 `00001-of-000NN` 순서, 각 shard의 byte size/SHA-256,
+전체 ordered manifest SHA-256이 모두 고정된 catalog 항목만 지원한다. Worker는 모든 shard를
+격리된 staging directory에서 검증한 뒤 한 논리 모델로 승격하고, inventory/preflight/sweep은
+manifest SHA-256을 identity로 사용한다. 현재 `multipart_unsupported`인 Llama 3.3 70B 항목은
+이 exact manifest가 없으므로 계속 정보와 권장 배치만 표시하며 다른 단일 GGUF를 차단하지
+않는다. 14B 이상 모델은 선택한 모든 Worker에 기본
 복제하지 않고 intended RPC coordinator 한 대에 먼저 설치하도록 안내하며, `RPC EXTREME`는
 실행 가능성을 보장하지 않는다.
 

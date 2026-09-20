@@ -253,13 +253,13 @@ def preview_catalog_sweep(
         locked = bool(entry.identity_locked and entry.quantization and entry.architecture)
         try:
             digest(entry.download_revision, 40)
-            digest(entry.sha256)
+            digest(entry.identity_sha256)
         except ValueError:
             locked = False
         if not locked:
             reasons.append("MODEL_PINNED_IDENTITY_REQUIRED")
-        if entry.multipart:
-            reasons.append("ARTIFACT_SET_LOADER_NOT_IMPLEMENTED")
+            if entry.multipart:
+                reasons.append("ARTIFACT_SET_MANIFEST_REQUIRED")
 
         for worker in workers:
             status, code = "valid", "MODEL_INSTALLED_IDENTITY_MATCH"
@@ -280,8 +280,6 @@ def preview_catalog_sweep(
                 status, code = "blocked", "MODEL_PINNED_IDENTITY_REQUIRED"
             if status == "valid" and not accepted:
                 status, code = "blocked", "MODEL_LICENSE_NOT_ACCEPTED"
-            if status == "valid" and entry.multipart:
-                status, code = "blocked", "ARTIFACT_SET_LOADER_NOT_IMPLEMENTED"
             if status == "valid" and installed_model.size_bytes != entry.size_bytes:
                 status, code = "blocked", "MODEL_SIZE_MISMATCH"
             if status == "valid" and (
@@ -365,7 +363,7 @@ def preview_catalog_sweep(
             (model.chat_template_hash, model.tokenizer_metadata_hash)
             for model in observed
         }
-        resolved = locked and not entry.multipart and len(templates) == 1
+        resolved = locked and len(templates) == 1
         if len(templates) > 1:
             reasons.append("MODEL_TEMPLATE_EVIDENCE_CONFLICT")
             for worker in workers:
@@ -386,13 +384,14 @@ def preview_catalog_sweep(
                         "ref": model_ref,
                         "catalog_id": entry.id,
                         "model_id": entry.id,
-                        "artifact_sha256": entry.sha256,
+                        "artifact_sha256": entry.identity_sha256,
                         "source_revision": entry.download_revision,
                         "quantization": entry.quantization,
                         "template_sha256": template_sha256,
                         "size_bytes": entry.size_bytes,
                         "architecture": entry.architecture,
                         "tokenizer_sha256": tokenizer_sha256,
+                        "artifact_kind": entry.artifact_kind,
                         "installed_workers": installed,
                         "availability": "valid",
                         "runtime_compatibility": "unknown",

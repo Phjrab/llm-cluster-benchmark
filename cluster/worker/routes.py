@@ -19,9 +19,11 @@ from .schemas import (
     ClusterChatRequest,
     DeleteModelRequest,
     InstallModelRequest,
+    InstallModelSetRequest,
     SelectModelRequest,
     PrepareInputRequest,
     VerifyModelRequest,
+    VerifyModelSetRequest,
     ResourceOwnerRequest,
 )
 from .telemetry import TelemetryService
@@ -400,6 +402,44 @@ def mount_worker_routes(
                 model = backend.install_model(payload.model_id, payload.source_url, payload.expected_sha256)
         except Exception as exc:
             failure = failure_from_exception(exc, stage="model_install", model_id=payload.model_id)
+            raise HTTPException(
+                status_code=http_status_for_failure(failure),
+                detail=str(exc),
+                headers={"X-Cluster-Error-Code": failure.code.value},
+            ) from exc
+        return {"ok": True, "node": runtime.node_name, "model": model}
+
+    @app.post("/cluster/models/install-set")
+    async def install_model_set(payload: InstallModelSetRequest, request: Request) -> Dict[str, Any]:
+        require_owner(request)
+        try:
+            model = backend.install_model_set(
+                payload.model_id,
+                [item.model_dump() for item in payload.artifacts],
+                payload.artifact_set_sha256,
+                payload.metadata,
+            )
+        except Exception as exc:
+            failure = failure_from_exception(exc, stage="model_install", model_id=payload.model_id)
+            raise HTTPException(
+                status_code=http_status_for_failure(failure),
+                detail=str(exc),
+                headers={"X-Cluster-Error-Code": failure.code.value},
+            ) from exc
+        return {"ok": True, "node": runtime.node_name, "model": model}
+
+    @app.post("/cluster/models/verify-set")
+    async def verify_model_set(payload: VerifyModelSetRequest, request: Request) -> Dict[str, Any]:
+        require_owner(request)
+        try:
+            model = backend.verify_model_set(
+                payload.model_id,
+                [item.model_dump() for item in payload.artifacts],
+                payload.artifact_set_sha256,
+                payload.metadata,
+            )
+        except Exception as exc:
+            failure = failure_from_exception(exc, stage="model_verify", model_id=payload.model_id)
             raise HTTPException(
                 status_code=http_status_for_failure(failure),
                 detail=str(exc),

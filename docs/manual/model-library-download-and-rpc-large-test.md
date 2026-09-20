@@ -66,7 +66,10 @@ storage, LAN 병목, context와 cooldown을 다시 계산한다.
 ## F. 70B RPC Extreme
 
 - catalog의 memory 값은 추정치이며 실행 가능성을 뜻하지 않는다.
-- multipart GGUF 설치는 현재 자동 경로에서 지원하지 않는다.
+- multipart GGUF는 exact ordered artifact-set manifest가 있는 경우에만 논리 모델로 설치할 수
+  있다. 현재 Llama 3.3 70B catalog 항목에는 manifest가 없어 계속 차단된다.
+- manifest가 추가될 때는 표준 split filename 순서, 각 shard byte size/SHA-256과 manifest
+  SHA-256을 함께 검토한다. 한 shard라도 빠지거나 바뀌면 inventory/preflight/load가 실패해야 한다.
 - aggregate safe memory와 shard 지원, coordinator storage를 다시 확인한다.
 - 가장 작은 context와 충분한 cooldown을 검토한다.
 - 실패 시 모든 RPC process/port cleanup을 확인한다.

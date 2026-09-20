@@ -14,8 +14,9 @@ R01 gate를 재사용한다. R02의 scenario 내부 계측 gap은 schema v4
 `bounded-power-gap-v1`과 fail-closed reader로 완료했다. R03은 기존 ordinary/formal Pi
 정책을 유지하면서 Dashboard 설명을 같은 경계로 정렬했다. R04는 기존 CampaignRunner와
 JobService를 Dashboard API/control 및 재시작 복구에 연결했다. shipped formal gate가 닫혀
-있으므로 실제 Campaign 실행은 하지 않았다. R05 multipart artifact set과 R06 실제 hardware
-compatibility evidence는 남아 있다.
+있으므로 실제 Campaign 실행은 하지 않았다. R05는 ordered manifest 기반 logical artifact set의
+설치/inventory/preflight/loader software 경로를 추가했다. 현재 70B catalog identity와 R06 실제
+hardware compatibility evidence는 남아 있다.
 이 항목은 exploratory sweep software 완료를 뒤집지 않지만 hardware/formal 완료로 승격할 수
 없다. R/H hardware 단계는 자동으로 시작하지 않았다.
 
@@ -65,7 +66,8 @@ S00에서 아래 구현이나 테스트 신설을 시작하지 않았다. `propo
    opt-in max_parallel_jobs=2 선언을 포함하되 S05 전 실행 허용하지 않는다.
 2. S02–S04는 독립 fake backend/helper 증거를 먼저 만든다. 전체 runtime API compatibility가
    확보되기 전 Dashboard에 미완성 설정을 활성화하지 않는다. Controller tokenizer 설치 금지.
-3. S03의 multipart 부재는 그 모델만 차단하며 단일 GGUF sweep을 막지 않는다.
+3. R05 이후 S03는 exact ordered artifact-set manifest가 있는 multipart 모델을 논리 identity로
+   해석한다. manifest가 없는 현재 70B만 차단하며 단일 GGUF sweep을 막지 않는다.
    R06 설치 상태는 architecture/memory verification과 구별한다. 70B 성공을 약속하지 않는다.
 4. S05의 중요 의존은 JobService guard 제거가 아니라 모든 mutation 진입점의 공통 소유권이다.
    model prepare→warmup→measure→cleanup→cooldown 전체를 예약하고 cleanup 불확실 시

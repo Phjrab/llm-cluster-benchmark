@@ -1959,6 +1959,80 @@ def command_install_model_url(nodes: Sequence[Node], args: argparse.Namespace) -
     return 0 if all(item["ok"] for item in results) else 1
 
 
+def install_model_set_one(
+    node: Node,
+    model_id: str,
+    artifacts: Sequence[Dict[str, object]],
+    artifact_set_sha256: str,
+    metadata: Optional[Dict[str, object]] = None,
+) -> Dict[str, Any]:
+    total = sum(int(item.get("size_bytes") or 0) for item in artifacts)
+    _print_model_progress(node.name, model_id, "queued", 0, total)
+    _print_model_progress(node.name, model_id, "downloading", 0, total)
+    try:
+        payload = request_json(
+            f"{node.api_url}/cluster/models/install-set",
+            method="POST",
+            payload={
+                "model_id": model_id,
+                "artifacts": list(artifacts),
+                "artifact_set_sha256": artifact_set_sha256,
+                "metadata": metadata or {},
+            },
+            timeout=7200.0,
+        )
+    except Exception as exc:
+        _print_model_progress(node.name, model_id, "failed", 0, total)
+        return {"name": node.name, "ok": False, "stdout": "", "stderr": str(exc)}
+    model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
+    if (
+        payload.get("ok") is not True
+        or model.get("checksum_valid") is not True
+        or model.get("sha256") != artifact_set_sha256
+        or int(model.get("artifact_count") or 0) != len(artifacts)
+    ):
+        _print_model_progress(node.name, model_id, "failed", 0, total)
+        return {"name": node.name, "ok": False, "stdout": "", "stderr": "Worker artifact-set verification failed"}
+    downloaded = int(model.get("downloaded_bytes") or 0)
+    _print_model_progress(node.name, model_id, "verify", downloaded, total)
+    _print_model_progress(node.name, model_id, "ready", total, total)
+    return {"name": node.name, "ok": True, "stdout": json.dumps(model, ensure_ascii=False), "stderr": ""}
+
+
+def command_install_model_set(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    workers = [node for node in nodes if node.role == "worker"]
+    if not workers:
+        print("No enabled worker nodes; nothing to install.", file=sys.stderr)
+        return 2
+    try:
+        artifacts = json.loads(args.artifact_manifest)
+    except (TypeError, ValueError):
+        print("Artifact manifest must be valid JSON.", file=sys.stderr)
+        return 2
+    if not isinstance(artifacts, list) or len(artifacts) < 2:
+        print("Artifact manifest must contain at least two members.", file=sys.stderr)
+        return 2
+    metadata = {
+        "source_revision": args.source_revision,
+        "source_repo": args.source_repo,
+        "provenance_status": args.provenance_status,
+        "architecture": args.architecture,
+        "metadata_contract": args.metadata_contract,
+        "license_accepted": args.license_accepted,
+    }
+    results = [
+        install_model_set_one(node, args.model_id, artifacts, args.artifact_set_sha256, metadata)
+        for node in workers
+    ]
+    for item in results:
+        print(f"[{item['name']}] {'OK' if item['ok'] else 'FAIL'}")
+        if item["stdout"]:
+            print(item["stdout"])
+        if item["stderr"]:
+            print(item["stderr"], file=sys.stderr)
+    return 0 if all(item["ok"] for item in results) else 1
+
+
 def command_install_model_cache(nodes: Sequence[Node], args: argparse.Namespace) -> int:
     """Authenticated Controller download followed by exact Worker synchronization."""
     if not args.confirmed or not args.license_accepted:
@@ -2009,6 +2083,89 @@ def command_install_model_cache(nodes: Sequence[Node], args: argparse.Namespace)
             return 1
     _print_model_progress("controller-cache", args.model_id, "ready", args.expected_size_bytes, args.expected_size_bytes)
     print(json.dumps({"ok": True, "cache": cached, "workers": [node.name for node in workers]}, ensure_ascii=False))
+    return 0
+
+
+def command_install_model_set_cache(nodes: Sequence[Node], args: argparse.Namespace) -> int:
+    """Authenticated Controller cache followed by logical Worker set publication."""
+    if not args.confirmed or not args.license_accepted:
+        print("install-model-set-cache requires explicit license acceptance and confirmation", file=sys.stderr)
+        return 2
+    workers = [node for node in nodes if node.role == "worker"]
+    if not workers:
+        print("No enabled worker nodes; nothing to install.", file=sys.stderr)
+        return 2
+    try:
+        artifacts = json.loads(args.artifact_manifest)
+    except (TypeError, ValueError):
+        print("Artifact manifest must be valid JSON.", file=sys.stderr)
+        return 2
+    if not isinstance(artifacts, list) or len(artifacts) < 2:
+        print("Artifact manifest must contain at least two members.", file=sys.stderr)
+        return 2
+    parent = args.model_id.rpartition("/")[0]
+    model_paths: list[str] = []
+    total_size = sum(int(item.get("size_bytes") or 0) for item in artifacts if isinstance(item, dict))
+    _print_model_progress("controller-cache", args.model_id, "downloading", 0, total_size)
+    try:
+        for item in artifacts:
+            if not isinstance(item, dict):
+                raise HuggingFaceAccessError("Artifact manifest member is invalid")
+            filename = str(item.get("filename") or "")
+            model_path = f"{parent + '/' if parent else ''}{filename}"
+            download_verified_model_to_controller_cache(
+                project_root=PROJECT_ROOT,
+                runtime_dir=resolve_runtime_paths().runtime_dir,
+                model_id=model_path,
+                repo_id=args.source_repo,
+                revision=args.source_revision,
+                filename=filename,
+                expected_sha256=str(item.get("sha256") or ""),
+                expected_size_bytes=int(item.get("size_bytes") or 0),
+            )
+            model_paths.append(model_path)
+    except (HuggingFaceAccessError, TypeError, ValueError) as exc:
+        _print_model_progress("controller-cache", args.model_id, "failed", 0, total_size)
+        print(str(exc), file=sys.stderr)
+        return 1
+    metadata = {
+        "source_revision": args.source_revision,
+        "source_repo": args.source_repo,
+        "provenance_status": args.provenance_status,
+        "architecture": args.architecture,
+        "metadata_contract": args.metadata_contract,
+        "license_accepted": True,
+    }
+    identities = [
+        {"filename": str(item["filename"]), "sha256": str(item["sha256"]), "size_bytes": int(item["size_bytes"])}
+        for item in artifacts
+    ]
+    for worker in workers:
+        result = sync_models_one(worker, model_paths)
+        if not result["ok"]:
+            print(result.get("stderr") or "Worker artifact sync failed", file=sys.stderr)
+            return 1
+        try:
+            verified = request_json(
+                f"{worker.api_url}/cluster/models/verify-set",
+                method="POST",
+                payload={
+                    "model_id": args.model_id,
+                    "artifacts": identities,
+                    "artifact_set_sha256": args.artifact_set_sha256,
+                    "metadata": metadata,
+                },
+                timeout=7200,
+            )
+        except Exception as exc:
+            print(f"[{worker.name}] artifact-set publication failed: {exc}", file=sys.stderr)
+            return 1
+        model = verified.get("model") if isinstance(verified, dict) else None
+        if not isinstance(model, dict) or model.get("sha256") != args.artifact_set_sha256 or model.get("checksum_valid") is not True:
+            print(f"[{worker.name}] artifact-set identity verification failed", file=sys.stderr)
+            return 1
+        print(f"[{worker.name}] OK")
+    _print_model_progress("controller-cache", args.model_id, "ready", total_size, total_size)
     return 0
 
 
@@ -2182,6 +2339,19 @@ def build_parser() -> argparse.ArgumentParser:
     install_url_parser.add_argument("--metadata-contract", default="gguf-metadata-v1", help="Expected GGUF metadata identity contract")
     install_url_parser.add_argument("--license-accepted", action="store_true", help="Confirm the selected model license/access conditions were accepted")
 
+    install_set_parser = subparsers.add_parser(
+        "install-model-set", help="Atomically direct-download a checksummed ordered GGUF artifact set"
+    )
+    install_set_parser.add_argument("--model-id", required=True)
+    install_set_parser.add_argument("--artifact-manifest", required=True)
+    install_set_parser.add_argument("--artifact-set-sha256", required=True)
+    install_set_parser.add_argument("--source-revision", default="")
+    install_set_parser.add_argument("--source-repo", default="")
+    install_set_parser.add_argument("--provenance-status", default="")
+    install_set_parser.add_argument("--architecture", default="")
+    install_set_parser.add_argument("--metadata-contract", default="gguf-metadata-v1")
+    install_set_parser.add_argument("--license-accepted", action="store_true")
+
     install_cache_parser = subparsers.add_parser(
         "install-model-cache",
         help="Download one gated GGUF with Controller Hugging Face auth, then sync it",
@@ -2197,6 +2367,21 @@ def build_parser() -> argparse.ArgumentParser:
     install_cache_parser.add_argument("--metadata-contract", default="gguf-metadata-v1")
     install_cache_parser.add_argument("--license-accepted", action="store_true")
     install_cache_parser.add_argument("--confirmed", action="store_true")
+
+    install_set_cache_parser = subparsers.add_parser(
+        "install-model-set-cache",
+        help="Download a gated ordered GGUF artifact set with Controller Hugging Face auth, then sync it",
+    )
+    install_set_cache_parser.add_argument("--model-id", required=True)
+    install_set_cache_parser.add_argument("--source-repo", required=True)
+    install_set_cache_parser.add_argument("--source-revision", required=True)
+    install_set_cache_parser.add_argument("--artifact-manifest", required=True)
+    install_set_cache_parser.add_argument("--artifact-set-sha256", required=True)
+    install_set_cache_parser.add_argument("--provenance-status", default="")
+    install_set_cache_parser.add_argument("--architecture", default="")
+    install_set_cache_parser.add_argument("--metadata-contract", default="gguf-metadata-v1")
+    install_set_cache_parser.add_argument("--license-accepted", action="store_true")
+    install_set_cache_parser.add_argument("--confirmed", action="store_true")
 
     prepare_parser = subparsers.add_parser(
         "prepare",
@@ -2302,8 +2487,12 @@ def main() -> int:
         return command_delete_models(nodes, args)
     if args.command == "install-model-url":
         return command_install_model_url(nodes, args)
+    if args.command == "install-model-set":
+        return command_install_model_set(nodes, args)
     if args.command == "install-model-cache":
         return command_install_model_cache(nodes, args)
+    if args.command == "install-model-set-cache":
+        return command_install_model_set_cache(nodes, args)
     if args.command == "prepare":
         return command_prepare(nodes, args)
     if args.command == "prepare-rpc":

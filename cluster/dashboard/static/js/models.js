@@ -99,6 +99,7 @@
     const parameters = Number(catalog.parameters_total_b || catalog.parameter_count_b || 0); const values = [];
     if (parameters >= 70 || catalog.size_class === "rpc_extreme") values.push(["RPC EXTREME", "rpc"]);
     else if (parameters > 8 || catalog.size_class === "rpc_large") values.push(["RPC LARGE", "rpc"]);
+    if (catalog.multipart) values.push(["MULTIPART", ""]);
     if (catalog.download_policy === "catalog_only" || catalog.download_policy === "multipart_unsupported") values.push(["CATALOG ONLY", ""]);
     if (catalog.gated || catalog.download_policy === "gated_manual") values.push(["GATED", "gated"]);
     if (catalog.provenance_status === "community_review") values.push(["COMMUNITY GGUF", "community"]);

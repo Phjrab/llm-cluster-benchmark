@@ -327,10 +327,10 @@ class SweepCapabilityTests(unittest.TestCase):
         ctx['workers'][1]['endpoint_identity'] = ctx['workers'][0]['endpoint_identity']
         self.assertIn('DUPLICATE_PHYSICAL_WORKER', self.codes(plan(raw, ctx)))
 
-    def test_multipart_only_blocks_that_model(self):
+    def test_verified_artifact_set_is_a_resolved_model_identity(self):
         ctx = context_data(); ctx['models'][1]['artifact_kind'] = 'artifact_set'
         result = plan(context=ctx)
-        self.assertEqual((result.counts.valid_cells, result.counts.blocked_cells), (18, 18))
+        self.assertEqual((result.counts.valid_cells, result.counts.blocked_cells), (36, 0))
 
     def test_parallel_declares_durable_resource_coordination(self):
         raw = spec_data(); raw['execution'] = {'mode': 'disjoint_parallel', 'max_parallel_jobs': 2}

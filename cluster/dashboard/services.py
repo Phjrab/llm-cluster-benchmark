@@ -54,6 +54,7 @@ from cluster.application.model_service import (
     model_license_fingerprint,
     parse_worker_inventory,
     validate_model_preflight,
+    build_artifact_set_install_spec,
     build_direct_install_spec,
 )
 from cluster.application.suite_runner import suite_document, suite_model_records
@@ -1547,7 +1548,9 @@ class ActionManager:
         "sync-models",
         "delete-models",
         "install-model-url",
+        "install-model-set",
         "install-model-cache",
+        "install-model-set-cache",
         "start",
         "stop",
         "restart",
@@ -1760,6 +1763,21 @@ class ActionManager:
             )
             if payload.options.get("license_accepted") is True:
                 command.append("--license-accepted")
+        elif payload.action == "install-model-set":
+            command.extend(
+                [
+                    "--model-id", str(payload.options.get("model_id", "")),
+                    "--artifact-manifest", json.dumps(payload.options.get("artifacts", []), sort_keys=True, separators=(",", ":")),
+                    "--artifact-set-sha256", str(payload.options.get("artifact_set_sha256", "")),
+                    "--source-revision", str(payload.options.get("source_revision", "")),
+                    "--source-repo", str(payload.options.get("source_repo", "")),
+                    "--provenance-status", str(payload.options.get("provenance_status", "")),
+                    "--architecture", str(payload.options.get("architecture", "")),
+                    "--metadata-contract", str(payload.options.get("metadata_contract", "gguf-metadata-v1")),
+                ]
+            )
+            if payload.options.get("license_accepted") is True:
+                command.append("--license-accepted")
         elif payload.action == "install-model-cache":
             command.extend(
                 [
@@ -1774,6 +1792,24 @@ class ActionManager:
                     "--metadata-contract", str(payload.options.get("metadata_contract", "gguf-metadata-v1")),
                     "--license-accepted",
                     "--confirmed",
+                ]
+            )
+        elif payload.action == "install-model-set-cache":
+            identities = [
+                {key: item.get(key) for key in ("filename", "sha256", "size_bytes")}
+                for item in payload.options.get("artifacts", []) if isinstance(item, dict)
+            ]
+            command.extend(
+                [
+                    "--model-id", str(payload.options.get("model_id", "")),
+                    "--source-repo", str(payload.options.get("source_repo", "")),
+                    "--source-revision", str(payload.options.get("source_revision", "")),
+                    "--artifact-manifest", json.dumps(identities, sort_keys=True, separators=(",", ":")),
+                    "--artifact-set-sha256", str(payload.options.get("artifact_set_sha256", "")),
+                    "--provenance-status", str(payload.options.get("provenance_status", "")),
+                    "--architecture", str(payload.options.get("architecture", "")),
+                    "--metadata-contract", str(payload.options.get("metadata_contract", "gguf-metadata-v1")),
+                    "--license-accepted", "--confirmed",
                 ]
             )
         elif payload.action == "prepare-rpc":
@@ -2581,11 +2617,18 @@ class DashboardFacade:
         license_status = model_license_status(entry)
         hf_access = huggingface_access_status(verify=False)
         try:
-            spec = build_direct_install_spec(
-                entry,
-                license_accepted=license_status["accepted"],
-                gated_access=entry.gated and hf_access["configured"],
-            )
+            if entry.multipart:
+                spec = build_artifact_set_install_spec(
+                    entry,
+                    license_accepted=license_status["accepted"],
+                    gated_access=entry.gated and hf_access["configured"],
+                )
+            else:
+                spec = build_direct_install_spec(
+                    entry,
+                    license_accepted=license_status["accepted"],
+                    gated_access=entry.gated and hf_access["configured"],
+                )
         except ClusterError as exc:
             raise DashboardServiceError(http_status_for_failure(exc.to_failure_record()), exc.to_failure_record().to_dict()) from exc
         workers = [node for node in select_nodes(read_enabled_nodes(), payload.nodes) if node.role == "worker"]
@@ -2623,16 +2666,35 @@ class DashboardFacade:
                     solutions=("Worker 저장 공간을 확보한 뒤 다시 시도하세요.",),
                 )
                 raise DashboardServiceError(http_status_for_failure(failure), failure.to_dict())
-        options = {
-            "confirmed": True,
-            "model_id": spec.model_id,
-            "source_url": spec.source_url,
-            "expected_sha256": spec.expected_sha256,
-            "expected_size_bytes": spec.expected_size_bytes,
-            **dict(spec.metadata),
-        }
-        action_name = "install-model-url"
-        if entry.gated:
+        if entry.multipart:
+            options = {
+                "confirmed": True,
+                "model_id": spec.model_id,
+                "artifacts": [
+                    {
+                        "filename": item.filename,
+                        "source_url": item.source_url,
+                        "sha256": item.expected_sha256,
+                        "size_bytes": item.expected_size_bytes,
+                    }
+                    for item in spec.artifacts
+                ],
+                "artifact_set_sha256": spec.artifact_set_sha256,
+                "expected_size_bytes": spec.expected_size_bytes,
+                **dict(spec.metadata),
+            }
+            action_name = "install-model-set-cache" if entry.gated else "install-model-set"
+        else:
+            options = {
+                "confirmed": True,
+                "model_id": spec.model_id,
+                "source_url": spec.source_url,
+                "expected_sha256": spec.expected_sha256,
+                "expected_size_bytes": spec.expected_size_bytes,
+                **dict(spec.metadata),
+            }
+            action_name = "install-model-url"
+        if entry.gated and not entry.multipart:
             action_name = "install-model-cache"
             options.pop("source_url", None)
             options["source_filename"] = spec.filename
@@ -2977,13 +3039,13 @@ class DashboardFacade:
         return {"ok": True, "node": node_name, "cleanup": cleanup}
 
     def start_action(self, payload: ActionPayload) -> Dict[str, Any]:
-        if payload.action in {"install-model-url", "install-model-cache"}:
+        if payload.action in {"install-model-url", "install-model-set", "install-model-cache", "install-model-set-cache"}:
             raise DashboardServiceError(
                 400,
                 "Direct model installation is available only through the catalog model install endpoint",
             )
         requires_confirmation = {
-            "setup", "prepare", "prepare-rpc", "environment-install", "delete-models", "install-model-url", "power-set"
+            "setup", "prepare", "prepare-rpc", "environment-install", "delete-models", "install-model-url", "install-model-set", "install-model-set-cache", "power-set"
         }
         if payload.action in requires_confirmation and payload.options.get("confirmed") is not True:
             raise DashboardServiceError(400, "This worker operation requires explicit confirmation")

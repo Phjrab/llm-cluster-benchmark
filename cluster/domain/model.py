@@ -8,10 +8,13 @@ platform smoke evidence.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
 from .errors import DomainValidationError
@@ -22,6 +25,7 @@ _QUANTIZATION_RE = re.compile(r"^(?:Q[2-8](?:_[01]|_K(?:_[SML])?)?|IQ[1-4](?:_[A
 _FILENAME_QUANTIZATION_RE = re.compile(r"(?:^|[-_.])(Q\d(?:_[A-Z0-9]+)*)?(?:[-_.]|$)", re.IGNORECASE)
 _HF_REPO_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+_SPLIT_GGUF_RE = re.compile(r"^(?P<prefix>.+)-(?P<index>\d{5})-of-(?P<total>\d{5})\.gguf$", re.IGNORECASE)
 
 
 class ModelTier(str, Enum):
@@ -98,6 +102,64 @@ def infer_quantization(filename: str) -> Optional[str]:
 
 
 @dataclass(frozen=True)
+class ModelArtifact:
+    """One immutable member of an ordered GGUF artifact set."""
+
+    filename: str
+    size_bytes: int
+    sha256: str
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.filename, str)
+            or Path(self.filename).name != self.filename
+            or not self.filename.lower().endswith(".gguf")
+        ):
+            raise DomainValidationError("Artifact filename must be one safe GGUF basename")
+        object.__setattr__(self, "size_bytes", _positive_int(self.size_bytes, "artifact size_bytes", allow_none=False))
+        object.__setattr__(self, "sha256", validate_model_checksum(self.sha256))
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, Any]) -> "ModelArtifact":
+        return cls(
+            filename=str(raw.get("filename") or ""),
+            size_bytes=raw.get("size_bytes"),
+            sha256=str(raw.get("sha256") or ""),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"filename": self.filename, "size_bytes": self.size_bytes, "sha256": self.sha256}
+
+
+def artifact_set_manifest_sha256(artifacts: Iterable[ModelArtifact]) -> str:
+    """Hash the ordered, immutable shard manifest using a versioned encoding."""
+    payload = {
+        "schema_version": 1,
+        "artifacts": [artifact.to_dict() for artifact in artifacts],
+    }
+    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def validate_artifact_set(artifacts: Iterable[ModelArtifact]) -> tuple[ModelArtifact, ...]:
+    """Require one complete canonical llama.cpp split-file sequence."""
+    parts = tuple(artifacts)
+    if len(parts) < 2 or len({item.filename for item in parts}) != len(parts):
+        raise DomainValidationError("Artifact set requires at least two unique ordered GGUF members")
+    matches = [_SPLIT_GGUF_RE.fullmatch(item.filename) for item in parts]
+    if any(match is None for match in matches):
+        raise DomainValidationError("Multipart artifacts must use the canonical split GGUF filename pattern")
+    identities = {
+        (match.group("prefix"), int(match.group("total")))
+        for match in matches if match is not None
+    }
+    indices = [int(match.group("index")) for match in matches if match is not None]
+    if identities != {(matches[0].group("prefix"), len(parts))} or indices != list(range(1, len(parts) + 1)):
+        raise DomainValidationError("Multipart artifacts must be one complete ordered shard sequence")
+    return parts
+
+
+@dataclass(frozen=True)
 class ModelInventoryEntry:
     id: str
     filename: str
@@ -112,6 +174,8 @@ class ModelInventoryEntry:
     metadata_contract: str = ""
     license_accepted: bool = False
     metadata_inspected: bool = False
+    artifact_kind: str = "single_gguf"
+    artifact_count: int = 1
 
     def __post_init__(self) -> None:
         from .experiment import validate_model_id
@@ -132,6 +196,11 @@ class ModelInventoryEntry:
                 raise DomainValidationError(f"Model {field} must be a string")
         if not isinstance(self.checksum_valid, bool) or not isinstance(self.license_accepted, bool) or not isinstance(self.metadata_inspected, bool):
             raise DomainValidationError("Model inventory booleans must be boolean")
+        if self.artifact_kind not in {"single_gguf", "artifact_set"}:
+            raise DomainValidationError("Unsupported model artifact_kind")
+        minimum = 2 if self.artifact_kind == "artifact_set" else 1
+        if isinstance(self.artifact_count, bool) or not isinstance(self.artifact_count, int) or self.artifact_count < minimum:
+            raise DomainValidationError(f"Model artifact_count must be an integer >= {minimum}")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -142,6 +211,7 @@ class ModelInventoryEntry:
             "tokenizer_metadata_hash": self.tokenizer_metadata_hash,
             "metadata_contract": self.metadata_contract,
             "license_accepted": self.license_accepted, "metadata_inspected": self.metadata_inspected,
+            "artifact_kind": self.artifact_kind, "artifact_count": self.artifact_count,
         }
 
 
@@ -186,6 +256,8 @@ class ModelCatalogEntry:
     minimum_aggregate_memory_mb: Optional[int] = None
     recommended_worker_count: Optional[int] = None
     multipart: bool = False
+    artifacts: tuple[ModelArtifact, ...] = ()
+    artifact_set_sha256: str = ""
     size_bytes: Optional[int] = None
     sha256: str = ""
     official_gguf: bool = False
@@ -248,6 +320,28 @@ class ModelCatalogEntry:
         object.__setattr__(self, "quantization", validate_quantization(self.quantization) if self.quantization is not None else infer_quantization(self.gguf_filename or self.id))
         if self.sha256:
             object.__setattr__(self, "sha256", validate_model_checksum(self.sha256))
+        artifacts = tuple(
+            item if isinstance(item, ModelArtifact) else ModelArtifact.from_dict(item)
+            for item in self.artifacts
+        )
+        object.__setattr__(self, "artifacts", artifacts)
+        if len({item.filename for item in artifacts}) != len(artifacts):
+            raise DomainValidationError("Artifact filenames must be unique")
+        if self.multipart:
+            if artifacts and self.gguf_filename != artifacts[0].filename:
+                raise DomainValidationError("gguf_filename must identify the first ordered artifact")
+            if artifacts:
+                validate_artifact_set(artifacts)
+            if artifacts and self.size_bytes != sum(item.size_bytes for item in artifacts):
+                raise DomainValidationError("Multipart size_bytes must equal the artifact total")
+            if self.artifact_set_sha256:
+                object.__setattr__(self, "artifact_set_sha256", validate_model_checksum(self.artifact_set_sha256))
+            if artifacts and self.artifact_set_sha256 != artifact_set_manifest_sha256(artifacts):
+                raise DomainValidationError("Artifact-set manifest SHA-256 does not match its ordered artifacts")
+            if artifacts and self.sha256:
+                raise DomainValidationError("Multipart identity must use artifact_set_sha256, not sha256")
+        elif artifacts or self.artifact_set_sha256:
+            raise DomainValidationError("Single GGUF records cannot define an artifact set")
         if not isinstance(self.official_gguf, bool) or not isinstance(self.license_review_required, bool) or not isinstance(self.gated, bool) or not isinstance(self.instruction_tuned, bool) or not isinstance(self.supports_reasoning_modes, bool) or not isinstance(self.multipart, bool):
             raise DomainValidationError("Model catalog booleans must be boolean")
         try:
@@ -281,7 +375,17 @@ class ModelCatalogEntry:
 
     @property
     def identity_locked(self) -> bool:
-        return bool(self.download_repo and self.download_revision and self.gguf_filename and self.size_bytes and self.sha256)
+        identity = self.artifact_set_sha256 if self.multipart else self.sha256
+        parts_locked = bool(self.artifacts) if self.multipart else True
+        return bool(self.download_repo and self.download_revision and self.gguf_filename and self.size_bytes and identity and parts_locked)
+
+    @property
+    def identity_sha256(self) -> str:
+        return self.artifact_set_sha256 if self.multipart else self.sha256
+
+    @property
+    def artifact_kind(self) -> str:
+        return "artifact_set" if self.multipart else "single_gguf"
 
     @property
     def download_repo(self) -> str:
@@ -313,8 +417,10 @@ class ModelCatalogEntry:
         elif not _COMMIT_RE.fullmatch(self.download_revision):
             eligible, reason = False, "Exact 40-character GGUF revision lock이 없습니다."
         elif not self.gguf_filename or "/" in self.gguf_filename or not self.gguf_filename.lower().endswith(".gguf"):
-            eligible, reason = False, "안전한 단일 GGUF filename lock이 없습니다."
-        elif not self.size_bytes or not self.sha256 or not self.quantization:
+            eligible, reason = False, "안전한 GGUF loader filename lock이 없습니다."
+        elif self.multipart and not self.artifacts:
+            eligible, reason = False, "검증된 ordered artifact-set manifest가 없습니다."
+        elif not self.size_bytes or not self.identity_sha256 or not self.quantization:
             eligible, reason = False, "크기·SHA-256·quantization identity가 완전하지 않습니다."
         elif self.provenance_status is ProvenanceStatus.UNKNOWN or not self.license:
             eligible, reason = False, "Provenance 또는 license 검토가 완료되지 않았습니다."
@@ -322,8 +428,6 @@ class ModelCatalogEntry:
             eligible, reason = False, "약관 동의와 별도로 Hugging Face 계정의 gated repository 접근 권한이 필요합니다."
         elif self.license_review_required and not license_accepted:
             eligible, reason = False, "대시보드에서 현재 라이선스와 source revision을 확인하고 동의해야 합니다."
-        elif self.multipart:
-            eligible, reason = False, "Multipart GGUF는 현재 자동 설치할 수 없습니다."
         return {"eligible": eligible, "policy": self.download_policy.value, "reason_ko": reason}
 
     @property
@@ -340,7 +444,7 @@ class ModelCatalogEntry:
             context_length=raw.get("context_length"), context_length_advertised=raw.get("context_length_advertised"), default_context=int(raw.get("default_context", 4096)), verified_context_lengths=tuple(raw.get("verified_context_lengths") or ()),
             supports_reasoning_modes=raw.get("supports_reasoning_modes", False), reasoning_modes=tuple(raw.get("reasoning_modes") or ()), default_reasoning_mode=raw.get("default_reasoning_mode"),
             hf_repo=str(raw.get("hf_repo") or ""), hf_revision=str(raw.get("hf_revision") or ""), gguf_filename=str(raw.get("gguf_filename") or ""), size_bytes=raw.get("size_bytes"), sha256=str(raw.get("sha256") or ""),
-            source_model_repo=str(raw.get("source_model_repo") or (raw.get("hf_repo") if raw.get("official_gguf") is False else "")), source_model_revision=str(raw.get("source_model_revision") or ""), gguf_repo=str(raw.get("gguf_repo") or ""), gguf_revision=str(raw.get("gguf_revision") or ""), quantized_by=str(raw.get("quantized_by") or ("community" if raw.get("provenance_status") == "community_review" else "")), converter=str(raw.get("converter") or ""), converter_revision=str(raw.get("converter_revision") or ""), download_policy=raw.get("download_policy", "gated_manual" if raw.get("gated") else "catalog_only"), download_disabled_reason_ko=str(raw.get("download_disabled_reason_ko") or ""), capability_tags=tuple(raw.get("capability_tags") or ()), size_class=str(raw.get("size_class") or ""), minimum_aggregate_memory_mb=raw.get("minimum_aggregate_memory_mb"), recommended_worker_count=raw.get("recommended_worker_count"), multipart=raw.get("multipart", False),
+            source_model_repo=str(raw.get("source_model_repo") or (raw.get("hf_repo") if raw.get("official_gguf") is False else "")), source_model_revision=str(raw.get("source_model_revision") or ""), gguf_repo=str(raw.get("gguf_repo") or ""), gguf_revision=str(raw.get("gguf_revision") or ""), quantized_by=str(raw.get("quantized_by") or ("community" if raw.get("provenance_status") == "community_review" else "")), converter=str(raw.get("converter") or ""), converter_revision=str(raw.get("converter_revision") or ""), download_policy=raw.get("download_policy", "gated_manual" if raw.get("gated") else "catalog_only"), download_disabled_reason_ko=str(raw.get("download_disabled_reason_ko") or ""), capability_tags=tuple(raw.get("capability_tags") or ()), size_class=str(raw.get("size_class") or ""), minimum_aggregate_memory_mb=raw.get("minimum_aggregate_memory_mb"), recommended_worker_count=raw.get("recommended_worker_count"), multipart=raw.get("multipart", False), artifacts=tuple(raw.get("artifacts") or ()), artifact_set_sha256=str(raw.get("artifact_set_sha256") or ""),
             official_gguf=raw.get("official_gguf", False), provenance_status=raw.get("provenance_status", "unknown"), license=str(raw.get("license") or ""), license_review_required=raw.get("license_review_required", False), gated=raw.get("gated", False), source_url=str(raw.get("source_url") or ""),
             recommended_platforms=tuple(raw.get("recommended_platforms") or ()), recommendation_tier=raw.get("recommendation_tier", "core_stable"), benchmark_roles=tuple(raw.get("benchmark_roles") or ()), estimated_memory_mb=raw.get("estimated_memory_mb"), kv_cache_bytes_per_token=raw.get("kv_cache_bytes_per_token"), compute_buffers_mb=int(raw.get("compute_buffers_mb", 256)), backend_overhead_mb=int(raw.get("backend_overhead_mb", 256)),
             quantization=(str(raw["quantization"]) if raw.get("quantization") is not None else None), description=str(raw.get("description") or ""), summary_ko=str(raw.get("summary_ko") or ""), recommendation_reason_ko=tuple(raw.get("recommendation_reason_ko") or ()), cautions_ko=tuple(raw.get("cautions_ko") or ()),
@@ -356,7 +460,7 @@ class ModelCatalogEntry:
             "supports_reasoning_modes": self.supports_reasoning_modes, "reasoning_modes": list(self.reasoning_modes), "default_reasoning_mode": self.default_reasoning_mode,
             "hf_repo": self.hf_repo, "hf_revision": self.hf_revision, "gguf_filename": self.gguf_filename, "quantization": self.quantization, "size_bytes": self.size_bytes, "sha256": self.sha256,
             "source_model_repo": self.source_model_repo, "source_model_revision": self.source_model_revision, "gguf_repo": self.gguf_repo, "gguf_revision": self.gguf_revision, "quantized_by": self.quantized_by, "converter": self.converter, "converter_revision": self.converter_revision,
-            "download_policy": self.download_policy.value, "download_disabled_reason_ko": self.download_disabled_reason_ko, "download_eligibility": self.download_eligibility, "capability_tags": list(self.capability_tags), "size_class": self.size_class, "minimum_aggregate_memory_mb": self.minimum_aggregate_memory_mb, "recommended_worker_count": self.recommended_worker_count, "multipart": self.multipart,
+            "download_policy": self.download_policy.value, "download_disabled_reason_ko": self.download_disabled_reason_ko, "download_eligibility": self.download_eligibility, "capability_tags": list(self.capability_tags), "size_class": self.size_class, "minimum_aggregate_memory_mb": self.minimum_aggregate_memory_mb, "recommended_worker_count": self.recommended_worker_count, "multipart": self.multipart, "artifacts": [item.to_dict() for item in self.artifacts], "artifact_set_sha256": self.artifact_set_sha256, "artifact_kind": self.artifact_kind,
             "official_gguf": self.official_gguf, "provenance_status": self.provenance_status.value, "license": self.license, "license_review_required": self.license_review_required, "gated": self.gated, "source_url": self.source_url,
             "recommended_platforms": list(self.recommended_platforms), "recommendation_tier": self.recommendation_tier.value, "benchmark_roles": list(self.benchmark_roles), "estimated_memory_mb": self.estimated_memory_mb,
             "kv_cache_bytes_per_token": self.kv_cache_bytes_per_token, "compute_buffers_mb": self.compute_buffers_mb, "backend_overhead_mb": self.backend_overhead_mb,

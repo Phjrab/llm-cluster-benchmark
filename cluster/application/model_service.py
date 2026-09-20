@@ -38,9 +38,38 @@ class DirectModelInstallSpec:
     metadata: Mapping[str, object]
 
 
+@dataclass(frozen=True)
+class ArtifactSetInstallSpec:
+    model_id: str
+    repo_id: str
+    revision: str
+    loader_filename: str
+    artifacts: tuple[DirectModelInstallSpec, ...]
+    artifact_set_sha256: str
+    expected_size_bytes: int
+    metadata: Mapping[str, object]
+
+
+def _install_metadata(entry: ModelCatalogEntry, *, license_accepted: bool) -> dict[str, object]:
+    return {
+        "source_revision": entry.download_revision,
+        "source_repo": entry.download_repo,
+        "provenance_status": entry.provenance_status.value,
+        "architecture": entry.architecture,
+        "metadata_contract": "gguf-metadata-v1",
+        "license_accepted": license_accepted or not entry.requires_license_acceptance,
+    }
+
+
 def build_direct_install_spec(
     entry: ModelCatalogEntry, *, license_accepted: bool = False, gated_access: bool = False
 ) -> DirectModelInstallSpec:
+    if entry.multipart:
+        raise ModelPreflightError(
+            "Multipart model requires the artifact-set install contract",
+            code=ErrorCode.CONFIG_MISMATCH, stage="model_install", model_id=entry.id,
+            evidence={"reason_code": "ARTIFACT_SET_INSTALL_REQUIRED"},
+        )
     eligibility = entry.download_eligibility_for(
         license_accepted=license_accepted, gated_access=gated_access
     )
@@ -61,14 +90,49 @@ def build_direct_install_spec(
         source_url=source_url,
         expected_sha256=entry.sha256,
         expected_size_bytes=int(entry.size_bytes or 0),
-        metadata={
-            "source_revision": revision,
-            "source_repo": repo,
-            "provenance_status": entry.provenance_status.value,
-            "architecture": entry.architecture,
-            "metadata_contract": "gguf-metadata-v1",
-            "license_accepted": license_accepted or not entry.requires_license_acceptance,
-        },
+        metadata=_install_metadata(entry, license_accepted=license_accepted),
+    )
+
+
+def build_artifact_set_install_spec(
+    entry: ModelCatalogEntry, *, license_accepted: bool = False, gated_access: bool = False
+) -> ArtifactSetInstallSpec:
+    eligibility = entry.download_eligibility_for(
+        license_accepted=license_accepted, gated_access=gated_access
+    )
+    if not entry.multipart or not eligibility["eligible"]:
+        raise ModelPreflightError(
+            str(eligibility["reason_ko"] or "Model is not an eligible artifact set"),
+            code=ErrorCode.CONFIG_MISMATCH, stage="model_install", model_id=entry.id,
+            evidence={"download_policy": eligibility["policy"]},
+        )
+    metadata = _install_metadata(entry, license_accepted=license_accepted)
+    parent = entry.id.rpartition("/")[0]
+    specs = tuple(
+        DirectModelInstallSpec(
+            model_id=f"{parent + '/' if parent else ''}{artifact.filename}",
+            repo_id=entry.download_repo,
+            revision=entry.download_revision,
+            filename=artifact.filename,
+            source_url=(
+                f"https://huggingface.co/{entry.download_repo}/resolve/"
+                f"{entry.download_revision}/{quote(artifact.filename, safe='._-')}"
+            ),
+            expected_sha256=artifact.sha256,
+            expected_size_bytes=artifact.size_bytes,
+            metadata=metadata,
+        )
+        for artifact in entry.artifacts
+    )
+    return ArtifactSetInstallSpec(
+        model_id=entry.id,
+        repo_id=entry.download_repo,
+        revision=entry.download_revision,
+        loader_filename=entry.gguf_filename,
+        artifacts=specs,
+        artifact_set_sha256=entry.artifact_set_sha256,
+        expected_size_bytes=int(entry.size_bytes or 0),
+        metadata=metadata,
     )
 
 
@@ -116,6 +180,8 @@ def parse_worker_inventory(node: str, raw_models: Iterable[Mapping[str, Any]]) -
                     metadata_contract=str(raw.get("metadata_contract") or ""),
                     license_accepted=raw.get("license_accepted") is True,
                     metadata_inspected=raw.get("metadata_inspected") is True,
+                    artifact_kind=str(raw.get("artifact_kind") or "single_gguf"),
+                    artifact_count=int(raw.get("artifact_count") or 1),
                 )
             )
         except (TypeError, ValueError):
@@ -200,7 +266,7 @@ def validate_model_preflight(
                     evidence={"installed_model_ids": sorted(installed)},
                 )
             catalog_entry = catalog.get(model_id)
-            expected = catalog_entry.sha256 if catalog_entry else ""
+            expected = catalog_entry.identity_sha256 if catalog_entry else ""
             if not model.checksum_valid or (expected and model.sha256 != expected):
                 raise ModelPreflightError(
                     f"{node_name}: model checksum is invalid: {model_id}",
@@ -211,6 +277,24 @@ def validate_model_preflight(
                     evidence={"expected_sha256": expected or None, "actual_sha256": model.sha256},
                 )
             if catalog_entry is not None:
+                if model.artifact_kind != catalog_entry.artifact_kind:
+                    raise ModelPreflightError(
+                        f"{node_name}: model artifact kind differs from catalog: {model_id}",
+                        code=ErrorCode.CONFIG_MISMATCH,
+                        stage="model_preflight",
+                        node=node_name,
+                        model_id=model_id,
+                        evidence={"expected_artifact_kind": catalog_entry.artifact_kind, "actual_artifact_kind": model.artifact_kind},
+                    )
+                if catalog_entry.multipart and model.artifact_count != len(catalog_entry.artifacts):
+                    raise ModelPreflightError(
+                        f"{node_name}: model artifact count differs from catalog: {model_id}",
+                        code=ErrorCode.MODEL_CORRUPTED,
+                        stage="model_preflight",
+                        node=node_name,
+                        model_id=model_id,
+                        evidence={"expected_artifact_count": len(catalog_entry.artifacts), "actual_artifact_count": model.artifact_count},
+                    )
                 if catalog_entry.quantization and model.quantization != catalog_entry.quantization:
                     raise ModelPreflightError(
                         f"{node_name}: model quantization differs from catalog: {model_id}",
@@ -262,4 +346,4 @@ def validate_model_preflight(
             observed_checksums[model_id] = model.sha256
 
 
-__all__ = ["DirectModelInstallSpec", "ModelPreflightError", "WorkerModelInventory", "aggregate_catalog", "build_direct_install_spec", "model_license_fingerprint", "parse_worker_inventory", "validate_model_preflight"]
+__all__ = ["ArtifactSetInstallSpec", "DirectModelInstallSpec", "ModelPreflightError", "WorkerModelInventory", "aggregate_catalog", "build_artifact_set_install_spec", "build_direct_install_spec", "model_license_fingerprint", "parse_worker_inventory", "validate_model_preflight"]

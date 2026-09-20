@@ -119,8 +119,6 @@ def _cell(spec: SweepSpec, context: ResolutionContext, condition: RunCondition, 
             for node in required:
                 if node not in model.installed_workers:
                     check("blocked", "MODEL_NOT_INSTALLED", node)
-        if model.artifact_kind == "artifact_set":
-            check("blocked", "ARTIFACT_SET_LOADER_NOT_IMPLEMENTED", model.ref)
     for node in condition.worker_ids:
         worker = workers_by_id.get(node)
         if worker is None:

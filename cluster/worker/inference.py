@@ -16,11 +16,13 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Protocol, Sequence
 
 from .prompt_preparation import capture_chat_input, PreparationError
 from cluster.infrastructure.gguf import GGUF_METADATA_CONTRACT, inspect_gguf_metadata
+from cluster.domain.model import ModelArtifact, artifact_set_manifest_sha256, validate_artifact_set
 
 
 DEFAULT_N_CTX = int(os.getenv("LLM_N_CTX", "1024"))
@@ -47,6 +49,10 @@ class InferenceBackend(Protocol):
     def delete_model(self, model_id: str) -> Dict[str, object]: ...
 
     def install_model(self, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None, expected_size_bytes: int = 0) -> Dict[str, object]: ...
+
+    def install_model_set(self, model_id: str, artifacts: Sequence[Dict[str, object]], artifact_set_sha256: str, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]: ...
+
+    def verify_model_set(self, model_id: str, artifacts: Sequence[Dict[str, object]], artifact_set_sha256: str, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]: ...
 
     def current_model_info(self) -> Dict[str, object]: ...
 
@@ -251,6 +257,15 @@ class LlamaCppInferenceBackend:
             return []
         models: List[Dict[str, object]] = []
         metadata_by_id = self._read_model_metadata()
+        artifact_members: set[str] = set()
+        for model_id, metadata in metadata_by_id.items():
+            parts = metadata.get("artifact_set")
+            if isinstance(parts, list):
+                parent = Path(model_id).parent
+                artifact_members.update(
+                    (parent / str(part.get("filename") or "")).as_posix()
+                    for part in parts if isinstance(part, dict)
+                )
         for path in sorted(self.models_dir.rglob("*.gguf")):
             try:
                 resolved = path.resolve()
@@ -263,10 +278,20 @@ class LlamaCppInferenceBackend:
                 size_mb = round(size_bytes / (1024 * 1024), 2)
             except OSError:
                 continue
-            metadata = metadata_by_id.get(relative.as_posix(), {})
+            model_id = relative.as_posix()
+            if model_id in artifact_members and model_id not in metadata_by_id:
+                continue
+            metadata = metadata_by_id.get(model_id, {})
+            parts = metadata.get("artifact_set")
+            artifact_paths = []
+            if isinstance(parts, list):
+                artifact_paths = [resolved.parent / str(part.get("filename") or "") for part in parts if isinstance(part, dict)]
+                if any(not item.is_file() for item in artifact_paths):
+                    continue
+                size_bytes = sum(item.stat().st_size for item in artifact_paths)
             models.append(
                 {
-                    "id": relative.as_posix(),
+                    "id": model_id,
                     "name": resolved.name,
                     "filename": resolved.name,
                     "path": str(resolved),
@@ -286,6 +311,8 @@ class LlamaCppInferenceBackend:
                     "metadata_count": metadata.get("metadata_count", 0),
                     "license_accepted": metadata.get("license_accepted") is True,
                     "metadata_inspected": metadata.get("metadata_contract") == GGUF_METADATA_CONTRACT,
+                    "artifact_kind": "artifact_set" if artifact_paths else "single_gguf",
+                    "artifact_count": len(artifact_paths) if artifact_paths else 1,
                 }
             )
         return models
@@ -321,10 +348,41 @@ class LlamaCppInferenceBackend:
             entries: List[Dict[str, object]] = []
             for model in self.list_models():
                 model_id = str(model["id"])
-                path = self._resolve_model_path(model_id)
-                digest = self._cached_sha256(path)
-                entries.append({**model, "sha256": digest, "checksum_valid": True})
+                metadata = self._read_model_metadata().get(model_id, {})
+                if model.get("artifact_kind") == "artifact_set":
+                    verified = self._artifact_set_identity(model_id, metadata)
+                    entries.append({**model, **verified})
+                else:
+                    path = self._resolve_model_path(model_id)
+                    digest = self._cached_sha256(path)
+                    entries.append({**model, "sha256": digest, "checksum_valid": True})
             return entries
+
+    def _artifact_set_identity(self, model_id: str, metadata: Dict[str, object]) -> Dict[str, object]:
+        parts = metadata.get("artifact_set")
+        expected_manifest = str(metadata.get("artifact_set_sha256") or "")
+        if not isinstance(parts, list) or len(parts) < 2:
+            raise ValueError("Artifact-set metadata is incomplete")
+        parent = self._resolve_model_path(model_id).parent
+        actual: list[ModelArtifact] = []
+        checksum_valid = True
+        for part in parts:
+            if not isinstance(part, dict):
+                raise ValueError("Artifact-set member is invalid")
+            expected = ModelArtifact.from_dict(part)
+            path = (parent / expected.filename).resolve()
+            try:
+                path.relative_to(self.models_dir.resolve())
+            except ValueError as exc:
+                raise ValueError("Artifact-set member is outside models directory") from exc
+            if not path.is_file():
+                return {"sha256": expected_manifest, "checksum_valid": False}
+            observed = ModelArtifact(path.name, path.stat().st_size, self._cached_sha256(path))
+            actual.append(observed)
+            checksum_valid = checksum_valid and observed == expected
+        actual_manifest = artifact_set_manifest_sha256(actual)
+        checksum_valid = checksum_valid and actual_manifest == expected_manifest
+        return {"sha256": actual_manifest, "checksum_valid": checksum_valid}
 
     def verify_model(self, model_id: str, expected_sha256: Optional[str] = None, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]:
         with self.lock:
@@ -332,6 +390,16 @@ class LlamaCppInferenceBackend:
 
     def _verify_model_locked(self, model_id: str, expected_sha256: Optional[str] = None, metadata: Optional[Dict[str, object]] = None) -> Dict[str, object]:
         """Verify a model while the caller already owns ``self.lock``."""
+        stored = self._read_model_metadata().get(model_id, {})
+        if stored.get("artifact_kind") == "artifact_set":
+            identity = self._artifact_set_identity(model_id, stored)
+            expected = expected_sha256.strip().lower() if expected_sha256 else ""
+            if not identity["checksum_valid"] or (expected and identity["sha256"] != expected):
+                raise ValueError(f"Model artifact-set checksum mismatch: {model_id}")
+            model = next((item for item in self.list_models() if item["id"] == model_id), None)
+            if model is None:
+                raise FileNotFoundError(f"Model artifact set not found: {model_id}")
+            return {**model, **identity}
         path = self._resolve_model_path(model_id)
         digest = self._cached_sha256(path)
         expected = expected_sha256.strip().lower() if expected_sha256 else ""
@@ -367,13 +435,19 @@ class LlamaCppInferenceBackend:
             path = self._resolve_model_path(model_id)
             if self.loaded_model_path is not None and path == self.loaded_model_path:
                 raise RuntimeError("Unload the selected model before deleting it")
-            size_bytes = path.stat().st_size
-            path.unlink()
-            self._model_hash_cache.pop(path, None)
             metadata = self._read_model_metadata()
+            record = metadata.get(model_id, {})
+            parts = record.get("artifact_set")
+            paths = [path]
+            if isinstance(parts, list):
+                paths = [path.parent / str(item.get("filename") or "") for item in parts if isinstance(item, dict)]
+            size_bytes = sum(item.stat().st_size for item in paths if item.is_file())
+            for item in paths:
+                item.unlink(missing_ok=True)
+                self._model_hash_cache.pop(item, None)
             if metadata.pop(model_id, None) is not None:
                 self._write_model_metadata(metadata)
-            return {"id": model_id, "filename": path.name, "size_bytes": size_bytes, "deleted": True}
+            return {"id": model_id, "filename": path.name, "size_bytes": size_bytes, "artifact_count": len(paths), "deleted": True}
 
     def install_model(self, model_id: str, source_url: str, expected_sha256: str, metadata: Optional[Dict[str, object]] = None, expected_size_bytes: int = 0) -> Dict[str, object]:
         """Download directly to this Worker and atomically verify before READY."""
@@ -473,6 +547,180 @@ class LlamaCppInferenceBackend:
                 temporary.unlink(missing_ok=True)
                 raise
 
+    def install_model_set(
+        self,
+        model_id: str,
+        artifacts: Sequence[Dict[str, object]],
+        artifact_set_sha256: str,
+        metadata: Optional[Dict[str, object]] = None,
+    ) -> Dict[str, object]:
+        """Download and promote an ordered GGUF shard set as one logical model."""
+        from cluster.domain.experiment import validate_model_id
+
+        validate_model_id(model_id)
+        expected_manifest = str(artifact_set_sha256 or "").strip().lower()
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_manifest):
+            raise ValueError("A 64-character artifact_set_sha256 is required")
+        normalized: list[tuple[ModelArtifact, str]] = []
+        for raw in artifacts:
+            if not isinstance(raw, dict):
+                raise ValueError("Artifact-set members must be objects")
+            artifact = ModelArtifact.from_dict(raw)
+            source_url = str(raw.get("source_url") or "")
+            self._validate_download_url(source_url)
+            normalized.append((artifact, source_url))
+        manifest_parts = [item[0] for item in normalized]
+        validate_artifact_set(manifest_parts)
+        if artifact_set_manifest_sha256(manifest_parts) != expected_manifest:
+            raise ValueError("Artifact-set manifest SHA-256 does not match its members")
+        target = self._resolve_install_target(model_id)
+        if target.name != manifest_parts[0].filename:
+            raise ValueError("Model id must identify the first ordered artifact")
+        max_download_bytes = self._download_limit(
+            "CLUSTER_MODEL_DOWNLOAD_MAX_BYTES", DEFAULT_MAX_MODEL_DOWNLOAD_BYTES
+        )
+        total_size = sum(item.size_bytes for item in manifest_parts)
+        if any(item.size_bytes > max_download_bytes for item in manifest_parts) or total_size > max_download_bytes:
+            raise ValueError("Expected artifact set size exceeds the Worker download limit")
+        install_metadata = self._safe_install_metadata(metadata)
+        with self.lock:
+            if self.loaded_model_path is not None and self.loaded_model_path.parent == target.parent:
+                raise RuntimeError("Unload the selected model before replacing its artifact set")
+            original_records = self._read_model_metadata()
+            existing_record = original_records.get(model_id, {})
+            if existing_record.get("artifact_set_sha256") == expected_manifest:
+                try:
+                    identity = self._artifact_set_identity(model_id, existing_record)
+                except (FileNotFoundError, ValueError):
+                    identity = {"checksum_valid": False}
+                if identity.get("checksum_valid"):
+                    return {**self._verify_model_locked(model_id, expected_manifest), "downloaded_bytes": 0, "already_present": True}
+            reserve_bytes = self._download_limit(
+                "CLUSTER_MODEL_DOWNLOAD_RESERVE_BYTES", DEFAULT_MODEL_DOWNLOAD_RESERVE_BYTES
+            )
+            if shutil.disk_usage(target.parent).free < int(total_size * 1.15) + reserve_bytes:
+                raise OSError("Worker storage is insufficient for the verified artifact-set download")
+            staging = target.parent / f".artifact-set-{uuid.uuid4().hex}"
+            backup = target.parent / f".artifact-set-backup-{uuid.uuid4().hex}"
+            staging.mkdir(parents=False)
+            downloaded = 0
+            promoted: list[Path] = []
+            backups: list[tuple[Path, Path]] = []
+            metadata_written = False
+            try:
+                for artifact, source_url in normalized:
+                    temporary = staging / artifact.filename
+                    digest = hashlib.sha256()
+                    part_downloaded = 0
+                    request = urllib.request.Request(source_url, headers={"User-Agent": "llm-cluster-worker/1"})
+                    with urllib.request.urlopen(request, timeout=30) as response, temporary.open("wb") as handle:
+                        final_url = response.geturl() if callable(getattr(response, "geturl", None)) else source_url
+                        self._validate_download_url(final_url, allow_query=True)
+                        headers = getattr(response, "headers", None)
+                        content_length = headers.get("Content-Length") if headers is not None else None
+                        if content_length and int(content_length) != artifact.size_bytes:
+                            raise ValueError("Artifact download size does not match the catalog lock")
+                        while True:
+                            chunk = response.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            part_downloaded += len(chunk)
+                            if part_downloaded > artifact.size_bytes:
+                                raise ValueError("Artifact download exceeded its verified byte limit")
+                            handle.write(chunk)
+                            digest.update(chunk)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    if part_downloaded != artifact.size_bytes or digest.hexdigest() != artifact.sha256:
+                        raise ValueError(f"Artifact verification failed: {artifact.filename}")
+                    downloaded += part_downloaded
+                verified_metadata = self._verified_model_metadata(staging / manifest_parts[0].filename, install_metadata)
+                backup.mkdir()
+                for artifact in manifest_parts:
+                    destination = target.parent / artifact.filename
+                    if destination.exists():
+                        saved = backup / artifact.filename
+                        os.replace(destination, saved)
+                        backups.append((saved, destination))
+                    os.replace(staging / artifact.filename, destination)
+                    promoted.append(destination)
+                    self._model_hash_cache.pop(destination, None)
+                record = {
+                    **verified_metadata,
+                    "artifact_kind": "artifact_set",
+                    "artifact_set": [item.to_dict() for item in manifest_parts],
+                    "artifact_set_sha256": expected_manifest,
+                }
+                records = dict(original_records)
+                records[model_id] = record
+                self._write_model_metadata(records)
+                metadata_written = True
+                verified = self._verify_model_locked(model_id, expected_manifest)
+                shutil.rmtree(backup)
+                return {**verified, "downloaded_bytes": downloaded, "already_present": False}
+            except Exception:
+                for path in promoted:
+                    path.unlink(missing_ok=True)
+                for saved, destination in reversed(backups):
+                    if saved.exists():
+                        os.replace(saved, destination)
+                if metadata_written:
+                    self._write_model_metadata(original_records)
+                raise
+            finally:
+                shutil.rmtree(staging, ignore_errors=True)
+                shutil.rmtree(backup, ignore_errors=True)
+
+    def verify_model_set(
+        self,
+        model_id: str,
+        artifacts: Sequence[Dict[str, object]],
+        artifact_set_sha256: str,
+        metadata: Optional[Dict[str, object]] = None,
+    ) -> Dict[str, object]:
+        """Register already-cached shards only after every member verifies."""
+        from cluster.domain.experiment import validate_model_id
+
+        validate_model_id(model_id)
+        parts = tuple(ModelArtifact.from_dict(item) for item in artifacts)
+        expected_manifest = str(artifact_set_sha256 or "").strip().lower()
+        validate_artifact_set(parts)
+        if artifact_set_manifest_sha256(parts) != expected_manifest:
+            raise ValueError("Artifact-set manifest SHA-256 does not match its members")
+        target = self._resolve_install_target(model_id)
+        if target.name != parts[0].filename:
+            raise ValueError("Model id must identify the first ordered artifact")
+        with self.lock:
+            for part in parts:
+                path = target.parent / part.filename
+                if (
+                    not path.is_file()
+                    or path.stat().st_size != part.size_bytes
+                    or self._cached_sha256(path) != part.sha256
+                ):
+                    raise ValueError(f"Artifact verification failed: {part.filename}")
+            verified_metadata = self._verified_model_metadata(target, self._safe_install_metadata(metadata))
+            records = self._read_model_metadata()
+            records[model_id] = {
+                **verified_metadata,
+                "artifact_kind": "artifact_set",
+                "artifact_set": [item.to_dict() for item in parts],
+                "artifact_set_sha256": expected_manifest,
+            }
+            self._write_model_metadata(records)
+            return self._verify_model_locked(model_id, expected_manifest)
+
+    def _resolve_install_target(self, model_id: str) -> Path:
+        candidate = (self.models_dir / model_id).resolve()
+        try:
+            candidate.relative_to(self.models_dir.resolve())
+        except ValueError as exc:
+            raise ValueError("Model path is outside models directory") from exc
+        if candidate.suffix.lower() != ".gguf":
+            raise ValueError("Selected file is not a .gguf model")
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        return candidate
+
     def _resolve_model_path(self, model_id: str) -> Path:
         candidate = (self.models_dir / model_id).resolve()
         if not candidate.exists() or not candidate.is_file():
@@ -549,8 +797,15 @@ class LlamaCppInferenceBackend:
                 raise ValueError("Invalid load parameter: " + name)
         with self.lock:
             model_path = self._resolve_model_path(model_id)
-            model_sha = self._cached_sha256(model_path)
-            template = self._read_model_metadata().get(model_id, {}).get("chat_template_hash", "")
+            stored_metadata = self._read_model_metadata().get(model_id, {})
+            if stored_metadata.get("artifact_kind") == "artifact_set":
+                identity = self._artifact_set_identity(model_id, stored_metadata)
+                if not identity["checksum_valid"]:
+                    raise ValueError(f"Model artifact-set checksum mismatch: {model_id}")
+                model_sha = str(identity["sha256"])
+            else:
+                model_sha = self._cached_sha256(model_path)
+            template = stored_metadata.get("chat_template_hash", "")
             threads = DEFAULT_N_THREADS if n_threads is None else n_threads
             identity = (model_path, model_sha, template, n_ctx, n_gpu_layers, n_threads, threads, n_batch, DEFAULT_N_BATCH)
             if self.llm is not None and self._load_identity == identity:

@@ -43,6 +43,33 @@ class InstallModelRequest(BaseModel):
     metadata: Dict[str, object] = Field(default_factory=dict, description="Pinned source and accepted-license metadata")
 
 
+class VerifyModelArtifact(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filename: str = Field(..., min_length=6, max_length=255)
+    sha256: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(..., gt=0)
+
+
+class InstallModelArtifact(VerifyModelArtifact):
+    source_url: str = Field(..., min_length=8, max_length=2048)
+
+
+class VerifyModelSetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model_id: str = Field(..., description="Relative path of the first GGUF shard")
+    artifacts: List[VerifyModelArtifact] = Field(..., min_length=2, max_length=128)
+    artifact_set_sha256: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    metadata: Dict[str, object] = Field(default_factory=dict)
+
+
+class InstallModelSetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model_id: str = Field(..., description="Relative path of the first GGUF shard")
+    artifacts: List[InstallModelArtifact] = Field(..., min_length=2, max_length=128)
+    artifact_set_sha256: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    metadata: Dict[str, object] = Field(default_factory=dict, description="Pinned source and accepted-license metadata")
+
+
 class ChatStreamRequest(BaseModel):
     message: str = Field(..., min_length=1)
     history: List[Dict[str, str]] = Field(default_factory=list)

@@ -342,7 +342,7 @@ class SweepModelResolutionTests(unittest.TestCase):
         result = preview_catalog_sweep(**data)
         self.assertEqual([cell.status for cell in result.plan.cells], ["valid", "blocked"])
         self.assertIn(
-            "ARTIFACT_SET_LOADER_NOT_IMPLEMENTED", result.candidates[1].reason_codes
+            "ARTIFACT_SET_MANIFEST_REQUIRED", result.candidates[1].reason_codes
         )
         self.assertFalse(result.candidates[1].identity_resolved)
 

@@ -1680,6 +1680,8 @@ function nodeActionPresentation(action) {
     "sync-models": "모델 동기화",
     "delete-models": "모델 삭제",
     "install-model-url": "모델 다운로드",
+    "install-model-set": "분할 모델 다운로드",
+    "install-model-set-cache": "분할 모델 캐시 설치",
     "install-model-cache": "모델 캐시 설치",
     "power-set": "Jetson 전력 모드 변경",
   };
@@ -2131,7 +2133,7 @@ function connectEvents() {
           });
         }
         toast(status === "completed" ? "작업 완료" : "작업 실패", `${actionName(action)} · ${nodes.join(", ")}`, status === "completed" ? "success" : "error");
-        if (["sync-models", "delete-models", "install-model-url"].includes(actionName(action))) {
+        if (["sync-models", "delete-models", "install-model-url", "install-model-set", "install-model-set-cache"].includes(actionName(action))) {
           window.ClusterDashboard?.modelLibrary?.refresh().catch(error => environmentLogLine("WARN", `모델 인벤토리 갱신 실패 · ${error.message}`));
         }
       }
