@@ -497,6 +497,29 @@ class RunnerLifecycleTests(unittest.TestCase):
 
 
 class EligibilityTests(unittest.TestCase):
+    def test_empty_preflight_snapshot_cannot_bypass_formal_gate(self) -> None:
+        matrix = read_json("formal_experiment_matrix.json")
+        cell = next(
+            item
+            for item in expand_formal_matrix(matrix)
+            if item["node_set"] == ["pi-worker-02"]
+        )
+        result = assess_campaign_cell(
+            cell=cell,
+            manifest={"lock_ref": matrix["lock_ref"]},
+            experiment_conditions=read_json("experiment_conditions.json"),
+            model_lock=read_json("model_lock.json"),
+            prompt_lock=read_json("prompt_set.json"),
+            runtime_lock=read_json("runtime_lock.json"),
+            live_preflight_snapshot={},
+        )
+
+        self.assertFalse(result["eligible"])
+        self.assertIn(
+            "PREFLIGHT_SNAPSHOT_MISSING",
+            {item["code"] for item in result["blocking_issues"]},
+        )
+
     def test_pi_history_is_warning_but_missing_or_active_evidence_blocks(self) -> None:
         matrix = read_json("formal_experiment_matrix.json")
         cell = next(
@@ -528,7 +551,7 @@ class EligibilityTests(unittest.TestCase):
                 "deployment": {
                     "verified": True,
                     "source_commit": deployment["git_commit"],
-                    "source_tree_sha256": "a" * 64,
+                    "source_tree_sha256": deployment["source_tree_sha256"],
                     "deployment_manifest_sha256": "b" * 64,
                     "runtime_fingerprint": worker["runtime"]["runtime_fingerprint"],
                     "llama_cpp_python_version": worker["runtime"]["llama_cpp_python"],

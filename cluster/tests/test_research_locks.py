@@ -238,6 +238,20 @@ class RuntimeAndEligibilityTests(unittest.TestCase):
         with self.assertRaisesRegex(LockValidationError, "backend is not verified"):
             validate_runtime_lock(lock)
 
+    def test_locked_source_tree_must_be_present_valid_and_verified(self) -> None:
+        lock = read_lock("runtime_lock.json")
+        lock["workers"][0]["deployment"].pop("source_tree_sha256")
+        with self.assertRaisesRegex(LockValidationError, "source_tree_sha256"):
+            validate_runtime_lock(lock)
+        lock = read_lock("runtime_lock.json")
+        lock["workers"][0]["deployment"]["source_tree_sha256"] = "invalid"
+        with self.assertRaisesRegex(LockValidationError, "source_tree_sha256"):
+            validate_runtime_lock(lock)
+        lock = read_lock("runtime_lock.json")
+        lock["workers"][0]["deployment"]["source_tree_verified"] = False
+        with self.assertRaisesRegex(LockValidationError, "source tree is not verified"):
+            validate_runtime_lock(lock)
+
     def test_formal_cohorts_cover_each_worker_exactly_once(self) -> None:
         lock = read_lock("runtime_lock.json")
         lock["formal_cohorts"][0]["workers"].append("jetson-worker-02")

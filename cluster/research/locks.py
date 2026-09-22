@@ -261,6 +261,13 @@ def validate_runtime_lock(lock: Mapping[str, Any]) -> None:
         commit = deployment.get("git_commit")
         if commit != "unverified" and not HEX_40.fullmatch(str(commit)):
             raise LockValidationError(f"invalid Worker deployment commit: {node}")
+        source_tree_sha256 = deployment.get("source_tree_sha256")
+        if not HEX_64.fullmatch(str(source_tree_sha256 or "")):
+            raise LockValidationError(
+                f"{node}.deployment.source_tree_sha256 must be SHA-256"
+            )
+        if deployment.get("source_tree_verified") is not True:
+            raise LockValidationError(f"locked Worker source tree is not verified: {node}")
     cohorts = lock.get("formal_cohorts")
     if cohorts is None and int(lock.get("lock_version", 0)) < 3:
         return
@@ -324,6 +331,23 @@ def deployment_identity_issues(
     issues: list[dict[str, str]] = []
     observed_sources: set[tuple[str, str]] = set()
     for node in selected_workers:
+        locked_worker = workers.get(node) or {}
+        locked_deployment_raw = locked_worker.get("deployment")
+        locked_deployment = (
+            locked_deployment_raw
+            if isinstance(locked_deployment_raw, Mapping)
+            else {}
+        )
+        expected_tree_raw = locked_deployment.get("source_tree_sha256")
+        expected_tree = str(expected_tree_raw or "")
+        expected_tree_valid = bool(HEX_64.fullmatch(expected_tree))
+        if not expected_tree_raw:
+            issues.append(_issue("SOURCE_FINGERPRINT_MISSING", node=node))
+        elif not expected_tree_valid:
+            issues.append(_issue("SOURCE_FINGERPRINT_INVALID", node=node))
+        elif locked_deployment.get("source_tree_verified") is not True:
+            issues.append(_issue("SOURCE_FINGERPRINT_UNVERIFIED", node=node))
+
         snapshot = live_preflight_snapshot.get(node) or {}
         raw = snapshot.get("deployment")
         deployment = raw if isinstance(raw, Mapping) else {}
@@ -333,19 +357,25 @@ def deployment_identity_issues(
         if deployment.get("verified") is not True:
             issues.append(_issue("SOURCE_FINGERPRINT_UNVERIFIED", node=node))
             continue
-        commit = str(deployment.get("source_commit") or "")
-        tree = str(deployment.get("source_tree_sha256") or "")
-        manifest_sha = str(deployment.get("deployment_manifest_sha256") or "")
+        commit_raw = deployment.get("source_commit")
+        tree_raw = deployment.get("source_tree_sha256")
+        manifest_sha_raw = deployment.get("deployment_manifest_sha256")
+        if not commit_raw or not tree_raw or not manifest_sha_raw:
+            issues.append(_issue("SOURCE_FINGERPRINT_MISSING", node=node))
+            continue
+        commit = str(commit_raw)
+        tree = str(tree_raw)
+        manifest_sha = str(manifest_sha_raw)
         if not (HEX_40.fullmatch(commit) and HEX_64.fullmatch(tree) and HEX_64.fullmatch(manifest_sha)):
             issues.append(_issue("SOURCE_FINGERPRINT_INVALID", node=node))
             continue
         observed_sources.add((commit, tree))
-        locked_worker = workers.get(node) or {}
-        locked_deployment = locked_worker.get("deployment") or {}
         expected_commit = locked_deployment.get("git_commit")
         if expected_commit == "unverified" or not HEX_40.fullmatch(str(expected_commit or "")):
             issues.append(_issue("RUNTIME_COMMIT_MISMATCH", node=node))
         elif commit != expected_commit:
+            issues.append(_issue("SOURCE_FINGERPRINT_MISMATCH", node=node))
+        if expected_tree_valid and tree != expected_tree:
             issues.append(_issue("SOURCE_FINGERPRINT_MISMATCH", node=node))
         locked_runtime = locked_worker.get("runtime") or {}
         if deployment.get("runtime_fingerprint") != locked_runtime.get("runtime_fingerprint"):

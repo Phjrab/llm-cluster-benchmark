@@ -252,7 +252,11 @@ class FormalDeploymentEligibilityTests(unittest.TestCase):
                         "runtime_fingerprint": "runtime-123",
                         "llama_cpp_python": "0.3.20",
                     },
-                    "deployment": {"git_commit": COMMIT},
+                    "deployment": {
+                        "git_commit": COMMIT,
+                        "source_tree_sha256": "b" * 64,
+                        "source_tree_verified": True,
+                    },
                 },
                 {
                     "node": "worker-02",
@@ -260,7 +264,11 @@ class FormalDeploymentEligibilityTests(unittest.TestCase):
                         "runtime_fingerprint": "runtime-123",
                         "llama_cpp_python": "0.3.20",
                     },
-                    "deployment": {"git_commit": COMMIT},
+                    "deployment": {
+                        "git_commit": COMMIT,
+                        "source_tree_sha256": "b" * 64,
+                        "source_tree_verified": True,
+                    },
                 },
             ]
         }
@@ -309,6 +317,86 @@ class FormalDeploymentEligibilityTests(unittest.TestCase):
         self.assertIn("SOURCE_FINGERPRINT_MISSING", {item["code"] for item in missing})
         self.assertIn("SOURCE_FINGERPRINT_MISMATCH", {item["code"] for item in drift})
         self.assertIn("SOURCE_FINGERPRINT_UNVERIFIED", {item["code"] for item in unverified})
+
+    def test_locked_tree_is_compared_even_when_workers_share_the_same_wrong_tree(self) -> None:
+        issues = deployment_identity_issues(
+            runtime_lock=self.runtime_lock(),
+            selected_workers=["worker-01", "worker-02"],
+            live_preflight_snapshot={
+                "worker-01": self.live(tree="d" * 64),
+                "worker-02": self.live(tree="d" * 64),
+            },
+        )
+
+        mismatches = [
+            item for item in issues if item["code"] == "SOURCE_FINGERPRINT_MISMATCH"
+        ]
+        self.assertEqual({item.get("node") for item in mismatches}, {"worker-01", "worker-02"})
+
+    def test_single_worker_with_wrong_locked_tree_is_blocked(self) -> None:
+        issues = deployment_identity_issues(
+            runtime_lock=self.runtime_lock(),
+            selected_workers=["worker-01"],
+            live_preflight_snapshot={"worker-01": self.live(tree="d" * 64)},
+        )
+
+        self.assertIn("SOURCE_FINGERPRINT_MISMATCH", {item["code"] for item in issues})
+
+    def test_missing_invalid_or_unverified_locked_tree_fails_closed(self) -> None:
+        lock = self.runtime_lock()
+        lock["workers"][0]["deployment"].pop("source_tree_sha256")
+        missing = deployment_identity_issues(
+            runtime_lock=lock,
+            selected_workers=["worker-01"],
+            live_preflight_snapshot={"worker-01": self.live()},
+        )
+        lock = self.runtime_lock()
+        lock["workers"][0]["deployment"]["source_tree_sha256"] = "invalid"
+        invalid = deployment_identity_issues(
+            runtime_lock=lock,
+            selected_workers=["worker-01"],
+            live_preflight_snapshot={"worker-01": self.live()},
+        )
+        lock = self.runtime_lock()
+        lock["workers"][0]["deployment"]["source_tree_verified"] = False
+        unverified = deployment_identity_issues(
+            runtime_lock=lock,
+            selected_workers=["worker-01"],
+            live_preflight_snapshot={"worker-01": self.live()},
+        )
+
+        self.assertIn("SOURCE_FINGERPRINT_MISSING", {item["code"] for item in missing})
+        self.assertIn("SOURCE_FINGERPRINT_INVALID", {item["code"] for item in invalid})
+        self.assertIn("SOURCE_FINGERPRINT_UNVERIFIED", {item["code"] for item in unverified})
+
+    def test_invalid_observed_tree_and_existing_runtime_checks_fail_closed(self) -> None:
+        missing_live = self.live()
+        missing_live["deployment"].pop("source_tree_sha256")
+        missing = deployment_identity_issues(
+            runtime_lock=self.runtime_lock(),
+            selected_workers=["worker-01"],
+            live_preflight_snapshot={"worker-01": missing_live},
+        )
+        invalid_live = self.live()
+        invalid_live["deployment"]["source_tree_sha256"] = "invalid"
+        invalid = deployment_identity_issues(
+            runtime_lock=self.runtime_lock(),
+            selected_workers=["worker-01"],
+            live_preflight_snapshot={"worker-01": invalid_live},
+        )
+        drifted_runtime = self.live()
+        drifted_runtime["deployment"]["runtime_fingerprint"] = "other-runtime"
+        drifted_runtime["deployment"]["rpc_commit"] = "0" * 40
+        runtime = deployment_identity_issues(
+            runtime_lock=self.runtime_lock(),
+            selected_workers=["worker-01"],
+            live_preflight_snapshot={"worker-01": drifted_runtime},
+        )
+
+        self.assertIn("SOURCE_FINGERPRINT_MISSING", {item["code"] for item in missing})
+        self.assertIn("SOURCE_FINGERPRINT_INVALID", {item["code"] for item in invalid})
+        self.assertIn("RUNTIME_FINGERPRINT_MISMATCH", {item["code"] for item in runtime})
+        self.assertIn("RPC_COMMIT_MISMATCH", {item["code"] for item in runtime})
 
 
 if __name__ == "__main__":
