@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -116,7 +117,18 @@ class SweepServiceTests(unittest.TestCase):
                 self.runs, self.backend, drift
             ),
             run_repository=FilesystemRunRepository(self.root / "results"),
+            drive_interval_s=0.05,
         )
+        self.addCleanup(self.service.shutdown)
+
+    def wait_for(self, predicate, *, timeout=3.0):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            value = predicate()
+            if value:
+                return value
+            time.sleep(0.01)
+        self.fail("timed out waiting for Dashboard progression loop")
 
     def save(self, sweep_id="sweep_api", **privacy):
         return self.service.save(SweepSaveDraftPayload(
@@ -198,19 +210,38 @@ class SweepServiceTests(unittest.TestCase):
         self.assertEqual(paused["sweep"]["phase"], "pausing")
         active_job = started["sweep"]["trials"][0]["attempts"][0]["backend_job_id"]
         self.backend.finish(active_job)
-        value = self.service.get("sweep_control")["sweep"]
+        value = self.wait_for(
+            lambda: (
+                current
+                if (current := self.service.get("sweep_control")["sweep"])["status"] == "paused"
+                else None
+            )
+        )
         self.assertEqual(value["status"], "paused")
         resumed = self.service.resume(
             "sweep_control", self.lifecycle(saved, "resume-key-1")
         )
         self.assertEqual(resumed["sweep"]["status"], "ready")
-        value = self.service.get("sweep_control")["sweep"]
+
+        def running_value():
+            current = self.service.get("sweep_control")["sweep"]
+            return current if any(
+                trial["status"] == "running" for trial in current["trials"]
+            ) else None
+
+        value = self.wait_for(running_value)
         second_job = value["trials"][1]["attempts"][0]["backend_job_id"]
         self.service.cancel(
             "sweep_control", reason("cancel-key-1", "operator cancel")
         )
         self.assertEqual(self.backend.cancels, [second_job])
-        cancelled = self.service.get("sweep_control")["sweep"]
+        cancelled = self.wait_for(
+            lambda: (
+                current
+                if (current := self.service.get("sweep_control")["sweep"])["status"] == "cancelled"
+                else None
+            )
+        )
         self.assertEqual(cancelled["status"], "cancelled")
         retried = self.service.retry(
             "sweep_control", value["trials"][1]["trial_id"],
@@ -234,18 +265,153 @@ class SweepServiceTests(unittest.TestCase):
                     self.service.events(sweep_id, cursor=10_000, limit=1)
                 replay = next(self.service.event_stream(sweep_id, cursor=1))
                 self.assertNotIn("id: 1\n", replay)
-                current = self.service.get(sweep_id)["sweep"]
-                while current["status"] not in {"completed", "partial", "failed", "cancelled"}:
+                def finish_and_observe():
+                    current = self.service.get(sweep_id)["sweep"]
                     for trial in current["trials"]:
                         if trial["status"] == "running":
-                            self.backend.finish(trial["attempts"][-1]["backend_job_id"])
-                    current = self.service.get(sweep_id)["sweep"]
+                            job_id = trial["attempts"][-1]["backend_job_id"]
+                            if (
+                                job_id in self.backend.jobs
+                                and self.backend.jobs[job_id]["status"] == "running"
+                            ):
+                                self.backend.finish(job_id)
+                    return current if (
+                        current["status"] in {
+                            "completed", "partial", "failed", "cancelled"
+                        }
+                        and not self.drafts._prompt_path(sweep_id).exists()
+                    ) else None
+
+                current = self.wait_for(finish_and_observe)
                 self.assertFalse(self.drafts._prompt_path(sweep_id).exists())
                 exported = self.service.export_plan(sweep_id)
                 results = self.service.results(sweep_id)
                 all_public = json.dumps([exported, results, self.service.events(sweep_id)])
                 self.assertNotIn(TEXT, all_public)
                 self.assertTrue(all(item["run_id"] for item in results["trials"][0]["attempts"]))
+
+    def test_dashboard_loop_advances_at_least_three_trials_without_get_or_sse(self):
+        request = request_data()
+        request["spec"]["repeat_count"] = 3
+        saved = self.service.save(
+            SweepSaveDraftPayload(sweep_id="no_browser", **request)
+        )
+        self.service.start("no_browser", self.lifecycle(saved, "no-browser-start"))
+        expected_trials = len(self.runs.read("no_browser")["trials"])
+        self.assertGreaterEqual(expected_trials, 3)
+        finished: set[str] = set()
+
+        def complete_new_jobs():
+            for job_id in list(self.backend.starts):
+                if job_id not in finished:
+                    self.backend.finish(job_id)
+                    finished.add(job_id)
+            manifest = self.runs.read("no_browser")
+            return manifest if manifest["status"] == "completed" else None
+
+        completed = self.wait_for(complete_new_jobs, timeout=5.0)
+        self.assertEqual(completed["coverage"]["completed"], expected_trials)
+        self.assertEqual(len(self.backend.starts), expected_trials)
+
+    def test_get_is_read_only_for_draft_running_and_paused_sweeps(self):
+        saved_draft = self.save("read_only_draft")
+        for _ in range(5):
+            self.assertIsNone(self.service.get("read_only_draft")["sweep"])
+        self.assertEqual(self.backend.starts, [])
+
+        saved = self.save("read_only_running")
+        started = self.service.start(
+            "read_only_running", self.lifecycle(saved, "read-only-start")
+        )
+        for _ in range(10):
+            self.service.get("read_only_running")
+        self.assertEqual(len(self.backend.starts), 1)
+
+        reason = SweepReasonPayload(
+            **self.lifecycle(saved, "read-only-pause").model_dump(),
+            reason="pause read-only check",
+        )
+        self.service.pause("read_only_running", reason)
+        job_id = started["sweep"]["trials"][0]["attempts"][0]["backend_job_id"]
+        self.backend.finish(job_id)
+        paused = self.wait_for(
+            lambda: (
+                current
+                if (current := self.service.get("read_only_running")["sweep"])["status"] == "paused"
+                else None
+            )
+        )
+        for _ in range(10):
+            self.service.get("read_only_running")
+        self.assertEqual(paused["status"], "paused")
+        self.assertEqual(len(self.backend.starts), 1)
+
+    def test_dashboard_restart_recovers_attempt_without_relaunching_completed_trial(self):
+        request = request_data()
+        request["spec"]["repeat_count"] = 3
+        saved = self.service.save(
+            SweepSaveDraftPayload(sweep_id="restart_sweep", **request)
+        )
+        started = self.service.start(
+            "restart_sweep", self.lifecycle(saved, "restart-start")
+        )
+        expected_trials = len(started["sweep"]["trials"])
+        first_job = started["sweep"]["trials"][0]["attempts"][0]["backend_job_id"]
+        self.backend.finish(first_job)
+        self.wait_for(lambda: len(self.backend.starts) >= 2)
+        self.service.shutdown()
+
+        restarted = SweepService(
+            drafts=self.drafts,
+            runs=self.runs,
+            resolver=self.resolver,
+            supervisor_factory=lambda prompt, drift: SweepSupervisor(
+                self.runs, self.backend, drift
+            ),
+            run_repository=FilesystemRunRepository(self.root / "results"),
+            drive_interval_s=0.05,
+        )
+        self.addCleanup(restarted.shutdown)
+        self.assertEqual(
+            restarted.recover_active_sweeps(),
+            {"recovered": ["restart_sweep"]},
+        )
+
+        finished: set[str] = {first_job}
+
+        def finish_remaining():
+            for job_id in list(self.backend.starts):
+                if job_id not in finished:
+                    self.backend.finish(job_id)
+                    finished.add(job_id)
+            manifest = self.runs.read("restart_sweep")
+            return manifest if manifest["status"] == "completed" else None
+
+        completed = self.wait_for(finish_remaining, timeout=5.0)
+        self.assertEqual(completed["coverage"]["completed"], expected_trials)
+        self.assertEqual(len(self.backend.starts), expected_trials)
+        self.assertEqual(self.backend.starts.count(first_job), 1)
+
+    def test_two_dashboard_services_share_atomic_claim_without_duplicate_dispatch(self):
+        saved = self.save("two_dashboards")
+        started = self.service.start(
+            "two_dashboards", self.lifecycle(saved, "two-dashboard-start")
+        )
+        second = SweepService(
+            drafts=self.drafts,
+            runs=self.runs,
+            resolver=self.resolver,
+            supervisor_factory=lambda prompt, drift: SweepSupervisor(
+                self.runs, self.backend, drift
+            ),
+            run_repository=FilesystemRunRepository(self.root / "results"),
+            drive_interval_s=0.05,
+        )
+        self.addCleanup(second.shutdown)
+        second.recover_active_sweeps()
+        time.sleep(0.15)
+        first_job = started["sweep"]["trials"][0]["attempts"][0]["backend_job_id"]
+        self.assertEqual(self.backend.starts.count(first_job), 1)
 
     def test_path_and_page_bounds_are_rejected(self):
         with self.assertRaises(DashboardServiceError):
@@ -410,6 +576,43 @@ class SweepRouteTests(SweepServiceTests):
                 200,
             )
 
+    def test_http_start_progresses_without_followup_get_or_sse(self):
+        request = request_data()
+        request["spec"]["repeat_count"] = 3
+        body = {"sweep_id": "route_no_browser", **request}
+        with mock.patch(
+            "cluster.dashboard.dependencies.services.read_settings",
+            return_value={"dashboard_token_auth": False},
+        ):
+            saved_response = self.client.post("/api/sweeps/drafts", json=body)
+            self.assertEqual(saved_response.status_code, 200)
+            saved = saved_response.json()
+            started = self.client.post(
+                "/api/sweeps/route_no_browser/start",
+                json={
+                    "idempotency_key": "route-no-browser-start",
+                    "plan_revision": saved["plan_revision"],
+                    "plan_sha256": saved["plan_sha256"],
+                },
+            )
+            self.assertEqual(started.status_code, 200)
+
+        expected_trials = len(self.runs.read("route_no_browser")["trials"])
+        self.assertGreaterEqual(expected_trials, 3)
+        finished: set[str] = set()
+
+        def finish_without_http_polling():
+            for job_id in list(self.backend.starts):
+                if job_id not in finished:
+                    self.backend.finish(job_id)
+                    finished.add(job_id)
+            manifest = self.runs.read("route_no_browser")
+            return manifest if manifest["status"] == "completed" else None
+
+        completed = self.wait_for(finish_without_http_polling, timeout=5.0)
+        self.assertEqual(completed["coverage"]["completed"], expected_trials)
+        self.assertEqual(len(self.backend.starts), expected_trials)
+
     def test_unknown_fields_invalid_axes_huge_grid_and_malicious_ids(self):
         with mock.patch("cluster.dashboard.dependencies.services.read_settings", return_value={"dashboard_token_auth": False}):
             unknown = self.client.post(
@@ -469,13 +672,25 @@ class SweepRouteTests(SweepServiceTests):
             self.assertEqual(paused.status_code, 200)
             job_id = started.json()["sweep"]["trials"][0]["attempts"][0]["backend_job_id"]
             self.backend.finish(job_id)
-            self.client.get("/api/sweeps/route_lifecycle")
+            self.wait_for(
+                lambda: self.runs.read("route_lifecycle")
+                if self.runs.read("route_lifecycle")["status"] == "paused"
+                else None
+            )
             resumed = self.client.post(
                 "/api/sweeps/route_lifecycle/resume",
                 json={**base, "idempotency_key": "http-resume-key"},
             )
             self.assertEqual(resumed.status_code, 200)
-            current = self.client.get("/api/sweeps/route_lifecycle").json()["sweep"]
+            current = self.wait_for(
+                lambda: (
+                    value
+                    if any(item["status"] == "running" for item in value["trials"])
+                    else None
+                )
+                if (value := self.runs.read("route_lifecycle"))
+                else None
+            )
             active = next(item for item in current["trials"] if item["status"] == "running")
             cancelled = self.client.post(
                 "/api/sweeps/route_lifecycle/cancel",
@@ -483,7 +698,11 @@ class SweepRouteTests(SweepServiceTests):
             )
             self.assertEqual(cancelled.status_code, 200)
             self.assertEqual(self.backend.cancels, [active["attempts"][-1]["backend_job_id"]])
-            self.client.get("/api/sweeps/route_lifecycle")
+            self.wait_for(
+                lambda: self.runs.read("route_lifecycle")
+                if self.runs.read("route_lifecycle")["status"] == "cancelled"
+                else None
+            )
             retried = self.client.post(
                 f"/api/sweeps/route_lifecycle/trials/{active['trial_id']}/retry",
                 json={**base, "idempotency_key": "http-retry-key", "reason": "evidence cleared"},

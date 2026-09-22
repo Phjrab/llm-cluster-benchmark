@@ -2532,10 +2532,12 @@ class DashboardFacade:
             [str(job.get("suite_id")) for job in experiments.active_jobs()]
         )
         status_monitor.start()
+        self._sweeps.recover_active_sweeps()
         self._research.recover_active_campaigns()
 
     def shutdown(self) -> None:
         status_monitor.stop()
+        self._sweeps.shutdown()
         self._research.shutdown()
         experiments.shutdown()
 

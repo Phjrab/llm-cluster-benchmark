@@ -79,8 +79,37 @@ class ResearchService:
             raise DashboardServiceError(404, "Campaign not found") from exc
 
     def _drive(self, campaign_id: str, runner: CampaignRunner) -> None:
+        gate_blocked = False
         try:
             while not self._stop.is_set():
+                manifest = self._manifest(campaign_id)
+                active = any(
+                    isinstance(cell, Mapping) and cell.get("status") == "running"
+                    for cell in manifest.get("cells") or []
+                )
+                if not active:
+                    try:
+                        self._assert_execution_gate()
+                    except DashboardServiceError as exc:
+                        if exc.status_code != 409:
+                            raise
+                        if not gate_blocked:
+                            detail = exc.detail if isinstance(exc.detail, Mapping) else {}
+                            self._repository().append_event(
+                                campaign_id,
+                                {
+                                    "type": "campaign_dispatch_gate_blocked",
+                                    "at": datetime.now(timezone.utc).isoformat(),
+                                    "blocking_phases": list(detail.get("blocking_phases") or []),
+                                    "blocking_requirements": list(
+                                        detail.get("blocking_requirements") or []
+                                    ),
+                                },
+                            )
+                        gate_blocked = True
+                        self._stop.wait(self._drive_interval_s)
+                        continue
+                    gate_blocked = False
                 state = runner.tick(campaign_id)
                 if state.get("status") in {"paused", "completed", "failed", "cancelled"}:
                     return

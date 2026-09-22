@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 import threading
+import time
 import unittest
 
 from cluster.dashboard.service_layers import (
@@ -281,6 +282,12 @@ class ExtractedServiceTests(unittest.TestCase):
             def list(self):
                 return [dict(item) for item in manifests]
 
+            def read(self, campaign_id):
+                return next(
+                    dict(item) for item in manifests
+                    if item["campaign_id"] == campaign_id
+                )
+
             def append_event(self, _campaign_id, _event):
                 pass
 
@@ -315,6 +322,74 @@ class ExtractedServiceTests(unittest.TestCase):
         self.assertTrue(started.wait(1))
         self.assertEqual(requested, ["running-a"])
         service.shutdown()
+
+    def test_campaign_gate_closure_allows_active_reconciliation_but_blocks_dispatch(self) -> None:
+        gate = {"open": True}
+        reconciled = threading.Event()
+        events = []
+
+        class Repository:
+            def __init__(self):
+                self.manifest = {
+                    "campaign_id": "campaign-gate",
+                    "status": "running",
+                    "cells": [{"campaign_cell_id": "active", "status": "running"}],
+                }
+
+            def list(self):
+                return [dict(self.manifest)]
+
+            def read(self, _campaign_id):
+                return {
+                    **self.manifest,
+                    "cells": [dict(item) for item in self.manifest["cells"]],
+                }
+
+            def append_event(self, _campaign_id, event):
+                events.append(dict(event))
+
+        repository = Repository()
+
+        class Runner:
+            def __init__(self):
+                self.ticks = 0
+
+            def tick(self, _campaign_id):
+                self.ticks += 1
+                repository.manifest["cells"] = [
+                    {"campaign_cell_id": "active", "status": "completed"},
+                    {"campaign_cell_id": "next", "status": "pending"},
+                ]
+                gate["open"] = False
+                reconciled.set()
+                return repository.read("campaign-gate")
+
+        runner = Runner()
+        service = ResearchService(
+            campaigns_dir=Path("/tmp/campaigns"),
+            read_runs=lambda **_kwargs: [],
+            read_research_document=lambda _name: {
+                "execution_gate": {
+                    "formal_execution_allowed": gate["open"],
+                    "blocking_requirements": ["RELOCK"],
+                }
+            },
+            status_snapshot=lambda: [],
+            read_environment=lambda: [],
+            controller_commit=lambda: "a" * 40,
+            repository_factory=lambda _path: repository,
+            runner_factory=lambda _campaign_id: runner,
+            drive_interval_s=0.05,
+        )
+        self.assertEqual(
+            service.recover_active_campaigns(),
+            {"recovered": ["campaign-gate"], "gate_blocked": False},
+        )
+        self.assertTrue(reconciled.wait(1))
+        time.sleep(0.15)
+        service.shutdown()
+        self.assertEqual(runner.ticks, 1)
+        self.assertEqual(events[-1]["type"], "campaign_dispatch_gate_blocked")
 
 
     def test_settings_service_rolls_back_failed_worker_restart(self) -> None:

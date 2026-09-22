@@ -262,6 +262,24 @@ class SweepRepository:
                 result.append(item)
         return result
 
+    def list(self) -> list[dict[str, Any]]:
+        """Read valid durable manifests without advancing their lifecycle."""
+        if self.directory.is_symlink():
+            raise SweepStateError("sweep repository must not be a symbolic link")
+        if not self.directory.exists():
+            return []
+        values: list[dict[str, Any]] = []
+        for path in sorted(self.directory.glob("*/manifest.json"), reverse=True):
+            if path.is_symlink() or path.parent.is_symlink():
+                continue
+            try:
+                value = read_json_object(path)
+                validate_sweep_manifest(value)
+            except (OSError, ValueError):
+                continue
+            values.append(value)
+        return values
+
 
 def build_sweep_manifest(sweep_id: str, plan: ResolvedPlan) -> dict[str, Any]:
     """Freeze one verified executable plan into a ready durable manifest."""

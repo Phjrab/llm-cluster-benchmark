@@ -6,7 +6,9 @@ import fcntl
 import hashlib
 import json
 import os
+import threading
 import time
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping
@@ -164,12 +166,17 @@ class SweepService:
         resolver: Resolver,
         supervisor_factory: SupervisorFactory,
         run_repository: Any | None = None,
+        drive_interval_s: float = 0.25,
     ) -> None:
         self.drafts = drafts
         self.runs = runs
         self.resolver = resolver
         self.supervisor_factory = supervisor_factory
         self.result_reader = SweepResultService(run_repository) if run_repository is not None else None
+        self._drive_interval_s = max(float(drive_interval_s), 0.05)
+        self._workers: dict[str, threading.Thread] = {}
+        self._worker_lock = threading.Lock()
+        self._stop = threading.Event()
 
     @staticmethod
     def _request(payload: Any) -> dict[str, Any]:
@@ -364,6 +371,68 @@ class SweepService:
                 self.drafts.scrub_prompts(sweep_id)
         return value
 
+    def _drive(self, sweep_id: str) -> None:
+        try:
+            while not self._stop.is_set():
+                value = self._tick(sweep_id)
+                if value.get("status") in TERMINAL | {"paused"}:
+                    return
+                self._stop.wait(self._drive_interval_s)
+        except Exception as exc:
+            try:
+                self.runs.append_event(
+                    sweep_id,
+                    {
+                        "type": "sweep_control_error",
+                        "at": datetime.now(timezone.utc).isoformat(),
+                        "error_type": type(exc).__name__,
+                    },
+                )
+            except Exception:
+                pass
+        finally:
+            with self._worker_lock:
+                current = self._workers.get(sweep_id)
+                if current is threading.current_thread():
+                    self._workers.pop(sweep_id, None)
+
+    def _ensure_worker(self, sweep_id: str) -> None:
+        with self._worker_lock:
+            current = self._workers.get(sweep_id)
+            if current is not None and current.is_alive():
+                return
+            worker = threading.Thread(
+                target=self._drive,
+                args=(sweep_id,),
+                name=f"exploratory-sweep-{sweep_id}",
+                daemon=True,
+            )
+            self._workers[sweep_id] = worker
+            worker.start()
+
+    def recover_active_sweeps(self) -> dict[str, Any]:
+        """Resume only Sweep manifests previously authorized by Start."""
+        self._stop.clear()
+        recovered: list[str] = []
+        for manifest in self.runs.list():
+            if manifest.get("status") not in {"ready", "running"}:
+                continue
+            sweep_id = str(manifest.get("sweep_id") or "")
+            if not sweep_id:
+                continue
+            self._ensure_worker(sweep_id)
+            recovered.append(sweep_id)
+        return {"recovered": recovered}
+
+    def shutdown(self) -> None:
+        """Stop Dashboard-owned progression threads without cancelling children."""
+        self._stop.set()
+        with self._worker_lock:
+            workers = list(self._workers.values())
+        for worker in workers:
+            if worker is not threading.current_thread() and worker.is_alive():
+                worker.join(timeout=max(1.0, self._drive_interval_s * 4))
+
     def _scrub_required(self, sweep_id: str) -> bool:
         draft = self.drafts.read(sweep_id)
         try:
@@ -382,6 +451,8 @@ class SweepService:
             except SweepStateError:
                 manifest = None
             if manifest is not None:
+                if manifest.get("status") not in TERMINAL | {"paused"}:
+                    self._ensure_worker(sweep_id)
                 return {"sweep": manifest, "idempotent_replay": True}
         fresh_plan, _ = self._resolve(self._input_request(draft), refresh=True)
         if fresh_plan.plan_sha256 != saved_plan.plan_sha256 or fresh_plan.to_json() != saved_plan.to_json():
@@ -411,6 +482,8 @@ class SweepService:
             self.drafts.scrub_prompts(sweep_id)
         self.drafts.update(sweep_id, lambda value: value.update({"status": "started", "updated_at_unix": time.time()}))
         self._complete_operation(sweep_id, "start", payload.idempotency_key)
+        if manifest.get("status") not in TERMINAL | {"paused"}:
+            self._ensure_worker(sweep_id)
         return {"sweep": manifest, "idempotent_replay": replay}
 
     def _lifecycle(self, sweep_id: str, operation: str, payload: Any, action: Callable[[SweepSupervisor], dict[str, Any]]) -> dict[str, Any]:
@@ -423,6 +496,8 @@ class SweepService:
         except (SweepStateError, ValueError) as exc:
             raise DashboardServiceError(409, "Sweep lifecycle request conflicts with current state") from exc
         self._complete_operation(sweep_id, operation, payload.idempotency_key)
+        if value.get("status") not in TERMINAL | {"paused"}:
+            self._ensure_worker(sweep_id)
         return {"sweep": value, "idempotent_replay": False}
 
     def pause(self, sweep_id: str, payload: Any) -> dict[str, Any]:
@@ -453,10 +528,10 @@ class SweepService:
     def get(self, sweep_id: str) -> dict[str, Any]:
         draft = self.drafts.read(sweep_id)
         try:
-            sweep = self._tick(sweep_id)
-        except DashboardServiceError as exc:
-            if exc.status_code != 409 or draft.get("status") != "draft":
-                raise
+            sweep = self.runs.read(sweep_id)
+        except SweepStateError as exc:
+            if draft.get("status") != "draft":
+                raise DashboardServiceError(409, "Sweep durable state is unavailable") from exc
             sweep = None
         return {"draft": self._public_draft(draft), "sweep": sweep}
 

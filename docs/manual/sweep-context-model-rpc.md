@@ -78,6 +78,24 @@ pinned RPC runtime capability와 메모리 증거가 필요하다.
 - **Retry**는 실패하거나 취소된 trial에 사유를 남기고 새 attempt를 만든다. 이전 attempt와
   failure 기록은 유지되며 자동 retry는 없다.
 
+Start가 승인된 Sweep은 Dashboard 서버 안의 진행 loop가 durable manifest와 JobService 상태를
+주기적으로 확인한다. 브라우저 탭을 닫거나 GET/SSE polling을 중단해도 Dashboard 서버가 실행
+중이면 완료한 child 다음의 Trial이 계속 시작된다. GET, list, results, export와 SSE는 저장된
+상태만 읽으며 Trial을 claim하거나 child를 시작하지 않는다. Campaign은 같은 Dashboard 수명에
+묶인 기존 직렬 진행 loop를 사용하고, 새 cell을 dispatch할 때마다 현재 formal gate를 다시
+확인한다.
+
+Dashboard stop/restart는 진행 loop를 정리하지만 실행 중인 JobService child를 일괄 취소하지
+않는다. 서버가 중지된 동안 현재 child는 기존 durable process 정책에 따라 끝날 수 있지만 다음
+Trial/cell 자동 dispatch는 보장하지 않는다. Dashboard가 다시 시작되면 `ready` 또는 `running`
+상태의, 이전에 Start가 승인된 Sweep과 `running` Campaign만 복구한다. 완료 Trial과 기존 attempt
+identity를 그대로 사용하므로 새 ID로 대체하지 않는다. `draft`와 `paused` 상태는 서버 시작이나
+조회만으로 실행되지 않는다.
+
+이 운용 방식은 실험 동안 Mac Controller의 Dashboard, 전원과 Worker 네트워크가 유지된다는
+전제다. Dashboard 서버 종료 중 전체 자동 진행, Mac 종료 또는 네트워크 단절 중 지속 실행은
+지원 범위가 아니다. 별도 execution driver, daemon 또는 Worker-side scheduler는 없다.
+
 Dashboard를 새로 열거나 Controller가 재시작돼도 Active Sweeps에서 같은 sweep을 선택한다.
 manifest, event journal, JobService document와 result artifact를 대조해 상태를 복원한다. Start
 응답이 끊겼다면 같은 idempotency key와 plan hash를 사용한다. 새 ID로 반복 Start하지 않는다.
