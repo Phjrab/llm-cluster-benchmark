@@ -1,5 +1,11 @@
 # Roadmap Phase 09 — Pilot Experiment
 
+> Historical v5 decision: this document records the 2026-08-25 freeze under
+> its original source/runtime. Later measurement and admission changes closed
+> the current formal gate. The [current reconciliation](../research/formal-gate-reconciliation.md)
+> and [formal matrix](../../config/research/formal_experiment_matrix.json)
+> are authoritative for present execution; v5's success does not open it.
+
 ## 1. Outcome
 
 Phase 09 was resumed on 2026-08-24 and completed on 2026-08-25 on branch

@@ -269,8 +269,9 @@ checkout과 Controller wheel의 차이는
 
 ## Legacy 호환 경계
 
-`cluster/setup_head.sh`, `cluster/config/nodes.example.csv`, 루트의 단일 Jetson 벤치 및
-standalone chat 스크립트는 기존 설치를 읽고 이전 워크플로를 재현하기 위한 compatibility
-surface다. 새 Mac Controller 설치에는 `scripts/setup-controller`와 Worker-only 인벤토리를
+`cluster/setup_head.sh`와 `cluster/config/nodes.example.csv`는 남아 있는
+compatibility 파일입니다. 루트 단일 Jetson benchmark와 standalone chat
+스크립트는 현재 제품 트리에서 제거됐고 Git history에만 보존됩니다. 새 Mac
+Controller 설치에는 `scripts/setup-controller`와 Worker-only 인벤토리를
 사용한다. Legacy `head` 행은 변환 시 제외되며 Controller 또는 추론 Worker로 자동 승격하지
 않는다.

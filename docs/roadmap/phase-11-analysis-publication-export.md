@@ -1,5 +1,10 @@
 # Roadmap Phase 11 — Analysis and Publication Export
 
+> Historical tooling/acceptance checkpoint: the v3 pilot bundle described
+> below remains v3 evidence. The later v5 decision and current v6/v7
+> revalidation state are in the [formal gate reconciliation](../research/formal-gate-reconciliation.md).
+> No formal campaign result has been promoted from this earlier bundle.
+
 ## 1. Outcome
 
 Phase 11 is complete as an analysis-tooling phase. The repository now produces
