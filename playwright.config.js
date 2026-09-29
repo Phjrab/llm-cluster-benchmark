@@ -3,6 +3,8 @@ const { defineConfig } = require("@playwright/test");
 
 const projectRoot = __dirname;
 const artifactRoot = path.join(projectRoot, ".artifacts", "playwright");
+const dashboardPort = Number(process.env.DASHBOARD_TEST_PORT || 4173);
+const dashboardUrl = `http://127.0.0.1:${dashboardPort}`;
 
 module.exports = defineConfig({
   testDir: path.join(projectRoot, "cluster", "tests", "e2e"),
@@ -19,7 +21,7 @@ module.exports = defineConfig({
     ["junit", { outputFile: path.join(artifactRoot, "junit.xml") }],
   ],
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: dashboardUrl,
     browserName: "chromium",
     headless: true,
     locale: "ko-KR",
@@ -30,9 +32,9 @@ module.exports = defineConfig({
     viewport: { width: 1440, height: 1000 },
   },
   webServer: {
-    command: ".venv/bin/python -m uvicorn cluster.dashboard.app:app --host 127.0.0.1 --port 4173 --no-access-log",
+    command: `.venv/bin/python -m uvicorn cluster.dashboard.app:app --host 127.0.0.1 --port ${dashboardPort} --no-access-log`,
     cwd: projectRoot,
-    url: "http://127.0.0.1:4173/dashboard/health",
+    url: `${dashboardUrl}/dashboard/health`,
     reuseExistingServer: false,
     timeout: 30_000,
     env: {

@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>MediFlow Cluster Lab</title>
   <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
-  <link rel="stylesheet" href="/static/styles.css?v=20260920.sweep-ui">
+  <link rel="stylesheet" href="/static/styles.css?v=20260928.pages">
   <link rel="stylesheet" href="/static/sweeps.css?v=20260920.1">
 </head>
 <body>
@@ -16,12 +16,15 @@
         <span class="brand-mark">M</span>
         <span><strong>MediFlow</strong><small>CLUSTER LAB</small></span>
       </a>
-      <nav class="nav-list">
-        <a class="nav-link active" href="#overview" data-section="overview"><span>01</span>개요</a>
+      <nav class="nav-list" aria-label="기능별 페이지">
+        <p class="nav-group-label">준비 · 관리</p>
+        <a class="nav-link active" href="#overview" data-section="overview" aria-current="page"><span>01</span>개요</a>
         <a class="nav-link" href="#nodes" data-section="nodes"><span>02</span>노드</a>
         <a class="nav-link" href="#models" data-section="models"><span>03</span>모델</a>
+        <p class="nav-group-label">실험 실행</p>
         <a class="nav-link" href="#experiment" data-section="experiment"><span>04</span>실험</a>
         <a class="nav-link" href="#sweeps" data-section="sweeps"><span>05</span>스윕</a>
+        <p class="nav-group-label">분석 · 연구</p>
         <a class="nav-link" href="#results" data-section="results"><span>06</span>결과</a>
         <a class="nav-link" href="#campaign" data-section="campaign"><span>07</span>캠페인</a>
         <a class="nav-link" href="#compare" data-section="compare"><span>08</span>비교</a>
@@ -36,8 +39,8 @@
     <main class="main-content">
       <header class="topbar">
         <div>
-          <p class="eyebrow">JETSON + RASPBERRY PI · EDGE INFERENCE</p>
-          <h1>LLM Cluster Observatory</h1>
+          <p class="eyebrow">CLUSTER LAB <span aria-hidden="true">/</span> <span id="pageGroup">준비 · 관리</span></p>
+          <h1 id="pageTitle" tabindex="-1">클러스터 개요</h1>
         </div>
         <div class="topbar-actions">
           <span class="timestamp" id="lastUpdated">상태 확인 중</span>
@@ -47,7 +50,17 @@
         </div>
       </header>
 
-      <section id="overview" class="section hero-section">
+      <nav class="mobile-page-nav" aria-label="모바일 페이지 이동">
+        <label for="pageSelect">페이지 이동</label>
+        <select id="pageSelect">
+          <optgroup label="준비 · 관리"><option value="overview">01 · 개요</option><option value="nodes">02 · 노드</option><option value="models">03 · 모델</option></optgroup>
+          <optgroup label="실험 실행"><option value="experiment">04 · 실험</option><option value="sweeps">05 · 스윕</option></optgroup>
+          <optgroup label="분석 · 연구"><option value="results">06 · 결과</option><option value="campaign">07 · 캠페인</option><option value="compare">08 · 비교</option><option value="research">09 · 연구 준비</option></optgroup>
+        </select>
+      </nav>
+      <noscript><p class="navigation-notice">기능별 페이지와 실시간 상태를 사용하려면 JavaScript를 활성화하세요.</p></noscript>
+
+      <section id="overview" class="section hero-section" data-dashboard-page="overview">
         <div class="hero-copy">
           <span class="section-kicker">LIVE TESTBED</span>
           <h2>작은 엣지 노드를<br><em>하나의 실험실처럼.</em></h2>
@@ -76,14 +89,14 @@
         </div>
       </section>
 
-      <section class="metric-strip" aria-label="클러스터 주요 지표">
+      <section class="metric-strip" aria-label="클러스터 주요 지표" data-dashboard-page="overview">
         <article><span>참여 노드</span><strong id="selectedCount">1</strong><small>SELECTED</small></article>
         <article><span>설치 모델</span><strong id="modelCount">—</strong><small>GGUF · WORKERS</small></article>
         <article><span>클러스터 전력</span><strong id="averagePower">—</strong><small>SUM · WATTS</small></article>
         <article><span>최근 처리량</span><strong id="recentThroughput">—</strong><small>TOKENS / SEC</small></article>
       </section>
 
-      <section id="nodes" class="section panel-section">
+      <section id="nodes" class="section panel-section" data-dashboard-page="nodes" hidden>
         <div class="section-heading">
           <div><span class="section-index">02 / NODES</span><h2>클러스터 토폴로지</h2></div>
           <div class="heading-actions">
@@ -137,7 +150,7 @@
         </section>
       </section>
 
-      <section id="models" class="section panel-section models-section">
+      <section id="models" class="section panel-section models-section" data-dashboard-page="models" hidden>
         <div class="section-heading">
           <div><span class="section-index">03 / MODELS</span><h2>모델 라이브러리</h2></div>
           <div class="heading-actions">
@@ -171,9 +184,9 @@
         </nav>
       </section>
 
-      <section id="experiment" class="section experiment-section">
+      <section id="experiment" class="section experiment-section" data-dashboard-page="experiment" hidden>
         <div class="section-heading light-heading">
-          <div><span class="section-index">03 / EXPERIMENT</span><h2>실험 설계</h2></div>
+          <div><span class="section-index">04 / EXPERIMENT</span><h2>실험 설계</h2></div>
           <span class="form-status" id="configValidity">설정 준비됨</span>
         </div>
         <form id="experimentForm" class="experiment-layout">
@@ -320,7 +333,7 @@
         </form>
       </section>
 
-      <section id="sweeps" class="section sweep-section">
+      <section id="sweeps" class="section sweep-section" data-dashboard-page="sweeps" hidden>
         <div class="section-heading light-heading">
           <div><span class="section-index">05 / EXPLORATORY SWEEPS</span><h2>Context · 모델 · RPC Sweep</h2></div>
           <span class="form-status" id="sweepBuilderStatus">서버 상태 확인 중</span>
@@ -449,9 +462,9 @@
         </section>
       </section>
 
-      <section id="results" class="section panel-section runs-section">
+      <section id="results" class="section panel-section runs-section" data-dashboard-page="results" hidden>
         <div class="section-heading">
-          <div><span class="section-index">04 / RESULTS</span><h2>실험별 결과</h2></div>
+          <div><span class="section-index">06 / RESULTS</span><h2>실험별 결과</h2></div>
           <div class="heading-actions"><button class="button ghost compact" id="openResultTrashButton" type="button">결과 휴지통</button><div class="results-filter"><label for="resultExperimentFilter">실험 선택</label><select id="resultExperimentFilter"><option value="all">전체 실험</option></select></div></div>
         </div>
         <div class="experiment-context" id="experimentContext">모든 실험의 실행 기록을 표시합니다.</div>
@@ -491,9 +504,9 @@
         </section>
       </section>
 
-      <section id="campaign" class="section research-section campaign-section">
+      <section id="campaign" class="section research-section campaign-section" data-dashboard-page="campaign" hidden>
         <div class="section-heading research-heading">
-          <div><span class="section-index">06 / CAMPAIGN</span><h2>캠페인 진행 현황</h2><p>재시작 가능한 연구 campaign의 cell, 반복, drift, 결과 연결률을 함께 확인합니다.</p></div>
+          <div><span class="section-index">07 / CAMPAIGN</span><h2>캠페인 진행 현황</h2><p>재시작 가능한 연구 campaign의 cell, 반복, drift, 결과 연결률을 함께 확인합니다.</p></div>
           <div class="heading-actions"><button class="button ghost compact" id="refreshResearchButton" type="button">연구 현황 새로고침</button></div>
         </div>
         <div id="campaignSummary" class="campaign-summary" aria-live="polite"><div class="research-empty"><strong>캠페인 현황을 불러오는 중입니다.</strong></div></div>
@@ -503,9 +516,9 @@
         </div>
       </section>
 
-      <section id="compare" class="section panel-section research-section compare-section">
+      <section id="compare" class="section panel-section research-section compare-section" data-dashboard-page="compare" hidden>
         <div class="section-heading research-heading">
-          <div><span class="section-index">07 / CROSS-RUN COMPARE</span><h2>실행 간 비교</h2><p>같은 의미의 run만 골라 플랫폼·노드 수·전략·실행 환경과 측정 품질을 비교합니다.</p></div>
+          <div><span class="section-index">08 / CROSS-RUN COMPARE</span><h2>실행 간 비교</h2><p>같은 의미의 run만 골라 플랫폼·노드 수·전략·실행 환경과 측정 품질을 비교합니다.</p></div>
           <div class="chart-actions"><button type="button" id="researchCompareCsv">CSV <b>↓</b></button><button type="button" data-chart-png="researchCompareChart">PNG <b>↓</b></button><button type="button" data-paper-export="researchCompareChart">논문용 <b>↗</b></button></div>
         </div>
         <div class="compare-filter-grid" id="compareFilters">
@@ -532,8 +545,8 @@
         <div class="table-wrap research-table-wrap"><table><thead><tr><th>RUN</th><th>모델</th><th>플랫폼 / 노드</th><th>전략</th><th>환경</th><th>품질 / 상태</th><th id="compareMetricColumn">처리량</th><th>기준 대비</th></tr></thead><tbody id="compareRunsTable"><tr><td colspan="8" class="empty-cell">비교할 실행 없음</td></tr></tbody></table></div>
       </section>
 
-      <section id="research" class="section research-section readiness-section">
-        <div class="section-heading research-heading"><div><span class="section-index">08 / RESEARCH READINESS</span><h2>연구 준비도</h2><p>승인 모델, Worker 소스·런타임, 전력 조건, 라이선스, 계측 가능 여부를 독립적으로 판정합니다.</p></div><span id="researchEligibility" class="research-eligibility unknown">CHECKING</span></div>
+      <section id="research" class="section research-section readiness-section" data-dashboard-page="research" hidden>
+        <div class="section-heading research-heading"><div><span class="section-index">09 / RESEARCH READINESS</span><h2>연구 준비도</h2><p>승인 모델, Worker 소스·런타임, 전력 조건, 라이선스, 계측 가능 여부를 독립적으로 판정합니다.</p></div><span id="researchEligibility" class="research-eligibility unknown">CHECKING</span></div>
         <div id="readinessSummary" class="readiness-summary-grid" aria-live="polite"></div>
         <div class="readiness-layout">
           <section><div class="research-subhead"><span>APPROVED MODEL LOCK</span><strong>모델 및 라이선스</strong></div><div id="approvedModelList" class="approved-model-list"></div></section>
@@ -690,7 +703,8 @@
   <script src="/static/js/state.js?v=20260919.1" defer></script>
   <script src="/static/js/api.js?v=20260824.1" defer></script>
   <script src="/static/js/events.js?v=20260824.1" defer></script>
-  <script src="/static/app.js?v=20260920.1" defer></script>
+  <script src="/static/js/navigation.js?v=20260928.1" defer></script>
+  <script src="/static/app.js?v=20260928.pages" defer></script>
   <script src="/static/js/sweep-builder.js?v=20260920.2" defer></script>
   <script src="/static/js/sweep-control.js?v=20260920.1" defer></script>
   <script src="/static/js/sweep-results.js?v=20260920.1" defer></script>

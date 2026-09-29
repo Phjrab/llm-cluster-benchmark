@@ -2736,10 +2736,10 @@ function bindEvents() {
     try { const data = await api("/api/experiments/cancel", { method: "POST" }); setRunState(data.experiment); }
     catch (error) { toast("취소 실패", error.message, "error"); }
   });
-  const observer = new IntersectionObserver(entries => entries.forEach(entry => {
-    if (entry.isIntersecting) $$('.nav-link').forEach(link => link.classList.toggle("active", link.dataset.section === entry.target.id));
-  }), { rootMargin: "-30% 0px -60%" });
-  $$('.section').forEach(section => observer.observe(section));
+  document.addEventListener("dashboard:pagechange", event => {
+    if (event.detail.page === "results") renderRuns();
+    if (event.detail.page === "compare") window.ClusterDashboard?.research?.renderCompare?.();
+  });
   let resizeTimer;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);

@@ -91,7 +91,13 @@ async function installApiFixture(page, fixture) {
     if (path === "/api/actions") return json({ actions: fixture.actions });
     if (path === "/api/campaigns") return json({ campaigns: [] });
     if (path === "/api/research/compare") return json({ rows: [], filters: {} });
-    if (path === "/api/research/readiness") return json({ ready: false, checks: [] });
+    if (path === "/api/research/readiness") return json({
+      eligible: false, model_counts: { approved: 0, total: 1 }, approved_models: [],
+      license_blockers: [], workers: [], controller_source: { status: "unverified" },
+      blocking_issues: [{ code: "UI_FIXTURE_NOT_HARDWARE_EVIDENCE" }],
+      execution_gate: { formal_execution_allowed: false, blocking_requirements: ["실장비 연구 준비도 미평가 · UI fixture"] },
+    });
+    if (path === "/api/huggingface/status") return json({ installed: true, verified: false, login_command: ".venv/bin/hf auth login" });
     if (path === "/api/experiments" && request.method() === "GET") {
       const payload = bootstrapPayload(fixture);
       return json({ runs: payload.runs, suites: payload.suites, experiment_groups: payload.experiment_groups });
@@ -117,11 +123,115 @@ async function installApiFixture(page, fixture) {
   });
 }
 
+const dashboardPages = [
+  ["overview", "클러스터 개요"], ["nodes", "노드 관리"], ["models", "모델 라이브러리"],
+  ["experiment", "실험 설계"], ["sweeps", "스윕 설계 · 실행"], ["results", "실험 결과"],
+  ["campaign", "캠페인 현황"], ["compare", "실행 간 비교"], ["research", "연구 준비도"],
+];
+
+for (const width of [390, 768, 1440]) {
+  test(`Feature pages show only the selected part at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const fixture = fixtureState();
+    installSweepApi(fixture);
+    await installApiFixture(page, fixture);
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
+    await page.goto("/");
+    await expect(page.locator("#workerCount")).toHaveText("2");
+    await expect(page.locator("#researchEligibility")).toHaveText("FORMAL BLOCKED");
+    await expect(page.locator(".toast.error")).toHaveCount(0);
+    await page.evaluate(() => {
+      const badge = document.createElement("div");
+      badge.textContent = "UI 시연 · 테스트 데이터 · 실측 성능 아님";
+      Object.assign(badge.style, { position: "fixed", bottom: "10px", right: "10px", zIndex: "1000", padding: "8px 12px", background: "#fff1a8", color: "#111", border: "1px solid #111", fontSize: "12px", pointerEvents: "none" });
+      document.body.append(badge);
+    });
+    for (const [id, title] of dashboardPages) {
+      if (width <= 780) await page.locator("#pageSelect").selectOption(id);
+      else await page.locator(`.nav-link[href="#${id}"]`).click();
+      await expect(page).toHaveURL(new RegExp(`#${id}$`));
+      await expect(page.locator("#pageTitle")).toHaveText(title);
+      await expect(page.locator(".main-content > .section:visible")).toHaveCount(1);
+      await expect(page.locator(`#${id}`)).toBeVisible();
+      await expect(page.locator('.nav-link[aria-current="page"]')).toHaveAttribute("data-section", id);
+      await expect(page.locator("#pageSelect")).toHaveValue(id);
+      await expect(page.locator(".metric-strip")).toBeVisible({ visible: id === "overview" });
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      expect(overflow, `${id} must fit the viewport`).toBeLessThanOrEqual(2);
+      await page.screenshot({ path: testInfo.outputPath(`${id}-${width}.png`) });
+    }
+    expect(errors).toEqual([]);
+    expect(fixture.experimentPayload).toBeNull();
+    expect(fixture.savedSweepPayload).toBeUndefined();
+  });
+}
+
+test("Page navigation preserves edits, supports history and redraws result charts", async ({ page }) => {
+  const fixture = fixtureState();
+  await installApiFixture(page, fixture);
+  await page.goto("/#experiment");
+  await expect(page.locator("#workerCount")).toHaveText("2");
+  await page.locator("#experimentName").fill("keep-my-draft");
+  await page.locator("#requestsInput").fill("7");
+  await page.locator('.nav-link[href="#nodes"]').click();
+  await page.locator('[data-node-platform-tab="jetson"]').click();
+  await page.locator('.nav-link[href="#models"]').click();
+  await page.locator("#libraryModelSearch").fill("Qwen");
+  await page.locator('.nav-link[href="#results"]').click();
+  await expect(page.locator("#chartGrid")).toBeVisible();
+  const chartSize = await page.locator("#throughputChart").evaluate(canvas => ({
+    rendered: canvas.width, expected: Math.round(canvas.getBoundingClientRect().width * devicePixelRatio),
+  }));
+  expect(Math.abs(chartSize.rendered - chartSize.expected)).toBeLessThanOrEqual(1);
+  await page.goBack();
+  await expect(page.locator("#models")).toBeVisible();
+  await expect(page.locator("#libraryModelSearch")).toHaveValue("Qwen");
+  await page.goBack();
+  await expect(page.locator("#nodes")).toBeVisible();
+  await expect(page.locator('[data-node-platform-tab="jetson"]')).toHaveAttribute("aria-selected", "true");
+  await page.goBack();
+  await expect(page.locator("#experimentName")).toHaveValue("keep-my-draft");
+  await expect(page.locator("#requestsInput")).toHaveValue("7");
+  await page.goForward();
+  await expect(page.locator("#nodes")).toBeVisible();
+  await page.reload();
+  await expect(page.locator("#nodes")).toBeVisible();
+  await expect(page.locator("#overview")).toBeHidden();
+});
+
+test("Deep links, invalid routes, keyboard links and model-pack handoff select the right page", async ({ page }) => {
+  const fixture = fixtureState();
+  await installApiFixture(page, fixture);
+  await page.goto("/?view=lab#not-a-page");
+  await expect(page).toHaveURL(/\?view=lab#overview$/);
+  await expect(page.locator("#overview")).toBeVisible();
+  await expect(page.locator("#workerCount")).toHaveText("2");
+  const experimentLink = page.locator('.hero-actions a[href="#experiment"]');
+  await experimentLink.focus();
+  await experimentLink.press("Enter");
+  await expect(page.locator("#experiment")).toBeVisible();
+  await expect(page.locator("#pageTitle")).toBeFocused();
+  await page.locator('.nav-link[href="#models"]').click();
+  await page.locator('[data-model-pack="minimal_smoke"]').click();
+  await page.locator("[data-pack-apply]").click();
+  await expect(page.locator("#experiment")).toBeVisible();
+  await expect(page.locator("#modelSelectionCount")).toContainText("1개");
+  for (const [id, title] of dashboardPages) {
+    await page.goto(`/#${id}`);
+    await expect(page.locator(`#${id}`)).toBeVisible();
+    await expect(page.locator(".main-content > .section:visible")).toHaveCount(1);
+    await expect(page).toHaveTitle(`${title} · MediFlow Cluster Lab`);
+  }
+});
+
 test("Dashboard core flow renders workers, models, power warning, creates and recovers an experiment", async ({ page }) => {
   const fixture = fixtureState();
   await installApiFixture(page, fixture);
   await page.goto("/");
 
+  await page.locator('.nav-link[href="#nodes"]').click();
   await expect(page.locator('[data-node-card="jetson-worker-01"]')).toBeVisible();
   await expect(page.locator('[data-node-card="pi-worker-02"]')).toContainText("POWER WARNING · HISTORY");
   await expect(page.locator("#experimentPowerBanner")).toContainText("일반 실험에서는 비차단 측정 품질");
@@ -131,6 +241,7 @@ test("Dashboard core flow renders workers, models, power warning, creates and re
   await expect(page.locator('#orbitWorkers [data-orbit-worker="pi-worker-02"]')).toContainText("ONLINE");
   await expect(page.locator("#workerCount")).toHaveText("2");
   await expect(page.locator("#modelLibrary")).toContainText("Qwen2.5 1.5B Instruct");
+  await page.locator('.nav-link[href="#models"]').click();
   await page.locator('[data-model-pack="minimal_smoke"]').click();
   await expect(page.locator("#modelStarterPackPreview")).toBeVisible();
   await expect(page.locator("#modelStarterPackPreview")).toContainText("Qwen2.5 1.5B Instruct");
@@ -163,6 +274,7 @@ test("Dashboard core flow renders workers, models, power warning, creates and re
     window.ClusterDashboard.renderModels({ model_ids: [window.__e2eBaseModel.id] });
   });
 
+  await page.locator('.nav-link[href="#experiment"]').click();
   await page.locator("#experimentName").fill("phase-08-browser-flow");
   await page.locator("#requestsInput").fill("2");
   await page.locator("#experimentForm").evaluate(form => form.scrollIntoView());
@@ -221,6 +333,7 @@ test("Result responses, private trash deletion, and safe worker disconnect remai
   await page.locator("#resultTrashDialog [data-close-dialog]").first().click();
   await expect(page.locator("#runsTable")).toContainText("browser-e2e");
 
+  await page.locator('.nav-link[href="#nodes"]').click();
   await page.locator('[data-node-detail="pi-worker-02"]').click();
   await page.locator("#nodeDeleteButton").click();
   await expect(page.locator("#nodeDeleteDialog")).toBeVisible();
@@ -445,7 +558,8 @@ for (const width of [390, 768, 1440]) {
     }));
     expect(overflow.scroll).toBeLessThanOrEqual(overflow.width + 2);
     expect(overflow.clippedCards).toBe(0);
-    await page.locator(".nav-link[href='#sweeps']").click();
+    if (width <= 780) await page.locator("#pageSelect").selectOption("sweeps");
+    else await page.locator(".nav-link[href='#sweeps']").click();
     await page.screenshot({ path: testInfo.outputPath(`sweep-ui-${width}.png`) });
     expect(fixture.savedSweepPayload).toBeUndefined();
     expect(fixture.experimentPayload).toBeNull();

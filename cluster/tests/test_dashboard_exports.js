@@ -140,10 +140,10 @@ assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/events.j
 assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js"), "utf8"), /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260920\.sweep-ui[\s\S]*sweeps\.css\?v=20260920\.1/);
+assert.match(template, /styles\.css\?v=20260928\.pages[\s\S]*sweeps\.css\?v=20260920\.1/);
 assert.match(template, /models\.js\?v=20260920\.2/);
 assert.match(template, /power\.js\?v=20260920\.1/);
-assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*app\.js\?v=20260920\.1[\s\S]*sweep-builder\.js\?v=20260920\.2[\s\S]*sweep-control\.js\?v=20260920\.1[\s\S]*sweep-results\.js\?v=20260920\.1/);
+assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*navigation\.js\?v=20260928\.1[\s\S]*app\.js\?v=20260928\.pages[\s\S]*sweep-builder\.js\?v=20260920\.2[\s\S]*sweep-control\.js\?v=20260920\.1[\s\S]*sweep-results\.js\?v=20260920\.1/);
 assert.match(template, /results\.js\?v=20260920\.2/);
 assert.match(template, /research\.js\?v=20260920\.1/);
 const researchSource = fs.readFileSync(path.join(dashboardRoot, "static/js/research.js"), "utf8");
