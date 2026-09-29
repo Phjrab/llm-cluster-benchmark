@@ -40,8 +40,24 @@ Broadcast의 `physical_cluster_tokens_per_s`에는 복제 응답이 모두 들�
 설계·코드·검증을 보조했는지와 개인별 기여는 브랜치명만으로 확정하지 않습니다.
 [포트폴리오 설명](docs/portfolio/overview.md)과
 [증거·캡처 목록](docs/portfolio/evidence.md)에 확인 가능한 범위와 필요한
-본인 확인 항목을 분리했습니다. 실제 데이터에 연결된 공개 가능 화면은 아직
-README에 삽입하지 않았습니다.
+본인 확인 항목을 분리했습니다.
+
+## Dashboard 화면 예시
+
+아래 이미지는 2026-09-28 저장소 Dashboard를 격리 실행하고 **테스트용 fixture**로
+촬영한 UI 시연입니다. 표시된 가상 Worker, 모델 상태, 처리량과 지연 수치는
+실측 장비 결과나 연구 평가가 아닙니다. 원본과 화면별 구분은 로컬
+`llm_cluster_ui_capture_2026-09-28/pages_v3/`의 `CAPTURE_MANIFEST.csv`에
+기록했습니다.
+
+| 노드 등록·상태 UI | 실험 설계 UI |
+|---|---|
+| ![가상 Jetson·Raspberry Pi Worker가 표시된 노드 관리 UI 시연](docs/images/readme/02_nodes.png) | ![실행하지 않은 실험 설계 UI 시연](docs/images/readme/04_experiment_builder.png) |
+
+결과 페이지의 `18.3 tok/s`, `0.42 s` 등은 레이아웃 확인용 fixture 값입니다.
+실제 benchmark 측정치로 인용하지 마세요.
+
+![fixture 결과가 표시된 LLM Cluster Dashboard; 실측 성능 아님](docs/images/readme/06_results.png)
 
 ## Controller quick start
 
