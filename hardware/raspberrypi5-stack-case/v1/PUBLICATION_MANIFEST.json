@@ -103,9 +103,9 @@
   },
   {
     "path": "README.md",
-    "bytes": 1509,
-    "sha256": "bbfe6bf9e1639f6f24ae95bf7a7097f229da24915104b02475f368a9c0ef4ecf",
-    "git_blob_sha1": "e9c20e9cf1774534198f1cf9f1f9d0480b97a8ee"
+    "bytes": 2044,
+    "sha256": "2f705dbc52dbb4d5756630ef414fd37b9c0fd98ee05615ea47c29a076d2c4316",
+    "git_blob_sha1": "f23ddf3af6622f7ae1233e860cf6dd2ba0df861e"
   },
   {
     "path": "RaspberryPi-reference-LICENSE.txt",
