@@ -1,0 +1,240 @@
+{
+  "software": "Actual FreeCAD1.0.0 GUI; native Part/OCCT shape, Boolean and mesh checks",
+  "revision": "rounded-v2",
+  "reference_solids": 1393,
+  "dimensions_mm": {
+    "footprint": [
+      142,
+      132
+    ],
+    "floor": 6,
+    "post": 16,
+    "corner_radius": 10,
+    "edge_radius": 1,
+    "pitch": 60,
+    "tier_height_with_pin": 65.5,
+    "three_tier_height": 185.5,
+    "kit_bottom": 8,
+    "floor_to_kit_bottom": 2,
+    "pin_diameter": 6.8,
+    "socket_diameter": 7.8,
+    "radial_clearance": 0.5,
+    "axial_clearance": 0.5,
+    "pin_tip_chamfer": 0.6,
+    "socket_entry_lead_in": 0.5,
+    "bare_channel_width": 106.4,
+    "centering_insert_thickness_each": 1,
+    "effective_channel_width_with_inserts": 104.4,
+    "seated_side_clearance_each": 0.7,
+    "vertical_clearance": 0.5,
+    "io_shift_forward": 18,
+    "dominant_port_recess": 2.6
+  },
+  "feature_errors": [],
+  "kit_frame_lateral_play_overlap_mm3": {
+    "-0.7": 0.0,
+    "0": 0.0,
+    "0.7": 0.0
+  },
+  "kit_insert_lateral_play_overlap_mm3": {
+    "-0.7": 0.0,
+    "0": 0.0,
+    "0.7": 0.0
+  },
+  "bare_cavity_full_lateral_play_safe": false,
+  "centering_inserts_required": "Install both1mm captured guides before sliding kit; bare cavity extra2mm is consumed by guides for safe operation. Do not operate without them.",
+  "unrestricted_left_play_collision_mm3": 13.224566819999987,
+  "continuous_Y_insertion": {
+    "-0.7": {
+      "XZ_bound_candidates": [],
+      "unbounded_Y_overlap_mm3": 0.0
+    },
+    "0": {
+      "XZ_bound_candidates": [],
+      "unbounded_Y_overlap_mm3": 0.0
+    },
+    "0.7": {
+      "XZ_bound_candidates": [],
+      "unbounded_Y_overlap_mm3": 0.0
+    }
+  },
+  "continuous_Y_support_clearance": "Kit minimumZ8mm (1e-6 CAD tolerance); ledge topZ8, ring topZ6, so pureY translation preserves nonpenetration.",
+  "continuous_Y_posts_guides_clearance": "At seated +/-0.7mm play, kitX18.8..123.2. PostsX0..16/126..142; guide/hookX<=18.8 or>=123.2, disjoint interiors for anyY.",
+  "continuous_Y_fixed_stop_clearance": "Kit minimumY2.373125; fixed stop maximumY2. Entry gate removed for insertion; positiveY offset remains clear.",
+  "guide_retention": "Rear8mm over-rail keeper hooks enter clearance slots; outer legs prevent inward fall. Endwise removal blocked by the seated gravity gate.0.3mm keeper clearances; retention strength untested.",
+  "assembly_pair_overlap_mm3": {
+    "PrintableFrame_Tier1 / RemovableGate_Tier1": 0.0,
+    "PrintableFrame_Tier1 / LeftCenteringInsert_Tier1": 0.0,
+    "PrintableFrame_Tier1 / RightCenteringInsert_Tier1": 0.0,
+    "PrintableFrame_Tier1 / PrintableFrame_Tier2": 0.0,
+    "PrintableFrame_Tier1 / RemovableGate_Tier2": 0.0,
+    "PrintableFrame_Tier1 / LeftCenteringInsert_Tier2": 0.0,
+    "PrintableFrame_Tier1 / RightCenteringInsert_Tier2": 0.0,
+    "PrintableFrame_Tier1 / PrintableFrame_Tier3": 0.0,
+    "PrintableFrame_Tier1 / RemovableGate_Tier3": 0.0,
+    "PrintableFrame_Tier1 / LeftCenteringInsert_Tier3": 0.0,
+    "PrintableFrame_Tier1 / RightCenteringInsert_Tier3": 0.0,
+    "RemovableGate_Tier1 / LeftCenteringInsert_Tier1": 0.0,
+    "RemovableGate_Tier1 / RightCenteringInsert_Tier1": 0.0,
+    "RemovableGate_Tier1 / PrintableFrame_Tier2": 0.0,
+    "RemovableGate_Tier1 / RemovableGate_Tier2": 0.0,
+    "RemovableGate_Tier1 / LeftCenteringInsert_Tier2": 0.0,
+    "RemovableGate_Tier1 / RightCenteringInsert_Tier2": 0.0,
+    "RemovableGate_Tier1 / PrintableFrame_Tier3": 0.0,
+    "RemovableGate_Tier1 / RemovableGate_Tier3": 0.0,
+    "RemovableGate_Tier1 / LeftCenteringInsert_Tier3": 0.0,
+    "RemovableGate_Tier1 / RightCenteringInsert_Tier3": 0.0,
+    "LeftCenteringInsert_Tier1 / RightCenteringInsert_Tier1": 0.0,
+    "LeftCenteringInsert_Tier1 / PrintableFrame_Tier2": 0.0,
+    "LeftCenteringInsert_Tier1 / RemovableGate_Tier2": 0.0,
+    "LeftCenteringInsert_Tier1 / LeftCenteringInsert_Tier2": 0.0,
+    "LeftCenteringInsert_Tier1 / RightCenteringInsert_Tier2": 0.0,
+    "LeftCenteringInsert_Tier1 / PrintableFrame_Tier3": 0.0,
+    "LeftCenteringInsert_Tier1 / RemovableGate_Tier3": 0.0,
+    "LeftCenteringInsert_Tier1 / LeftCenteringInsert_Tier3": 0.0,
+    "LeftCenteringInsert_Tier1 / RightCenteringInsert_Tier3": 0.0,
+    "RightCenteringInsert_Tier1 / PrintableFrame_Tier2": 0.0,
+    "RightCenteringInsert_Tier1 / RemovableGate_Tier2": 0.0,
+    "RightCenteringInsert_Tier1 / LeftCenteringInsert_Tier2": 0.0,
+    "RightCenteringInsert_Tier1 / RightCenteringInsert_Tier2": 0.0,
+    "RightCenteringInsert_Tier1 / PrintableFrame_Tier3": 0.0,
+    "RightCenteringInsert_Tier1 / RemovableGate_Tier3": 0.0,
+    "RightCenteringInsert_Tier1 / LeftCenteringInsert_Tier3": 0.0,
+    "RightCenteringInsert_Tier1 / RightCenteringInsert_Tier3": 0.0,
+    "PrintableFrame_Tier2 / RemovableGate_Tier2": 0.0,
+    "PrintableFrame_Tier2 / LeftCenteringInsert_Tier2": 0.0,
+    "PrintableFrame_Tier2 / RightCenteringInsert_Tier2": 0.0,
+    "PrintableFrame_Tier2 / PrintableFrame_Tier3": 0.0,
+    "PrintableFrame_Tier2 / RemovableGate_Tier3": 0.0,
+    "PrintableFrame_Tier2 / LeftCenteringInsert_Tier3": 0.0,
+    "PrintableFrame_Tier2 / RightCenteringInsert_Tier3": 0.0,
+    "RemovableGate_Tier2 / LeftCenteringInsert_Tier2": 0.0,
+    "RemovableGate_Tier2 / RightCenteringInsert_Tier2": 0.0,
+    "RemovableGate_Tier2 / PrintableFrame_Tier3": 0.0,
+    "RemovableGate_Tier2 / RemovableGate_Tier3": 0.0,
+    "RemovableGate_Tier2 / LeftCenteringInsert_Tier3": 0.0,
+    "RemovableGate_Tier2 / RightCenteringInsert_Tier3": 0.0,
+    "LeftCenteringInsert_Tier2 / RightCenteringInsert_Tier2": 0.0,
+    "LeftCenteringInsert_Tier2 / PrintableFrame_Tier3": 0.0,
+    "LeftCenteringInsert_Tier2 / RemovableGate_Tier3": 0.0,
+    "LeftCenteringInsert_Tier2 / LeftCenteringInsert_Tier3": 0.0,
+    "LeftCenteringInsert_Tier2 / RightCenteringInsert_Tier3": 0.0,
+    "RightCenteringInsert_Tier2 / PrintableFrame_Tier3": 0.0,
+    "RightCenteringInsert_Tier2 / RemovableGate_Tier3": 0.0,
+    "RightCenteringInsert_Tier2 / LeftCenteringInsert_Tier3": 0.0,
+    "RightCenteringInsert_Tier2 / RightCenteringInsert_Tier3": 0.0,
+    "PrintableFrame_Tier3 / RemovableGate_Tier3": 0.0,
+    "PrintableFrame_Tier3 / LeftCenteringInsert_Tier3": 0.0,
+    "PrintableFrame_Tier3 / RightCenteringInsert_Tier3": 0.0,
+    "RemovableGate_Tier3 / LeftCenteringInsert_Tier3": 0.0,
+    "RemovableGate_Tier3 / RightCenteringInsert_Tier3": 0.0,
+    "LeftCenteringInsert_Tier3 / RightCenteringInsert_Tier3": 0.0
+  },
+  "printables": {
+    "01_repeatable_frame": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 108772.28558911568,
+      "mesh_closed_solid": true,
+      "facets": 12720,
+      "reread_mesh_closed_solid": true
+    },
+    "02_removable_gate": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 2062.0799999999995,
+      "mesh_closed_solid": true,
+      "facets": 44,
+      "reread_mesh_closed_solid": true
+    },
+    "03_rail_fit_coupon": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 9693.873038378983,
+      "mesh_closed_solid": true,
+      "facets": 456,
+      "reread_mesh_closed_solid": true
+    },
+    "04_pin_fit_coupon": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 1590.9117130382044,
+      "mesh_closed_solid": true,
+      "facets": 1390,
+      "reread_mesh_closed_solid": true
+    },
+    "05_socket_fit_coupon": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 1577.875018317438,
+      "mesh_closed_solid": true,
+      "facets": 1960,
+      "reread_mesh_closed_solid": true
+    },
+    "06_left_centering_insert": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 756.2400000000004,
+      "mesh_closed_solid": true,
+      "facets": 36,
+      "reread_mesh_closed_solid": true,
+      "print_orientation": "Long1mm centering wall lies on bed; keeper hook may need removable local supports"
+    },
+    "07_right_centering_insert": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 756.2399999999823,
+      "mesh_closed_solid": true,
+      "facets": 36,
+      "reread_mesh_closed_solid": true,
+      "print_orientation": "Long1mm centering wall lies on bed; keeper hook may need removable local supports"
+    }
+  },
+  "assembly_step_reread": {
+    "valid": true,
+    "solids": 12,
+    "bbox_mm": [
+      143.6478440058479,
+      133.6478440058479,
+      185.50000000000028
+    ],
+    "tight_bbox_mm": [
+      142.0000002,
+      132.0,
+      185.5
+    ],
+    "bbox_note": "bbox_mm is conservative spline-hull bound; tight_bbox_mm and production mesh give physical envelope"
+  },
+  "physical_testing": "Not printed or tested. No strength, thermal, tipping, vibration, friction, universal printer fit or adhesive structural guarantee.",
+  "stock_guard_antennas_preserved": true,
+  "official_reference_geometry_unmodified": true,
+  "v1_mating_compatibility": "Not compatible withv1 prints; four pin/socket centers moved2mm inward with16mm posts. Allv2 tiers share same interface.",
+  "nominal_kit_to_kit_air_gap_mm": 25.23,
+  "worst_case_to_next_frame_bottom_mm": 16.14,
+  "all_checks_pass": true,
+  "production_frame_mesh_envelope_mm": [
+    142.00000685453415,
+    132.00000685453415,
+    65.5
+  ],
+  "final_feature_errors": [],
+  "native_file_reopen_and_recompute": {
+    "valid_single_solids": {
+      "PrintableFrame": true,
+      "RemovableGate": true,
+      "RailFitCoupon": true,
+      "PinFitCoupon": true,
+      "SocketFitCoupon": true,
+      "LeftCenteringInsert": true,
+      "RightCenteringInsert": true
+    },
+    "feature_errors": [],
+    "kit_bottoms_mm": [
+      7.999999383375654,
+      67.99999938337567,
+      127.99999938337565
+    ],
+    "pins_mm": "Placement [Pos=(8,8,60), Yaw-Pitch-Roll=(0,0,0)]",
+    "sheet_radii": "[(1, 10.0, 10.0), (3, 10.0, 10.0), (5, 10.0, 10.0), (7, 10.0, 10.0)]"
+  }
+}

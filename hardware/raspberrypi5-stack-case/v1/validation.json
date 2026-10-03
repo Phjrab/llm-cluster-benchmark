@@ -1,0 +1,385 @@
+{
+  "prototype_only": true,
+  "units": "mm",
+  "print_parts": {
+    "01_repeatable_frame": {
+      "valid_single_solid": true,
+      "solids": 1,
+      "volume_mm3": 38911.61791027222,
+      "closed_stl": true,
+      "facets": 7564,
+      "bbox_mm": [
+        110.0,
+        82.0,
+        45.0
+      ],
+      "step_reread_valid_single_solid": true
+    },
+    "02_removable_board_pin_print4": {
+      "valid_single_solid": true,
+      "solids": 1,
+      "volume_mm3": 45.10842721687514,
+      "closed_stl": true,
+      "facets": 1116,
+      "bbox_mm": [
+        4.6,
+        4.6,
+        5.800000000000001
+      ],
+      "step_reread_valid_single_solid": true
+    },
+    "03_removable_edge_keeper_print2": {
+      "valid_single_solid": true,
+      "solids": 1,
+      "volume_mm3": 150.32736000000006,
+      "closed_stl": true,
+      "facets": 28,
+      "bbox_mm": [
+        14.0,
+        2.3999999999999995,
+        10.636000000000003
+      ],
+      "step_reread_valid_single_solid": true
+    },
+    "04_full_pin_pattern_2p30": {
+      "valid_single_solid": true,
+      "solids": 1,
+      "volume_mm3": 2262.574517827388,
+      "closed_stl": true,
+      "facets": 3408,
+      "bbox_mm": [
+        62.6,
+        53.6,
+        7.800000000000001
+      ],
+      "step_reread_valid_single_solid": true
+    },
+    "05_full_pin_pattern_2p35": {
+      "valid_single_solid": true,
+      "solids": 1,
+      "volume_mm3": 2263.8390088704564,
+      "closed_stl": true,
+      "facets": 3408,
+      "bbox_mm": [
+        62.6,
+        53.6,
+        7.800000000000001
+      ],
+      "step_reread_valid_single_solid": true
+    },
+    "06_full_pin_pattern_2p40": {
+      "valid_single_solid": true,
+      "solids": 1,
+      "volume_mm3": 2265.1317742474102,
+      "closed_stl": true,
+      "facets": 3408,
+      "bbox_mm": [
+        62.6,
+        53.6,
+        7.800000000000001
+      ],
+      "step_reread_valid_single_solid": true
+    },
+    "07_stack_joint_male_coupon": {
+      "valid_single_solid": true,
+      "solids": 1,
+      "volume_mm3": 2538.2049440167216,
+      "closed_stl": true,
+      "facets": 502,
+      "bbox_mm": [
+        20.0,
+        20.0,
+        11.0
+      ],
+      "step_reread_valid_single_solid": true
+    },
+    "08_stack_joint_female_coupon": {
+      "valid_single_solid": true,
+      "solids": 1,
+      "volume_mm3": 2184.2228408936794,
+      "closed_stl": true,
+      "facets": 502,
+      "bbox_mm": [
+        20.0,
+        20.0,
+        6.0
+      ],
+      "step_reread_valid_single_solid": true
+    }
+  },
+  "dimensions": {
+    "footprint": [
+      110,
+      82
+    ],
+    "base_thickness": 6,
+    "tier_pitch": 40,
+    "one_frame_height": 45,
+    "three_tier_height": 125,
+    "board_hole_diameter": 2.7,
+    "board_hole_pattern": [
+      58,
+      49
+    ],
+    "pin_diameter": 2.35,
+    "pin_shank_socket_radial_clearance": 0.2,
+    "tier_joint_radial_clearance": 0.5,
+    "board_under_deck_gap": 4,
+    "modeled_USB_to_next_deck_z_gap": 12.474,
+    "assumed_cooler_to_next_deck_z_gap": 12.664
+  },
+  "cooler_assumption": {
+    "body_envelope_xy": [
+      0,
+      6,
+      66,
+      50
+    ],
+    "above_board_placement_datum": 16,
+    "underside_tip_below_PCB": 4,
+    "official_loose_height_13p7_is_not_used_as_installed_height": true
+  },
+  "assembly_structure_solids": 21,
+  "board_frame_collision": {
+    "common_volume_mm3": 0,
+    "broad_phase_candidate_solids": 0,
+    "exact_imported_solids_total": 2689
+  },
+  "board_pin_collision": [
+    {
+      "common_volume_mm3": 0.0,
+      "broad_phase_candidate_solids": 1,
+      "exact_imported_solids_total": 2689
+    },
+    {
+      "common_volume_mm3": 0.0,
+      "broad_phase_candidate_solids": 1,
+      "exact_imported_solids_total": 2689
+    },
+    {
+      "common_volume_mm3": 0.0,
+      "broad_phase_candidate_solids": 1,
+      "exact_imported_solids_total": 2689
+    },
+    {
+      "common_volume_mm3": 0.0,
+      "broad_phase_candidate_solids": 1,
+      "exact_imported_solids_total": 2689
+    }
+  ],
+  "board_keeper_collision": [
+    {
+      "common_volume_mm3": 0.0,
+      "broad_phase_candidate_solids": 1,
+      "exact_imported_solids_total": 2689
+    },
+    {
+      "common_volume_mm3": 0.0,
+      "broad_phase_candidate_solids": 1,
+      "exact_imported_solids_total": 2689
+    }
+  ],
+  "keeper_frame_overlap_mm3": [
+    0.0,
+    0.0
+  ],
+  "pin_frame_overlap_mm3": [
+    0.0,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "vertical_board_insertion_frame_collision": {
+    "0": {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    "1": {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    "2": {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    "5": {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    "15": {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    "30": {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    }
+  },
+  "horizontal_keeper_insertion_board_collision": {
+    "0": {
+      "common_volume_mm3": 0.0,
+      "broad_phase_candidate_solids": 1,
+      "exact_imported_solids_total": 2689
+    },
+    "-1": {
+      "common_volume_mm3": 0.0,
+      "broad_phase_candidate_solids": 1,
+      "exact_imported_solids_total": 2689
+    },
+    "-3": {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    "-6": {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    "-12": {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    }
+  },
+  "cooler_body_frame_overlap_mm3": 0.0,
+  "cooler_tip_frame_overlap_mm3": [
+    0.0,
+    0.0
+  ],
+  "frame_next_frame_overlap_mm3": 0.0,
+  "next_tier_board_against_previous_structure_collision": [
+    {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    },
+    {
+      "common_volume_mm3": 0,
+      "broad_phase_candidate_solids": 0,
+      "exact_imported_solids_total": 2689
+    }
+  ],
+  "three_tier_collision_equivalence": "Identical tier geometry translated at 40 mm increments; level 1 local board checks plus adjacent-frame and adjacent-board checks apply to all 3 levels.",
+  "native_feature_errors": [],
+  "parametric_test": {
+    "pin_radius_after_2p30": 1.15,
+    "restored_pin_radius": 1.175,
+    "tier3_z_after_42": 84.0
+  },
+  "native_save_reopen_recompute": {
+    "frame_valid_single_solid": true,
+    "feature_errors": []
+  },
+  "assembly_step_reread": {
+    "step_reread_valid": true,
+    "solids": 21,
+    "bbox_mm": [
+      110.0,
+      82.0,
+      125.00000000000027
+    ],
+    "bbox_min_mm": [
+      -13.0,
+      -13.0,
+      0.0
+    ]
+  },
+  "final_native_gui_saved_reopen": {
+    "frame_valid_single_solid": true,
+    "frame_volume_mm3": 38911.617910272216,
+    "feature_errors": [],
+    "board_model_zmin_by_tier": [
+      8.550000034332,
+      48.550000034331994,
+      88.550000034332
+    ],
+    "pin_centers_by_tier": [
+      [
+        [
+          3.5,
+          3.5
+        ],
+        [
+          61.5,
+          3.5
+        ],
+        [
+          3.5,
+          52.5
+        ],
+        [
+          61.5,
+          52.5
+        ]
+      ],
+      [
+        [
+          3.5,
+          3.5
+        ],
+        [
+          61.5,
+          3.5
+        ],
+        [
+          3.5,
+          52.5
+        ],
+        [
+          61.5,
+          52.5
+        ]
+      ],
+      [
+        [
+          3.5,
+          3.5
+        ],
+        [
+          61.5,
+          3.5
+        ],
+        [
+          3.5,
+          52.5
+        ],
+        [
+          61.5,
+          52.5
+        ]
+      ]
+    ]
+  }
+}

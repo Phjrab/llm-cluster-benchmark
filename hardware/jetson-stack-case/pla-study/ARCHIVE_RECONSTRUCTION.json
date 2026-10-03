@@ -1,0 +1,38 @@
+{
+  "format_version": 1,
+  "encoding": "ordered concatenation of raw archive byte segments; individual parts are not ZIP archives",
+  "original_archive": {
+    "name": "Jetsonstack_v2_PLA_reproducible_study.zip",
+    "bytes": 41234249,
+    "sha256": "f74cc70e9dc146fdb681bd9be83929148906e886c989d6ad1c552ee267b2c899"
+  },
+  "maximum_part_bytes": 8388608,
+  "part_count": 5,
+  "parts": [
+    {
+      "name": "Jetsonstack_v2_PLA_reproducible_study.zip.part001",
+      "bytes": 8388608,
+      "sha256": "ce5dc477ca89d16907fc7f9bf6e6c7f333e55af58b9416b654ba607ee713b356"
+    },
+    {
+      "name": "Jetsonstack_v2_PLA_reproducible_study.zip.part002",
+      "bytes": 8388608,
+      "sha256": "56082630e57be8c88460737d48f6372ee425ee47cda68f141026ff8a37c06b7d"
+    },
+    {
+      "name": "Jetsonstack_v2_PLA_reproducible_study.zip.part003",
+      "bytes": 8388608,
+      "sha256": "f0b94daff2feb953623a6138456f944583512edaf93893eb6076575b5324f2e9"
+    },
+    {
+      "name": "Jetsonstack_v2_PLA_reproducible_study.zip.part004",
+      "bytes": 8388608,
+      "sha256": "d473152560ccd0cb7dcc80fd6d3771b9387cf8daab843bb973719b36028d5901"
+    },
+    {
+      "name": "Jetsonstack_v2_PLA_reproducible_study.zip.part005",
+      "bytes": 7679817,
+      "sha256": "4d08a40811ed2feb7aa2480fad28b83c65ec32632f99a4c5936034d8fcee03d8"
+    }
+  ]
+}

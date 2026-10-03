@@ -1,0 +1,158 @@
+[
+  {
+    "path": "01_repeatable_frame.step",
+    "bytes": 115858,
+    "sha256": "af14092ee01ea31d4d81c17b7621f9a852fca01901e41b37df3c54c46003b6ee",
+    "git_blob_sha1": "10a9488c987b13670443e1de0ed77bcd70630970"
+  },
+  {
+    "path": "01_repeatable_frame.stl",
+    "bytes": 378284,
+    "sha256": "22ce4dab67302244582d7d5250ab64cf3cb41f5fb9085367794ae1bc7fea510f",
+    "git_blob_sha1": "6df4f6c0a717d62da995994be3f575257a254adf"
+  },
+  {
+    "path": "02_removable_board_pin_print4.step",
+    "bytes": 7763,
+    "sha256": "29762b4ab32e60ace1f087152ada2db2f0f086bfec0df4e0ae6634884f27843a",
+    "git_blob_sha1": "3bfd9cb64b15a9f850e586b9e71633572f3c57be"
+  },
+  {
+    "path": "02_removable_board_pin_print4.stl",
+    "bytes": 55884,
+    "sha256": "3fd6e248cdbaf4d54eb5c3c5302b4abbc3ded685f4c1b270f3f75cc815540934",
+    "git_blob_sha1": "1f271a57ce55133cff5059aadc021338bd509a1a"
+  },
+  {
+    "path": "03_removable_edge_keeper_print2.step",
+    "bytes": 11786,
+    "sha256": "6f6cd7691609885abbe29f975e581c01da440b043ed54c65b3a1d60d38ca8b0a",
+    "git_blob_sha1": "0e0440b563bbca38ecca1ae13fce8d904f4cefba"
+  },
+  {
+    "path": "03_removable_edge_keeper_print2.stl",
+    "bytes": 1484,
+    "sha256": "6f1a4301d67ce8181012f6caf5e7b8de8ec1a67a9dc37a8c525e42b6a8d04f23",
+    "git_blob_sha1": "a17c8327c1a78e39aa64573111ba32a8308031b9"
+  },
+  {
+    "path": "04_full_pin_pattern_2p30.step",
+    "bytes": 36730,
+    "sha256": "f601b7f6c456c2e6fdceab18778702ba7cc0dfcbca677f83b14422a68dbeb144",
+    "git_blob_sha1": "b7871ed9c8970f42829c4d4849e127384902bb3a"
+  },
+  {
+    "path": "04_full_pin_pattern_2p30.stl",
+    "bytes": 170484,
+    "sha256": "8f55a0b9e1d37c20d9466701237f14f49762990c0b1e831d257615429c124387",
+    "git_blob_sha1": "65cb43bca2a59a5af4ca3910e2f86727a050d71e"
+  },
+  {
+    "path": "05_full_pin_pattern_2p35.step",
+    "bytes": 36770,
+    "sha256": "3bcf352b4f06ffae9d749435c84449f697db0cc36dd5249bfe3fb1f230c10fc5",
+    "git_blob_sha1": "a62e2223a9583076f91a598ea01130f08eaf59cb"
+  },
+  {
+    "path": "05_full_pin_pattern_2p35.stl",
+    "bytes": 170484,
+    "sha256": "8b911719f683b3df196bdf3882bb4c48ce4b9b25b53f41ac18f4a0268ab6d934",
+    "git_blob_sha1": "805b4350c9aa3544958ef64a40948e2a67af3ca8"
+  },
+  {
+    "path": "06_full_pin_pattern_2p40.step",
+    "bytes": 36690,
+    "sha256": "1d80d191ca8284994628b333fdc39d5b617baca905f0845ae70910d5d7a5f46b",
+    "git_blob_sha1": "ab0011cdaecc7aa6fd7a7794dd66caa75f0c6645"
+  },
+  {
+    "path": "06_full_pin_pattern_2p40.stl",
+    "bytes": 170484,
+    "sha256": "2aaad9fd6ffa1a783428c11d195a7118013849a425958cf0a8e656982d137ce3",
+    "git_blob_sha1": "eca5313211c8022033bb18beb8d15f439115ca98"
+  },
+  {
+    "path": "07_stack_joint_male_coupon.step",
+    "bytes": 9498,
+    "sha256": "3d63b58979b88aebde9099c26045a3d030da2435ae0deab4325c6f02196aae1b",
+    "git_blob_sha1": "0d1c19cdd8178db48921c2f46e04ece9a0a8e10b"
+  },
+  {
+    "path": "07_stack_joint_male_coupon.stl",
+    "bytes": 25184,
+    "sha256": "f950d75d05688b2168f9033a665f3d65c1372d246e8e547e313c010559d6c5c0",
+    "git_blob_sha1": "bb64cfbb4d0fb0177ffdb26c75aeff7c8a5308ce"
+  },
+  {
+    "path": "08_stack_joint_female_coupon.step",
+    "bytes": 9846,
+    "sha256": "b1338a41a9dcd5ec4e01eec4436bf7dea0711c7a15292a239394aac8e2420b33",
+    "git_blob_sha1": "e095cd5919c0733d018104680d2fde2dea13a22d"
+  },
+  {
+    "path": "08_stack_joint_female_coupon.stl",
+    "bytes": 25184,
+    "sha256": "baf68dba0bfd8edc98cd9a6cb61837acdc3c5c505767d241798c8505bed1183a",
+    "git_blob_sha1": "e589a6af2116e0c3aebbea3ce6e66ccecc291d4f"
+  },
+  {
+    "path": "README-ko.md",
+    "bytes": 6554,
+    "sha256": "caa1831803bfb042c443deef7b45874d10e35b004f84aa302e16045f0d54f384",
+    "git_blob_sha1": "de59ca4bfc5d1a190b564e80b2a8c775194502a8"
+  },
+  {
+    "path": "README.md",
+    "bytes": 1509,
+    "sha256": "bbfe6bf9e1639f6f24ae95bf7a7097f229da24915104b02475f368a9c0ef4ecf",
+    "git_blob_sha1": "e9c20e9cf1774534198f1cf9f1f9d0480b97a8ee"
+  },
+  {
+    "path": "RaspberryPi-reference-LICENSE.txt",
+    "bytes": 1881,
+    "sha256": "4ca2d350552b24137e55587e13fb09a249b757c6af49652ff02ea524d154c7fc",
+    "git_blob_sha1": "c3d8922e10ad7a2578b678bb29238e03c5a4745e"
+  },
+  {
+    "path": "RaspberryPi5_ActiveCooler_StackPrototype.FCStd",
+    "bytes": 6737280,
+    "sha256": "5c4b95337b7bc493dff68b9f053781db1df2874b7213057d8eefb9af2221abdd",
+    "git_blob_sha1": "c8fa618a73259c8ccd0ffc99391e66e4c10af175"
+  },
+  {
+    "path": "single-tier-board-and-keepout.png",
+    "bytes": 88666,
+    "sha256": "a670ad0acc0bf3495c90a44812934f91c30847909c0e3751906525c814309a75",
+    "git_blob_sha1": "547647d6ef355eddbea06e7b534698e7c01866c2"
+  },
+  {
+    "path": "single-tier-four-pin-frame.png",
+    "bytes": 50671,
+    "sha256": "94cd189ada65c56715fb0f8c4367795595ea8b2ddbcab65bc7b7c73c70744c81",
+    "git_blob_sha1": "2507d836dfe1b9e01774eacee19a047c3e1c2daa"
+  },
+  {
+    "path": "three-tier-actual-freecad.png",
+    "bytes": 118680,
+    "sha256": "80e00bfa1b9d13435f2120cfddcc6b4d2cae136c4e7967c1d4feb1f9fafabd9c",
+    "git_blob_sha1": "e23916fcadcd99f8a88195a89368e2a52403f1d2"
+  },
+  {
+    "path": "three-tier-assumed-cooler-keepout.png",
+    "bytes": 129200,
+    "sha256": "79748c548420679cfb56dcc33852070e758561cce73d52506fd142005807f00f",
+    "git_blob_sha1": "045efe2b64cc8baf24f335c8312506d20a7ded83"
+  },
+  {
+    "path": "three_tier_structure_assembly.step",
+    "bytes": 497006,
+    "sha256": "09e712e64dfd4e227979f8728538571e03e06823c024eab2c73cb867cfcffbbd",
+    "git_blob_sha1": "fdefb642ff7d41512680b4b9e34ce02bf5973078"
+  },
+  {
+    "path": "validation.json",
+    "bytes": 8663,
+    "sha256": "c6c71ce85c6b3b2e676949805f931a28d27082cb14c981cadc57722e9feb2bdb",
+    "git_blob_sha1": "2501eec9109acab8e4e5514b269c5e9bb0602617"
+  }
+]

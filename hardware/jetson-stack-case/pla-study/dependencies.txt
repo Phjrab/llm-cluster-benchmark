@@ -1,0 +1,19 @@
+Python 3.12, numpy, matplotlib; plotting/report dependencies only: reportlab
+Gmsh Python API4.13.1 from PyPI (runtime linked existing system libgmsh.so.4.13.1)
+CalculiX2.20 Debian bookworm package, extracted locally
+https://deb.debian.org/debian/pool/main/c/calculix-ccx/calculix-ccx_2.20-1_amd64.deb
+SPOOLES2.2 dependency, Debian official package, extracted locally
+https://deb.debian.org/debian/pool/main/s/spooles/libspooles2.2_2.2-14_amd64.deb
+Typical reproduction from study folder:
+python -m pip install --target tools/python gmsh==4.13.1
+mkdir -p tools/ccx
+curl -fL [official CalculiX URL above] -o tools/calculix.deb
+curl -fL [official SPOOLES URL above] -o tools/spooles.deb
+dpkg-deb -x tools/calculix.deb tools/ccx
+dpkg-deb -x tools/spooles.deb tools/ccx
+python run_study.py
+python verify_solver.py
+python check_mesh.py
+python postprocess.py
+python plot_results.py
+The distributed source frame.step must be at ./frame.step. Script accepts this first, otherwise original rounded-v2 path. It never modifies the CAD file.

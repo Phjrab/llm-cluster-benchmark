@@ -1,0 +1,11 @@
+{
+  "max_compression_mm": 0.001,
+  "analytical_compression_mm": 0.001,
+  "relative_displacement_error": 0.0,
+  "stress_zz_range_MPa": [
+    -0.099999,
+    -0.099999
+  ],
+  "reaction_z_N": 9.999997900000002,
+  "passed": true
+}
