@@ -1,0 +1,290 @@
+{
+  "revision": "compact-v3",
+  "software": "FreeCAD 1.0.0 Part/OCCT native solids and tessellated meshes",
+  "dimensions_mm": {
+    "footprint": [
+      142,
+      100
+    ],
+    "old_v2_footprint": [
+      142,
+      132
+    ],
+    "floor": 6,
+    "post": 16,
+    "corner_radius": 10,
+    "edge_radius": 1,
+    "pitch": 60,
+    "window": [
+      110,
+      84
+    ],
+    "kit_bottom": 8,
+    "pin_diameter": 6.8,
+    "socket_diameter": 7.8,
+    "radial_clearance": 0.5,
+    "axial_clearance": 0.5,
+    "bare_channel_width": 106.4,
+    "required_guides_each": 1,
+    "effective_channel_width": 104.4,
+    "seated_safe_lateral_play_each": 0.7,
+    "post_to_guide_nominal_gap": 1.8,
+    "keeper_forward_movement": 0,
+    "rear_post_service_channel": {
+      "x_left": [
+        12.7,
+        16
+      ],
+      "x_right": [
+        126,
+        129.3
+      ],
+      "y": [
+        84,
+        100
+      ],
+      "z": [
+        13.1,
+        19.7
+      ],
+      "tool_fillet_radius": 0.3
+    },
+    "rail_support_rear_overlap": 1,
+    "gate_width": 106.4
+  },
+  "stock_guard_antennas_preserved": true,
+  "official_reference_geometry_unmodified": true,
+  "reference_solids": 1393,
+  "v2_compatibility": "Do not mix v2 and v3 tiers; pin pattern changed to 126x84mm center spacing.",
+  "printables": {
+    "01_repeatable_frame": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 89838.91073076677,
+      "mesh_closed_solid": true,
+      "reread_mesh_closed_solid": true,
+      "facets": 13048,
+      "step_sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb"
+    },
+    "02_removable_gate": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 1873.9199999999992,
+      "mesh_closed_solid": true,
+      "reread_mesh_closed_solid": true,
+      "facets": 44,
+      "step_sha256": "943f5e6175ea230ab9e624466939a6cbf84f15d11871465357b3b69e7a937734"
+    },
+    "03_rail_fit_coupon": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 12371.21128836205,
+      "mesh_closed_solid": true,
+      "reread_mesh_closed_solid": true,
+      "facets": 1696,
+      "step_sha256": "a7c36483329a8f400232d7e263c3e25a389533c11ef517ce8c380c15febd0c2c"
+    },
+    "04_pin_fit_coupon": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 1590.9117130382047,
+      "mesh_closed_solid": true,
+      "reread_mesh_closed_solid": true,
+      "facets": 1390,
+      "step_sha256": "f3e4d2fe874bb740ebdd420b871bd0f3bdaec105167f38ce38a6015027d805f2"
+    },
+    "05_socket_fit_coupon": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 1577.875018317438,
+      "mesh_closed_solid": true,
+      "reread_mesh_closed_solid": true,
+      "facets": 1960,
+      "step_sha256": "37a8f57d43b8c25d3697aa917cc26a797260c5c18e16ee7a6f3ff539ec7155c1"
+    },
+    "06_left_centering_insert": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 756.2400000000002,
+      "mesh_closed_solid": true,
+      "reread_mesh_closed_solid": true,
+      "facets": 36,
+      "step_sha256": "8f0cb50458a9dbecf1aa82e3145125eca74a1fd2c6616fa3ae71357aeb57e3ea"
+    },
+    "07_right_centering_insert": {
+      "valid": true,
+      "solids": 1,
+      "volume_mm3": 756.2399999999823,
+      "mesh_closed_solid": true,
+      "reread_mesh_closed_solid": true,
+      "facets": 36,
+      "step_sha256": "7eaeb437bc7c2d2df039ad7e1317019bd3a9223a2450f066092b5015c929d2af"
+    }
+  },
+  "kit_clearance_at_safe_play": {
+    "-0.7": {
+      "frame": {
+        "overlap_mm3": 0.0,
+        "candidate_solids": 1
+      },
+      "RemovableGate": {
+        "overlap_mm3": 0,
+        "candidate_solids": 0
+      },
+      "LeftCenteringInsert": {
+        "overlap_mm3": 0.0,
+        "candidate_solids": 1
+      },
+      "RightCenteringInsert": {
+        "overlap_mm3": 0,
+        "candidate_solids": 0
+      }
+    },
+    "0": {
+      "frame": {
+        "overlap_mm3": 0.0,
+        "candidate_solids": 1
+      },
+      "RemovableGate": {
+        "overlap_mm3": 0,
+        "candidate_solids": 0
+      },
+      "LeftCenteringInsert": {
+        "overlap_mm3": 0,
+        "candidate_solids": 0
+      },
+      "RightCenteringInsert": {
+        "overlap_mm3": 0,
+        "candidate_solids": 0
+      }
+    },
+    "0.7": {
+      "frame": {
+        "overlap_mm3": 0.0,
+        "candidate_solids": 1
+      },
+      "RemovableGate": {
+        "overlap_mm3": 0,
+        "candidate_solids": 0
+      },
+      "LeftCenteringInsert": {
+        "overlap_mm3": 0,
+        "candidate_solids": 0
+      },
+      "RightCenteringInsert": {
+        "overlap_mm3": 0.0,
+        "candidate_solids": 1
+      }
+    }
+  },
+  "continuous_Y_insertion": {
+    "-0.7": {
+      "overlap_mm3": 0.0,
+      "candidate_solids": 1
+    },
+    "0": {
+      "overlap_mm3": 0,
+      "candidate_solids": 0
+    },
+    "0.7": {
+      "overlap_mm3": 0.0,
+      "candidate_solids": 1
+    }
+  },
+  "continuous_path_bound_proofs": {
+    "posts": "All kit solids at safe +/-0.7mm play lie laterally within x18.6105..123.3895 conservatively; posts lie x0..16 and x126..142, giving at least2.61mm separation. Valid for any Y insertion offset.",
+    "support": "Exact stock guard has minimum z8; rail ledges topz8, ring topz6. Conservative imported spline hull may report z7.86; exact overlap tests used.",
+    "fixed_stop": "Stop occupies y0..2. Kit minimum y2.373125. Positive Y insertion offset increases stop clearance. Gate must be removed.",
+    "guide_install": "Straight endwise Y installation from the rear, gate and kit removed. Rear outward keeper hooks lie y84..92; local post service channels clear their path. Pure vertical guide insertion is not allowed because the long bars must pass under the retaining lips. See service_path_validation.json for exact continuousY sweep.",
+    "gate_vertical_install": "Gate bridge and keys lie x17.8..124.2,y94..96.8; rear posts x0..16 /126..142. PureZ upward removal clears posts by1.8mm and guides end at y92."
+  },
+  "assembly_pair_overlap_mm3": {
+    "PrintableFrame_Tier1 / RemovableGate_Tier1": 0.0,
+    "PrintableFrame_Tier1 / LeftCenteringInsert_Tier1": 0.0,
+    "PrintableFrame_Tier1 / RightCenteringInsert_Tier1": 0.0,
+    "PrintableFrame_Tier1 / PrintableFrame_Tier2": 0.0,
+    "PrintableFrame_Tier1 / RemovableGate_Tier2": 0.0,
+    "PrintableFrame_Tier1 / LeftCenteringInsert_Tier2": 0,
+    "PrintableFrame_Tier1 / RightCenteringInsert_Tier2": 0,
+    "PrintableFrame_Tier1 / PrintableFrame_Tier3": 0,
+    "PrintableFrame_Tier1 / RemovableGate_Tier3": 0,
+    "PrintableFrame_Tier1 / LeftCenteringInsert_Tier3": 0,
+    "PrintableFrame_Tier1 / RightCenteringInsert_Tier3": 0,
+    "RemovableGate_Tier1 / LeftCenteringInsert_Tier1": 0,
+    "RemovableGate_Tier1 / RightCenteringInsert_Tier1": 0,
+    "RemovableGate_Tier1 / PrintableFrame_Tier2": 0,
+    "RemovableGate_Tier1 / RemovableGate_Tier2": 0,
+    "RemovableGate_Tier1 / LeftCenteringInsert_Tier2": 0,
+    "RemovableGate_Tier1 / RightCenteringInsert_Tier2": 0,
+    "RemovableGate_Tier1 / PrintableFrame_Tier3": 0,
+    "RemovableGate_Tier1 / RemovableGate_Tier3": 0,
+    "RemovableGate_Tier1 / LeftCenteringInsert_Tier3": 0,
+    "RemovableGate_Tier1 / RightCenteringInsert_Tier3": 0,
+    "LeftCenteringInsert_Tier1 / RightCenteringInsert_Tier1": 0,
+    "LeftCenteringInsert_Tier1 / PrintableFrame_Tier2": 0,
+    "LeftCenteringInsert_Tier1 / RemovableGate_Tier2": 0,
+    "LeftCenteringInsert_Tier1 / LeftCenteringInsert_Tier2": 0,
+    "LeftCenteringInsert_Tier1 / RightCenteringInsert_Tier2": 0,
+    "LeftCenteringInsert_Tier1 / PrintableFrame_Tier3": 0,
+    "LeftCenteringInsert_Tier1 / RemovableGate_Tier3": 0,
+    "LeftCenteringInsert_Tier1 / LeftCenteringInsert_Tier3": 0,
+    "LeftCenteringInsert_Tier1 / RightCenteringInsert_Tier3": 0,
+    "RightCenteringInsert_Tier1 / PrintableFrame_Tier2": 0,
+    "RightCenteringInsert_Tier1 / RemovableGate_Tier2": 0,
+    "RightCenteringInsert_Tier1 / LeftCenteringInsert_Tier2": 0,
+    "RightCenteringInsert_Tier1 / RightCenteringInsert_Tier2": 0,
+    "RightCenteringInsert_Tier1 / PrintableFrame_Tier3": 0,
+    "RightCenteringInsert_Tier1 / RemovableGate_Tier3": 0,
+    "RightCenteringInsert_Tier1 / LeftCenteringInsert_Tier3": 0,
+    "RightCenteringInsert_Tier1 / RightCenteringInsert_Tier3": 0,
+    "PrintableFrame_Tier2 / RemovableGate_Tier2": 0.0,
+    "PrintableFrame_Tier2 / LeftCenteringInsert_Tier2": 0.0,
+    "PrintableFrame_Tier2 / RightCenteringInsert_Tier2": 0.0,
+    "PrintableFrame_Tier2 / PrintableFrame_Tier3": 0.0,
+    "PrintableFrame_Tier2 / RemovableGate_Tier3": 0.0,
+    "PrintableFrame_Tier2 / LeftCenteringInsert_Tier3": 0,
+    "PrintableFrame_Tier2 / RightCenteringInsert_Tier3": 0,
+    "RemovableGate_Tier2 / LeftCenteringInsert_Tier2": 0,
+    "RemovableGate_Tier2 / RightCenteringInsert_Tier2": 0,
+    "RemovableGate_Tier2 / PrintableFrame_Tier3": 0,
+    "RemovableGate_Tier2 / RemovableGate_Tier3": 0,
+    "RemovableGate_Tier2 / LeftCenteringInsert_Tier3": 0,
+    "RemovableGate_Tier2 / RightCenteringInsert_Tier3": 0,
+    "LeftCenteringInsert_Tier2 / RightCenteringInsert_Tier2": 0,
+    "LeftCenteringInsert_Tier2 / PrintableFrame_Tier3": 0,
+    "LeftCenteringInsert_Tier2 / RemovableGate_Tier3": 0,
+    "LeftCenteringInsert_Tier2 / LeftCenteringInsert_Tier3": 0,
+    "LeftCenteringInsert_Tier2 / RightCenteringInsert_Tier3": 0,
+    "RightCenteringInsert_Tier2 / PrintableFrame_Tier3": 0,
+    "RightCenteringInsert_Tier2 / RemovableGate_Tier3": 0,
+    "RightCenteringInsert_Tier2 / LeftCenteringInsert_Tier3": 0,
+    "RightCenteringInsert_Tier2 / RightCenteringInsert_Tier3": 0,
+    "PrintableFrame_Tier3 / RemovableGate_Tier3": 0.0,
+    "PrintableFrame_Tier3 / LeftCenteringInsert_Tier3": 0.0,
+    "PrintableFrame_Tier3 / RightCenteringInsert_Tier3": 0.0,
+    "RemovableGate_Tier3 / LeftCenteringInsert_Tier3": 0,
+    "RemovableGate_Tier3 / RightCenteringInsert_Tier3": 0,
+    "LeftCenteringInsert_Tier3 / RightCenteringInsert_Tier3": 0
+  },
+  "adjacent_frame_contact_area_mm2": {
+    "1-2": 523.3345078963703,
+    "2-3": 523.3345078963703
+  },
+  "assembly_step_reread": {
+    "valid": true,
+    "solids": 12,
+    "tight_bounds_mm": [
+      142.0000002,
+      100.0,
+      185.5
+    ]
+  },
+  "feature_errors": [],
+  "mesh_envelope_mm": [
+    142.00000685453415,
+    99.99999922513962,
+    65.5
+  ],
+  "unverified": "No print, physical strength, friction, creep, vibration, tipping, cooling, plug boot or cable bend clearance validation. Gravity joints do not lock. Geometry checks are not a mechanical or thermal simulation.",
+  "all_checks_pass": true
+}

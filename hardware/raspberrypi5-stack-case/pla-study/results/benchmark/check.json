@@ -1,0 +1,11 @@
+{
+  "analytical_compression_mm": 0.001,
+  "actual_compression_mm": 0.001,
+  "reaction_N": 9.9999979,
+  "expected_reaction_N": 10,
+  "stress_zz_range_MPa": [
+    -0.099999,
+    -0.099999
+  ],
+  "passed": true
+}

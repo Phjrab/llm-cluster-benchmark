@@ -1,0 +1,38 @@
+[
+  {
+    "case": "frame-h2.2",
+    "connected_mesh_components": 1,
+    "min_determinant_Jacobian_mm3": 0.08020920262837429,
+    "min_gamma": 0.1918638444126328,
+    "nonpositive_Jacobian_elements": 0,
+    "positive_Jacobian_passed": true,
+    "support_nodes": 874
+  },
+  {
+    "case": "frame-h3.2",
+    "connected_mesh_components": 1,
+    "min_determinant_Jacobian_mm3": 0.0786122740394124,
+    "min_gamma": 0.016485362993329457,
+    "nonpositive_Jacobian_elements": 0,
+    "positive_Jacobian_passed": true,
+    "support_nodes": 809
+  },
+  {
+    "case": "pin-h0.45",
+    "connected_mesh_components": 1,
+    "min_determinant_Jacobian_mm3": 0.0016705131361440875,
+    "min_gamma": 0.24287149803476282,
+    "nonpositive_Jacobian_elements": 0,
+    "positive_Jacobian_passed": true,
+    "support_nodes": 295
+  },
+  {
+    "case": "pin-h0.7",
+    "connected_mesh_components": 1,
+    "min_determinant_Jacobian_mm3": 0.007456604676443775,
+    "min_gamma": 0.2957744955411442,
+    "nonpositive_Jacobian_elements": 0,
+    "positive_Jacobian_passed": true,
+    "support_nodes": 141
+  }
+]

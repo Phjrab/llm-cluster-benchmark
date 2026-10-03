@@ -1,0 +1,24 @@
+{
+  "JetsonOrinNano_CompactStack_v3_PrivateReference.FCStd": {
+    "archive_integrity_ok": true,
+    "all_preexisting_native_geometry_and_document_bytes_preserved": true,
+    "gui_view_provider_count": 96,
+    "new_construction_views_hidden": true,
+    "public_reference_names_absent": null,
+    "sha256": "2642be70b17537e514ebbd23ed6726d3770af91e20cb8111bc05a7f9d5fa2f4b",
+    "bytes": 16186787,
+    "gui_visual_reopen_verified": false,
+    "method": "Preserved v2 native appearance metadata for matching owned/reference object names; added hidden view providers for six new service features. Geometry untouched."
+  },
+  "public-export/JetsonOrinNano_CompactStack_v3_Public.FCStd": {
+    "archive_integrity_ok": true,
+    "all_preexisting_native_geometry_and_document_bytes_preserved": true,
+    "gui_view_provider_count": 92,
+    "new_construction_views_hidden": true,
+    "public_reference_names_absent": true,
+    "sha256": "5fb8963ae123f15563261683e2512f2af4943f4fd07163fd4f22a8a521792604",
+    "bytes": 479755,
+    "gui_visual_reopen_verified": false,
+    "method": "Preserved v2 native appearance metadata for matching owned/reference object names; added hidden view providers for six new service features. Geometry untouched."
+  }
+}

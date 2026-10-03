@@ -1,0 +1,18 @@
+{
+  "reopened_after_appearance_preservation": true,
+  "objects": 92,
+  "frame_valid": true,
+  "frame_solids": 1,
+  "frame_volume_mm3": 89838.91073076677,
+  "reference_objects_absent": true,
+  "params": {
+    "OuterWidth": "142",
+    "OuterDepth": "100",
+    "Pitch": "60",
+    "RearRailOverlap": "1",
+    "RearServiceRelief": "3.3"
+  },
+  "feature_errors": [],
+  "sha256": "5fb8963ae123f15563261683e2512f2af4943f4fd07163fd4f22a8a521792604",
+  "all_checks_pass": true
+}

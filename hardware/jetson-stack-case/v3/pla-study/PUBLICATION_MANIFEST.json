@@ -1,0 +1,283 @@
+{
+  "status": "final_locked",
+  "design": "Jetson Orin Nano compact v3 (142x100)",
+  "files": [
+    {
+      "path": "ARCHIVE_RECONSTRUCTION.json",
+      "bytes": 1237,
+      "sha256": "f82bfcdc312f02de8ec19876ffeaa44fd14488f7f42c9b40433c5fdd86d0d38c",
+      "git_blob_sha1": "eb4d5e2ff09c2e25729f6033313661466b7b6b41"
+    },
+    {
+      "path": "DELIVERY_MANIFEST.json",
+      "bytes": 8206,
+      "sha256": "c1ae3976eaa450f9b28a5258d8e45d228b8ff5bfd3980288d4e68e9e0c396dd9",
+      "git_blob_sha1": "e25e525ed98d6c0397bae4892fd58f04a7ddf6f5"
+    },
+    {
+      "path": "DISCARDED_TRIALS.json",
+      "bytes": 1146,
+      "sha256": "0ee39a9920117825d96883b89ace76bbd6a900528012cca56cd77051d868bf2a",
+      "git_blob_sha1": "4e32524291fc5db31695bc0da13ee3f7a81d3d85"
+    },
+    {
+      "path": "Jetson_compact_v3_PLA_reproducible_study.zip.part001",
+      "bytes": 8388608,
+      "sha256": "111eec18fc0f8fa47d7893b7c22ec9fffdb5d9d9d70c80bfce1ac93eab9af025",
+      "git_blob_sha1": "59aef333795c1d907577c357c8afd3f2a01fd331"
+    },
+    {
+      "path": "Jetson_compact_v3_PLA_reproducible_study.zip.part002",
+      "bytes": 8388608,
+      "sha256": "cb68c4301a97f0a653fb2f46451c542d41003ff94bf9986051953f58940f4e16",
+      "git_blob_sha1": "e199d331986b4f609ab18a4d41d3afff358ceae3"
+    },
+    {
+      "path": "Jetson_compact_v3_PLA_reproducible_study.zip.part003",
+      "bytes": 8388608,
+      "sha256": "fde8ff03c07f860471ab194f31870bf47f374ab98198b0ae18d9562c9c327ebd",
+      "git_blob_sha1": "fb1389ecfa7b7f1692967fe9b1d009502d897233"
+    },
+    {
+      "path": "Jetson_compact_v3_PLA_reproducible_study.zip.part004",
+      "bytes": 8388608,
+      "sha256": "f1e47137657dbc9d17439228a71fde38e333a0fd4710c9d0b92ad5fb1fbe5d1f",
+      "git_blob_sha1": "5c24c0a5c246ab5714559a5190f023fc455c4768"
+    },
+    {
+      "path": "Jetson_compact_v3_PLA_reproducible_study.zip.part005",
+      "bytes": 1722638,
+      "sha256": "cd0f5419ab4af3a9f8fa62cacc5d1814d2d7a68e8b7b8c4e2a32612fcbe0a1d2",
+      "git_blob_sha1": "5888fc65bed7a7752ff2ecf8de5251791d75fc37"
+    },
+    {
+      "path": "Jetson_compact_v3_PLA_screening_ko.pdf",
+      "bytes": 779452,
+      "sha256": "f4bc6ce602f52c83751f18cb66910037b59e80cae2f461664fce1a3da189b185",
+      "git_blob_sha1": "7883a7f689da0f257e30a408c3972e22ac73b84d"
+    },
+    {
+      "path": "README.md",
+      "bytes": 3450,
+      "sha256": "60c104ed998955136002eb1e159be3cea3b57febdc4eb17ac025cbba6022fe34",
+      "git_blob_sha1": "f82b91b05731469a84e9d8cd9c6118b284e66dc4"
+    },
+    {
+      "path": "README_ko.md",
+      "bytes": 3544,
+      "sha256": "b0ce773c8e5d2565a4cec12c2fe519bb50416695cc2531767010fdd0899cadd7",
+      "git_blob_sha1": "3f9f762e2f64c580ea3a1af8b5b62e8cab433c71"
+    },
+    {
+      "path": "airflow_sensitivity.png",
+      "bytes": 93149,
+      "sha256": "d8b8ba3cb26851e3082bcd8b03a3a9d3688801179620efc7d0fba0096fff8cfe",
+      "git_blob_sha1": "ac32faa3f9984ef80963f41cf61b4a69ae057533"
+    },
+    {
+      "path": "analysis_assumptions.json",
+      "bytes": 9181,
+      "sha256": "8305815c5a9a66e545ec1909c96f63e36d6bd0e8e9ef9fae556f7320651adb8f",
+      "git_blob_sha1": "c71e64c035b86f01badb1d4a8b23a5cfbc88d02e"
+    },
+    {
+      "path": "build_report.py",
+      "bytes": 9443,
+      "sha256": "9c4449d15623447445232d6d886f6a6bbac41171c20c2e15e6e9961b2dd4418f",
+      "git_blob_sha1": "a722a8533fa45554ba9338189a730991c1f100eb"
+    },
+    {
+      "path": "check_mesh.py",
+      "bytes": 821,
+      "sha256": "b32242a2c4434543c8b255fd53377564a4d320c5043a0ebcc2b55c64c8df9c47",
+      "git_blob_sha1": "bad791882b63f4751ac4021b9831f8e9b903731c"
+    },
+    {
+      "path": "dependencies.txt",
+      "bytes": 1711,
+      "sha256": "7cab814e55ef68d39b166141c3ae8d31439f94163905306303d9376b088c0404",
+      "git_blob_sha1": "e13ee2e98732d13049d8760549a92ad9c9fdadc1"
+    },
+    {
+      "path": "frame.step",
+      "bytes": 194949,
+      "sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb",
+      "git_blob_sha1": "ffefc3eacf3fd093328c31af09e6877bddb0e926"
+    },
+    {
+      "path": "frame_static_results.png",
+      "bytes": 511588,
+      "sha256": "d05d8567077ad0b1598b9a82726dfc3bfdfcb25af5624652be94485c614245f0",
+      "git_blob_sha1": "e505dd07c0d08b7324f1bc05aeb3d709ad300f45"
+    },
+    {
+      "path": "load_footprints.png",
+      "bytes": 102837,
+      "sha256": "4ed416ac2d4fc53fa00943bc2335011506f802af99b76a4d36ff729cb95f00d1",
+      "git_blob_sha1": "00b28692696b5e454e031809db826fdbb16aeecc"
+    },
+    {
+      "path": "mesh_convergence.csv",
+      "bytes": 403,
+      "sha256": "13f5f4355888441e56d1df4e5144d18be931101cc377cbb4149ed0563a6df0b5",
+      "git_blob_sha1": "4c1aafac81e6e1dfcbb2b7475b26d6ea95f37d25"
+    },
+    {
+      "path": "plot_results.py",
+      "bytes": 5793,
+      "sha256": "4650192631aa6e7695ebefa33d6cb5b4e1aa6b47f0a4b666dd1d9c96734f3a04",
+      "git_blob_sha1": "9ee6e0c2039d19ed59ffc954edf85317a1ee71b8"
+    },
+    {
+      "path": "postprocess.py",
+      "bytes": 3416,
+      "sha256": "2f5f4a58787800456976f6789ac9163251c1d516718206a394a04ccc1e906e01",
+      "git_blob_sha1": "48f140479ed4300f48f5a8c2c6be84a552c01a6b"
+    },
+    {
+      "path": "reassemble_archive.py",
+      "bytes": 7622,
+      "sha256": "376f60fb6dbed41637fdb64547424173893b87ef2963ae6a7fb656b2ed9b32ac",
+      "git_blob_sha1": "5b22a73a4cbf16adee82b646bb5b29932a285dfa"
+    },
+    {
+      "path": "results/benchmark/check.json",
+      "bytes": 209,
+      "sha256": "6faedac4f00f5a9dc1b205ad19fea726b818d4218f497f1c308e59f8149b96d7",
+      "git_blob_sha1": "dff95806195da471d76ac86a46aee11d5b46ae96"
+    },
+    {
+      "path": "results/benchmark/expected.json",
+      "bytes": 132,
+      "sha256": "04a1272457cef6dbada7d94dec0884eea56cbd9de2acdaedfede31f74469a69e",
+      "git_blob_sha1": "464b489315cfd7fb4e4b210e53f4e51e4b2f125e"
+    },
+    {
+      "path": "results/frame-h4/metadata.json",
+      "bytes": 1236,
+      "sha256": "421db63dc516a8d8df53954f9cf6b3873a55b7bf194fd7446428897e0b57c2bf",
+      "git_blob_sha1": "156ea85f81849eb4cbdc6dceecba6a7c33ec2887"
+    },
+    {
+      "path": "results/frame-h4/summary.json",
+      "bytes": 1772,
+      "sha256": "e32dffb722cb68f8e9f65b8682f8daf7171cead6a9e1c13b09baa540677c3ac4",
+      "git_blob_sha1": "ce8bbe6c5d322010f03e90deccc359597fdabe5f"
+    },
+    {
+      "path": "results/frame-h5/metadata.json",
+      "bytes": 1235,
+      "sha256": "5df26b485e451e1702c0a47bfdb3d7b7c065293794926bead29931a7df820e16",
+      "git_blob_sha1": "65f230c2d04e3e19785c0d68b879f364db6895d3"
+    },
+    {
+      "path": "results/frame-h5/summary.json",
+      "bytes": 1784,
+      "sha256": "e62747218e736df92a370df3f53bd291ad516b9a7fd737cc5998a7af9a3479f1",
+      "git_blob_sha1": "6d3f93d97958451ab5830f60046609c4886114ee"
+    },
+    {
+      "path": "results/input_validation.json",
+      "bytes": 575,
+      "sha256": "03c9fbdd0e7ec9ff9e9f237561815660c77609cec76e976ff2979c5fff8dfb50",
+      "git_blob_sha1": "dc8c1183df5006feb8405498a696923c5e360d46"
+    },
+    {
+      "path": "results/mesh_checks.json",
+      "bytes": 538,
+      "sha256": "29fba50fbdb71f588963f3e6e72b556be7192070b87666e199aea48fefe0ab16",
+      "git_blob_sha1": "07d0d339c4ea1c798be13cae1e61926b4b0fb4ba"
+    },
+    {
+      "path": "results/summary.json",
+      "bytes": 4472,
+      "sha256": "37bdb0dec2a51f31925aaa516ac8086eabe98754f42448e2132f1b0b2febf2d0",
+      "git_blob_sha1": "59cc886d5e45aaae1e1db7f3826e6e0a058726fd"
+    },
+    {
+      "path": "run_study.py",
+      "bytes": 7337,
+      "sha256": "4916776593d402829c8919f905edf1d26d3a6d737c18a3fbe51e525da1a98f63",
+      "git_blob_sha1": "e2a43a9db212c24c9e24f93090152aaef564aa27"
+    },
+    {
+      "path": "seating_contact.step",
+      "bytes": 10472,
+      "sha256": "b009da297aaa1d8b5e993cacc7088bc0e96236c39bc6010287df3e71bf633497",
+      "git_blob_sha1": "1635fb1e9f468aa3524faf770807bfad1e5788e6"
+    },
+    {
+      "path": "seating_contacts.json",
+      "bytes": 3546,
+      "sha256": "64a1b111b33a7b9a9fae3a5427396c581ed2bcac0d232d5c85f476b4d8a51074",
+      "git_blob_sha1": "2470b6620b850361ce8ee76e4808144df28014d2"
+    },
+    {
+      "path": "source-cad-manifest.json",
+      "bytes": 3867,
+      "sha256": "3886661af633c162b2589536a1c06c294c92581e35dcf4c01d12eee725f7bfe4",
+      "git_blob_sha1": "c7007d70f92bd191040e39479d63f4f61cfe0b42"
+    },
+    {
+      "path": "stiffness_sensitivity.csv",
+      "bytes": 318,
+      "sha256": "ac30d7cfd49d2087470077e67e41b1cbb5dcb3b5d9a084cc4429fd513f6fcd27",
+      "git_blob_sha1": "144f742d78d54428b5c38cfda739dcda042d2ec3"
+    },
+    {
+      "path": "thermal_sensitivity.csv",
+      "bytes": 2610,
+      "sha256": "dfa8bebd15aeed97dbd08eda7e585b504aae6f2eae1a2458fd66e0ae21849e8e",
+      "git_blob_sha1": "d8b3054de7fe137b279be6fdaf881d5b1de86f88"
+    },
+    {
+      "path": "verify_inputs.py",
+      "bytes": 1188,
+      "sha256": "870ab911176ef7cb6903535d2c7a81d7b8d80a599d594d0ef4d3866cebb9e7b5",
+      "git_blob_sha1": "a3116d0f7b072a14711eb9c204be747e993ad72b"
+    },
+    {
+      "path": "verify_solver.py",
+      "bytes": 2404,
+      "sha256": "a31d867d622799d25191c38e39b9ada92bde9b847ecba194081326b450246731",
+      "git_blob_sha1": "ba4a578938b5049f156b8db9ee3002cc0c96cebc"
+    }
+  ],
+  "canonical_archive": {
+    "format_version": 1,
+    "original_archive": {
+      "name": "Jetson_compact_v3_PLA_reproducible_study.zip",
+      "bytes": 35277070,
+      "sha256": "93e750d11c3e2d890e0c2c9545662530abc3262d19b17f2c3b41731cc2c0a4fc"
+    },
+    "part_count": 5,
+    "maximum_part_bytes": 8388608,
+    "parts": [
+      {
+        "name": "Jetson_compact_v3_PLA_reproducible_study.zip.part001",
+        "bytes": 8388608,
+        "sha256": "111eec18fc0f8fa47d7893b7c22ec9fffdb5d9d9d70c80bfce1ac93eab9af025"
+      },
+      {
+        "name": "Jetson_compact_v3_PLA_reproducible_study.zip.part002",
+        "bytes": 8388608,
+        "sha256": "cb68c4301a97f0a653fb2f46451c542d41003ff94bf9986051953f58940f4e16"
+      },
+      {
+        "name": "Jetson_compact_v3_PLA_reproducible_study.zip.part003",
+        "bytes": 8388608,
+        "sha256": "fde8ff03c07f860471ab194f31870bf47f374ab98198b0ae18d9562c9c327ebd"
+      },
+      {
+        "name": "Jetson_compact_v3_PLA_reproducible_study.zip.part004",
+        "bytes": 8388608,
+        "sha256": "f1e47137657dbc9d17439228a71fde38e333a0fd4710c9d0b92ad5fb1fbe5d1f"
+      },
+      {
+        "name": "Jetson_compact_v3_PLA_reproducible_study.zip.part005",
+        "bytes": 1722638,
+        "sha256": "cd0f5419ab4af3a9f8fa62cacc5d1814d2d7a68e8b7b8c4e2a32612fcbe0a1d2"
+      }
+    ]
+  }
+}

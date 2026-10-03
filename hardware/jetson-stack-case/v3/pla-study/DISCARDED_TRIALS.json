@@ -1,0 +1,26 @@
+{
+  "reported_results_include_discarded_trials": false,
+  "trials": [
+    {
+      "case": "frame-h2.8",
+      "outcome": "stopped before direct solve; larger mesh260k nodes exceeded practical intended resource budget, no final result claimed"
+    },
+    {
+      "case": "frame-h2.8-iterative",
+      "outcome": "stopped after independent same-conditions patch validation failed; no result claimed"
+    },
+    {
+      "case": "benchmark_iterative",
+      "solver": "ITERATIVE CHOLESKY",
+      "solver_exit": 0,
+      "displacement_max_difference_from_direct_mm": 0.000128394,
+      "stress_max_difference_MPa": 0.029454,
+      "outcome": "rejected; direct analytical patch remains validated"
+    },
+    {
+      "case": "frame-h3.4",
+      "outcome": "direct solver process exited-9 during resource-limited attempt; incomplete result rejected; final meshes5/4mm use validated direct solver"
+    }
+  ],
+  "preservation": "Discarded trial raw files and logs remain in local qa/discarded_trials, excluded from publication archive to avoid duplicating incomplete large meshes. Final canonical archive preserves all final solved cases and validation."
+}

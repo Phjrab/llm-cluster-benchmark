@@ -1,0 +1,134 @@
+{
+  "revision": "compact-v3",
+  "footprint_mm": [
+    142,
+    100
+  ],
+  "geometry_locked": true,
+  "frame_sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb",
+  "frame_volume_mm3": 89838.91073076677,
+  "service_path_validation_passed": true,
+  "kit_and_mesh_validation_passed": true,
+  "native_reopen_parameter_test_passed": true,
+  "rear_post_service_channels_mm": {
+    "left_x": [
+      12.7,
+      16
+    ],
+    "right_x": [
+      126,
+      129.3
+    ],
+    "y": [
+      84,
+      100
+    ],
+    "z": [
+      13.1,
+      19.7
+    ],
+    "tool_corner_radius": 0.3
+  },
+  "files": [
+    {
+      "name": "01_repeatable_frame.step",
+      "bytes": 194949,
+      "sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb"
+    },
+    {
+      "name": "01_repeatable_frame.stl",
+      "bytes": 652484,
+      "sha256": "947e4b006146ceaadb579f88774437cfcb2b1399283e3265665426a20270eb59"
+    },
+    {
+      "name": "02_removable_gate.step",
+      "bytes": 16650,
+      "sha256": "943f5e6175ea230ab9e624466939a6cbf84f15d11871465357b3b69e7a937734"
+    },
+    {
+      "name": "02_removable_gate.stl",
+      "bytes": 2284,
+      "sha256": "e70777dca7873270470ca23c5c06c16ffc48f5132c38ffd99596c2463f41e4a2"
+    },
+    {
+      "name": "03_rail_fit_coupon.step",
+      "bytes": 107211,
+      "sha256": "a7c36483329a8f400232d7e263c3e25a389533c11ef517ce8c380c15febd0c2c"
+    },
+    {
+      "name": "03_rail_fit_coupon.stl",
+      "bytes": 84884,
+      "sha256": "add81e4c682905099ee8e9c91b284f04b093eee0ef032eca0c0a0489c5b52603"
+    },
+    {
+      "name": "04_pin_fit_coupon.step",
+      "bytes": 15909,
+      "sha256": "f3e4d2fe874bb740ebdd420b871bd0f3bdaec105167f38ce38a6015027d805f2"
+    },
+    {
+      "name": "04_pin_fit_coupon.stl",
+      "bytes": 69584,
+      "sha256": "64d364d6ffc5ea1b1dff799558fa99fb1fdf71997bf2721a0b06440f676e4c6a"
+    },
+    {
+      "name": "05_socket_fit_coupon.step",
+      "bytes": 21457,
+      "sha256": "37a8f57d43b8c25d3697aa917cc26a797260c5c18e16ee7a6f3ff539ec7155c1"
+    },
+    {
+      "name": "05_socket_fit_coupon.stl",
+      "bytes": 98084,
+      "sha256": "3ee5934050053322d979c7da9bfc3739669f6a5499b69873e02ba0dea38c3918"
+    },
+    {
+      "name": "06_left_centering_insert.step",
+      "bytes": 14289,
+      "sha256": "8f0cb50458a9dbecf1aa82e3145125eca74a1fd2c6616fa3ae71357aeb57e3ea"
+    },
+    {
+      "name": "06_left_centering_insert.stl",
+      "bytes": 1884,
+      "sha256": "37019c1d2dc0180d28b82cbda9e12f22aa3873e7d661b43994a03f56bc43eba0"
+    },
+    {
+      "name": "07_right_centering_insert.step",
+      "bytes": 14349,
+      "sha256": "7eaeb437bc7c2d2df039ad7e1317019bd3a9223a2450f066092b5015c929d2af"
+    },
+    {
+      "name": "07_right_centering_insert.stl",
+      "bytes": 1884,
+      "sha256": "16d6e8f17661e2c38038f78912131e9b2e6cbb423ef47265375edc9ed753c934"
+    },
+    {
+      "name": "analysis_frame_seating_contact_faces.step",
+      "bytes": 10472,
+      "sha256": "b009da297aaa1d8b5e993cacc7088bc0e96236c39bc6010287df3e71bf633497"
+    },
+    {
+      "name": "analysis_frame_seating_contacts.json",
+      "bytes": 3546,
+      "sha256": "64a1b111b33a7b9a9fae3a5427396c581ed2bcac0d232d5c85f476b4d8a51074"
+    },
+    {
+      "name": "native_reopen_validation.json",
+      "bytes": 1505,
+      "sha256": "21b35f031337acec40c03629a76f95ea2662724aff95c74a94ae25f4e1f9bcca"
+    },
+    {
+      "name": "service_path_validation.json",
+      "bytes": 786,
+      "sha256": "77a0240227e08c34ff824ed40bd5ff82491d9dffb06ec3235439cecf95a247d9"
+    },
+    {
+      "name": "three_level_enclosure_assembly.step",
+      "bytes": 736697,
+      "sha256": "321e9cf0e29be8e2812a293a73db8861e7007211a1a2725ed750976f5722844f"
+    },
+    {
+      "name": "validation_report.json",
+      "bytes": 10480,
+      "sha256": "80910588e673571b9da080016b676454411abba65f61694e31b77120c24173fe"
+    }
+  ]
+}

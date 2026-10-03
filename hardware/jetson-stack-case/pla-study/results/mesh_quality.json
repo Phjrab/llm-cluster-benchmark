@@ -1,0 +1,16 @@
+[
+  {
+    "h_mm": 4,
+    "min_determinant_Jacobian_mm3": 0.11957142857127522,
+    "min_gamma_quality": 0.04456331589468324,
+    "nonpositive_Jacobian_elements": 0,
+    "passed": true
+  },
+  {
+    "h_mm": 2.8,
+    "min_determinant_Jacobian_mm3": 0.08369999999991617,
+    "min_gamma_quality": 0.035937416819821856,
+    "nonpositive_Jacobian_elements": 0,
+    "passed": true
+  }
+]

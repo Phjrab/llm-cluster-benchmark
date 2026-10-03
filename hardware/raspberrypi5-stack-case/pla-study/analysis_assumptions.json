@@ -1,0 +1,156 @@
+{
+  "design": "Raspberry Pi 5 + Active Cooler v1",
+  "source_status": "final_locked",
+  "units": "mm,N,MPa,tonne",
+  "tier_count": 3,
+  "material": "provisional Bambu Lab PLA Basic",
+  "print_setup": {
+    "nozzle_mm": 0.4,
+    "layer_mm": 0.2,
+    "walls": 4,
+    "infill_percent": 30,
+    "infill": "gyroid",
+    "top_bottom_layers": 5
+  },
+  "E_MPa": 1000,
+  "E_sensitivity_MPa": [
+    500,
+    1000,
+    2000
+  ],
+  "nu": 0.35,
+  "density_tonne_mm3": 1.24e-09,
+  "kit_mass_kg": 0.15,
+  "kit_mass_basis": "assumed 0.10 kg board+cooler budget +0.05 kg small cable allowance; not measured or official mass; no heavy peripheral/HAT load; replace with actual weighed mass",
+  "printed_mass_method": "full CAD solid volume *1.24 g/cm3 for own and upper tiers, deliberately exceeds nominal 30% infill estimate; effective stiffness not calibrated",
+  "printed_accessories_volume_mm3": 481.0884288676207,
+  "frame_volume_mm3": 38911.61791027222,
+  "frame_board_z_mm": 9,
+  "frame_post_z_mm": 40,
+  "frame_contact_centers_mm": [
+    [
+      6,
+      6
+    ],
+    [
+      104,
+      6
+    ],
+    [
+      6,
+      76
+    ],
+    [
+      104,
+      76
+    ]
+  ],
+  "frame_boss_centers_mm": [
+    [
+      16.5,
+      16.5
+    ],
+    [
+      74.5,
+      16.5
+    ],
+    [
+      16.5,
+      65.5
+    ],
+    [
+      74.5,
+      65.5
+    ]
+  ],
+  "boss_pressure_patch_radial_mm": [
+    1.7,
+    2.3
+  ],
+  "post_pressure_patch_radial_mm": [
+    3.5,
+    6
+  ],
+  "bottom_support_corner_size_mm": 12,
+  "frame_mesh_h_mm": [
+    3.2,
+    2.2
+  ],
+  "pin_mesh_h_mm": [
+    0.7,
+    0.45
+  ],
+  "thermal_total_power_W": [
+    24,
+    36,
+    45
+  ],
+  "thermal_power_basis": "36W =3*12W official launch pathological board peak scenario; 24W and45W exploration including peripheral allowance; supply rating is not heat measurement",
+  "thermal_effective_flow_CFM": [
+    0.5,
+    1,
+    1.5,
+    2,
+    3,
+    3.27,
+    4
+  ],
+  "fan_max_airflow_CFM_each": 1.09,
+  "fan_flow_basis": "official nominal maximum each fan, cannot assume 3*1.09 actual independent effective cooling or a bound",
+  "thermal_ambient_C": [
+    25,
+    35
+  ],
+  "air_density_kg_m3": 1.18,
+  "air_cp_J_kgK": 1005,
+  "limitations": [
+    "linear isotropic homogenized continuum",
+    "no actual 30% infill or layer anisotropy",
+    "gravity only equivalent bottom frame",
+    "exact planar pressure-contact circles imprinted on original CAD faces; straight-sided tetrahedral approximation",
+    "pin separate local compression with seated shoulder, not contact or retention",
+    "no tensile strength safety factor",
+    "no stack friction, slip, tipping, creep, vibration, cable pull, impact, joint uplift",
+    "energy balance only, not CFD/FEM or PLA/CPU temperature prediction"
+  ],
+  "upper_tier_print_mass_kg": 0.0488469558605334,
+  "pin_board_pressure_annulus_radial_mm": [
+    1.35,
+    2.3
+  ],
+  "pin_shoulder_support_annulus_radial_mm": [
+    1.7,
+    2.3
+  ],
+  "pin_note": "PCB hole radius1.35, boss socket radius1.7 delimit actual seated shoulder overlap; annuli imprinted before mesh",
+  "report_title_ko": "Raspberry Pi 5 PLA 예비 검토",
+  "report_filename": "RaspberryPi5_v1_PLA_screening_ko.pdf",
+  "geometry_description_ko": "확정된 v1 STEP, 110×82mm, 바닥6mm, 피치40mm, 3단125mm",
+  "mass_description_ko": "150g/층 가정: 보드+냉각기100g 예산 + 작은 케이블50g. 공식/실측 질량이 아니며 무거운 HAT·주변장치 제외. 실제 무게로 갱신 필요",
+  "loadpath_description_ko": "보드 → 탈착 핀 받침 → 네 보스의 반경1.7~2.3mm 접촉 고리. 상부2층 → 기둥 반경3.5~6mm 받침 고리",
+  "pin_description_ko": "실제 탈착형 핀 STEP를 별도로 해석했습니다. PCB 구멍 반경1.35mm 밖의 상면에 보드 무게1/4을 분배하고, 프레임 소켓 반경1.7mm 밖의 받침 아랫면만 Z구속했습니다. 소켓 내부 줄기는 중력 지지면으로 가정하지 않았습니다.",
+  "thermal_description_ko": "세 층 총24/36/45W 탐색. 36W는 공식 소개의 병적 최대부하 약12W/보드 ×3이며,45W는 주변부 여유 가정입니다. 공식 팬 최대1.09CFM/개는 명목값으로3개 실제 설치 유효유량이나 상한을 확정하지 않습니다. 개방 프레임에서도 다음층과 케이블의 재순환 영향이 남습니다.",
+  "sources": [
+    [
+      "Bambu PLA Basic TDS V3.0",
+      "https://store.bblcdn.com/s7/default/b189de92249a4b9ebed28b8ea1f080f0/Bambu_PLA_Basic_Technical_Data_Sheet.pdf"
+    ],
+    [
+      "Raspberry Pi Active Cooler: 최대1.09CFM",
+      "https://www.raspberrypi.com/products/active-cooler/"
+    ],
+    [
+      "Raspberry Pi 5 공식 소개: 병적 최대부하 약12W",
+      "https://www.raspberrypi.com/news/introducing-raspberry-pi-5/"
+    ],
+    [
+      "CalculiX2.20 매뉴얼",
+      "https://www.dhondt.de/ccx_2.20.pdf"
+    ],
+    [
+      "Gmsh 공식 문서",
+      "https://gmsh.info/doc/texinfo/"
+    ]
+  ],
+  "archive_basename": "RaspberryPi5_v1_PLA_reproducible_study"
+}

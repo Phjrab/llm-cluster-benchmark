@@ -1,0 +1,20 @@
+{
+  "proof": "Exact rectangular additive members swept from their seated positions upwardZ for gate and toward positiveY rear for guide removal. Reverse paths prove insertion, without rotations.",
+  "prerequisites": "Remove gate and kit before installing/removing guides. Install guides, then kit, then gate.",
+  "checks": {
+    "RemovableGate": {
+      "continuous_axis_frame_overlap_mm3": 0.0,
+      "LeftCenteringInsert_overlap_mm3": 0.0,
+      "RightCenteringInsert_overlap_mm3": 0.0
+    },
+    "LeftCenteringInsert": {
+      "continuous_axis_frame_overlap_mm3": 0.0,
+      "RightCenteringInsert_overlap_mm3": 0.0
+    },
+    "RightCenteringInsert": {
+      "continuous_axis_frame_overlap_mm3": 0.0,
+      "LeftCenteringInsert_overlap_mm3": 0.0
+    }
+  },
+  "all_checks_pass": true
+}

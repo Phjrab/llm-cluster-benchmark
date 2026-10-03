@@ -1,0 +1,445 @@
+{
+  "print_setup": {
+    "nozzle_mm": 0.4,
+    "layer_mm": 0.2,
+    "walls": 4,
+    "infill_percent": 30,
+    "infill": "gyroid",
+    "top_bottom_layers": 5
+  },
+  "material": "provisional Bambu Lab PLA Basic",
+  "E_MPa": 1000,
+  "E_sensitivity_MPa": [
+    500,
+    1000,
+    2000
+  ],
+  "nu": 0.35,
+  "density_tonne_mm3": 1.24e-09,
+  "units": "mm,N,MPa,tonne",
+  "tier_count": 3,
+  "thermal_ambient_C": [
+    25,
+    35
+  ],
+  "air_density_kg_m3": 1.18,
+  "air_cp_J_kgK": 1005,
+  "design": "Jetson Orin Nano compact v3 (142x100)",
+  "source_status": "final_locked",
+  "kit_mass_kg": 0.3,
+  "kit_mass_basis": "same prior300g/tier equipment allowance, actual kit weighs174g per NVIDIA FAQ; cable/peripheral budget provisional",
+  "frame_volume_mm3": 89838.91073076677,
+  "printed_accessories_volume_mm3": 3386.4,
+  "upper_tier_print_mass_kg": 0.11559938530615078,
+  "frame_contact_centers_mm": [
+    [
+      8,
+      8
+    ],
+    [
+      134,
+      8
+    ],
+    [
+      8,
+      92
+    ],
+    [
+      134,
+      92
+    ]
+  ],
+  "frame_post_z_mm": 60,
+  "frame_board_z_mm": 8,
+  "bottom_support_corner_size_mm": 16,
+  "frame_mesh_h_mm": [
+    5,
+    4
+  ],
+  "rail_pressure_rectangles_mm": [
+    [
+      19.5,
+      22.4,
+      2.75,
+      93
+    ],
+    [
+      119.6,
+      122.5,
+      2.75,
+      93
+    ]
+  ],
+  "post_pressure_patch_radial_mm": [
+    4.4,
+    8
+  ],
+  "thermal_total_power_W": [
+    45,
+    75,
+    90
+  ],
+  "thermal_effective_flow_CFM": [
+    2,
+    3,
+    5,
+    7.5,
+    10,
+    15
+  ],
+  "thermal_power_basis": "same prior15/25/30W per level assumed;25W mode is module power budget, not measured wholekit heat",
+  "report_title_ko": "Jetson compact v3 PLA 예비 검토",
+  "report_filename": "Jetson_compact_v3_PLA_screening_ko.pdf",
+  "archive_basename": "Jetson_compact_v3_PLA_reproducible_study",
+  "geometry_description_ko": "확정된 compact v3 STEP, 원래 폭142mm 유지, 깊이100mm, 바닥6mm, 피치60mm, 3단185.5mm",
+  "mass_description_ko": "이전 연구와 같은 장비300g/층 가정. NVIDIA 공식 키트174g보다 여유 있으나 케이블·주변부의 실제 무게는 확인 필요",
+  "loadpath_description_ko": "전체 stock 하부 보호대 → 실제 레일 교차면에서 추출한 접촉 다각형(곡선은 끝점을 잇는 직선 근사). 상부2층 → 상·하 프레임의 실제 맞닿는 네 받침면(총523.335mm²)",
+  "thermal_description_ko": "세 층 총45/75/90W 탐색은 이전 v2와 동일한 에너지 예산입니다. NVIDIA25W모드는 모듈 예산이며 전체 장치 열이나 팬 유량의 실측값이 아닙니다. 실제 팬 풍량·정압이 확인되지 않아 유효2~15CFM 범위를 가정했고, 측정치나 보장 범위가 아닙니다. 깊이 축소로 주어진 간격을 확보해도 냉각 성능 향상을 확정할 수 없습니다.",
+  "comparison_description_ko": "이전 v2의142×132mm에서142×100mm로 깊이24.24% 축소했고, 프레임 전체고체 체적은108772.29→89838.91mm³로17.41% 감소했습니다. 새 연구는 실제 새 체적으로 상부 출력 질량을 갱신하고 접촉 지지 범위도 수정했습니다. 이전 v2는150g/상부층과 다른 레일 하중 범위를 썼으므로 변위·응력의 단순 증감률을 설계 우열이나 개선율로 비교하지 않습니다.",
+  "limitations": [
+    "linear isotropic effective continuum",
+    "gravity only equivalent bottom frame",
+    "no actual30% lattice, anisotropy, strength factor",
+    "planar polygons derived from actual stock guard bottom/rail intersection, curved-segment endpoints joined by straight chords; original vendor reference not distributed",
+    "no retention, contact separation, friction, stack slip, tipping, creep, vibration, cable pull",
+    "energy balance only not thermalFEM/CFD or PLA/CPU temperature prediction"
+  ],
+  "sources": [
+    [
+      "Bambu PLA Basic TDS V3.0",
+      "https://store.bblcdn.com/s7/default/b189de92249a4b9ebed28b8ea1f080f0/Bambu_PLA_Basic_Technical_Data_Sheet.pdf"
+    ],
+    [
+      "NVIDIA HW FAQ: kit mass174g",
+      "https://forums.developer.nvidia.com/t/jetson-orin-nano-hw-faq/249118"
+    ],
+    [
+      "NVIDIA power management",
+      "https://docs.nvidia.com/jetson/archives/r36.4.4/DeveloperGuide/SD/PlatformPowerAndPerformance/JetsonOrinNanoSeriesJetsonOrinNxSeriesAndJetsonAgxOrinSeries.html"
+    ],
+    [
+      "CalculiX2.20 매뉴얼",
+      "https://www.dhondt.de/ccx_2.20.pdf"
+    ],
+    [
+      "Gmsh 공식 문서",
+      "https://gmsh.info/doc/texinfo/"
+    ]
+  ],
+  "rail_pressure_polygons_mm": [
+    [
+      [
+        20.7571673,
+        93.0,
+        8.0
+      ],
+      [
+        22.4,
+        93.0,
+        8.0
+      ],
+      [
+        22.4,
+        92.1887854,
+        8.0
+      ],
+      [
+        22.3,
+        92.1887854,
+        8.0
+      ],
+      [
+        21.3,
+        91.1884426,
+        8.0
+      ],
+      [
+        21.3,
+        87.02,
+        8.0
+      ],
+      [
+        21.5,
+        86.82,
+        8.0
+      ],
+      [
+        21.7,
+        86.82,
+        8.0
+      ],
+      [
+        21.7,
+        85.88,
+        8.0
+      ],
+      [
+        21.5,
+        85.88,
+        8.0
+      ],
+      [
+        21.3,
+        85.68,
+        8.0
+      ],
+      [
+        21.3,
+        81.65,
+        8.0
+      ],
+      [
+        22.3,
+        80.65,
+        8.0
+      ],
+      [
+        22.4,
+        80.65,
+        8.0
+      ],
+      [
+        22.4,
+        77.6073871,
+        8.0
+      ],
+      [
+        21.9421265,
+        77.6073871,
+        8.0
+      ],
+      [
+        21.1426127,
+        76.8078746,
+        8.0
+      ],
+      [
+        21.1426128,
+        23.6921258,
+        8.0
+      ],
+      [
+        21.9421259,
+        22.8926128,
+        8.0
+      ],
+      [
+        22.4,
+        22.8926128,
+        8.0
+      ],
+      [
+        22.4,
+        19.6073871,
+        8.0
+      ],
+      [
+        21.9421265,
+        19.6073871,
+        8.0
+      ],
+      [
+        21.1426127,
+        18.8078746,
+        8.0
+      ],
+      [
+        21.1426127,
+        5.05,
+        8.0
+      ],
+      [
+        21.8,
+        4.3926127,
+        8.0
+      ],
+      [
+        22.4,
+        4.3926127,
+        8.0
+      ],
+      [
+        22.4,
+        2.75,
+        8.0
+      ],
+      [
+        21.8,
+        2.75,
+        8.0
+      ],
+      [
+        19.5,
+        5.05,
+        8.0
+      ],
+      [
+        19.5,
+        90.95,
+        8.0
+      ]
+    ],
+    [
+      [
+        122.5,
+        90.95,
+        8.0
+      ],
+      [
+        122.5,
+        5.05,
+        8.0
+      ],
+      [
+        120.2,
+        2.75,
+        8.0
+      ],
+      [
+        119.6,
+        2.75,
+        8.0
+      ],
+      [
+        119.6,
+        4.3926127,
+        8.0
+      ],
+      [
+        120.2,
+        4.3926127,
+        8.0
+      ],
+      [
+        120.8573873,
+        5.05,
+        8.0
+      ],
+      [
+        120.8573872,
+        18.8078742,
+        8.0
+      ],
+      [
+        120.0578741,
+        19.6073872,
+        8.0
+      ],
+      [
+        119.6,
+        19.6073872,
+        8.0
+      ],
+      [
+        119.6,
+        22.8926129,
+        8.0
+      ],
+      [
+        120.0578735,
+        22.8926129,
+        8.0
+      ],
+      [
+        120.8573873,
+        23.6921254,
+        8.0
+      ],
+      [
+        120.8573871,
+        73.9078735,
+        8.0
+      ],
+      [
+        120.0578746,
+        74.7073873,
+        8.0
+      ],
+      [
+        119.6,
+        74.7073873,
+        8.0
+      ],
+      [
+        119.6,
+        80.65,
+        8.0
+      ],
+      [
+        119.7,
+        80.65,
+        8.0
+      ],
+      [
+        120.7,
+        81.65,
+        8.0
+      ],
+      [
+        120.7,
+        85.68,
+        8.0
+      ],
+      [
+        120.5,
+        85.88,
+        8.0
+      ],
+      [
+        120.3,
+        85.88,
+        8.0
+      ],
+      [
+        120.3,
+        86.82,
+        8.0
+      ],
+      [
+        120.5,
+        86.82,
+        8.0
+      ],
+      [
+        120.7,
+        87.02,
+        8.0
+      ],
+      [
+        120.7,
+        91.1884426,
+        8.0
+      ],
+      [
+        119.7,
+        92.1887854,
+        8.0
+      ],
+      [
+        119.6,
+        92.1887854,
+        8.0
+      ],
+      [
+        119.6,
+        93.0,
+        8.0
+      ],
+      [
+        121.2428327,
+        93.0,
+        8.0
+      ]
+    ]
+  ],
+  "actual_guard_contact_areas_mm2": [
+    160.90095852471018,
+    164.54740213237034
+  ],
+  "pressure_patch_method": "planar polygons derived from actual stock guard bottom/rail intersection, curved-segment endpoints joined by straight chords; original vendor reference not distributed",
+  "source_step_sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb",
+  "seating_contact_sha256": "b009da297aaa1d8b5e993cacc7088bc0e96236c39bc6010287df3e71bf633497",
+  "rear_service_channels_included": true,
+  "linear_solver_method": "SPOOLES direct for both final meshes; experimental ITERATIVE CHOLESKY failed independent patch accuracy check and was rejected",
+  "mesh_resolution_basis": "bounded final direct-solvable meshes h5 and4mm, 20%maxsize refinement, small CAD curved edges retained via curvature sizing; stress convergence not assumed"
+}

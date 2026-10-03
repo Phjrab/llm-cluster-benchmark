@@ -1,0 +1,31 @@
+{
+  "kind": "pin",
+  "h_mm": 0.7,
+  "nodes": 4048,
+  "elements_C3D10": 2321,
+  "mesh_linearized_volume_mm3": 44.5095104987689,
+  "cad_volume_mm3": 45.108427216875164,
+  "areas_mm2": {
+    "board": 10.762190761754388
+  },
+  "loads_N": {
+    "board": 0.367875
+  },
+  "support_nodes": 141,
+  "anchors": [
+    138,
+    4
+  ],
+  "E_MPa": 1000,
+  "density_tonne_mm3": 1.24e-09,
+  "applied_nodal_load_N": 0.367875,
+  "gravity_selfweight_N_linearized": 0.0005414314895112244,
+  "total_load_N_linearized": 0.36841643148951125,
+  "source_step_sha256": "29762b4ab32e60ace1f087152ada2db2f0f086bfec0df4e0ae6634884f27843a",
+  "mesh_quality": {
+    "min_determinant_Jacobian_mm3": 0.007456604676443775,
+    "min_gamma": 0.2957744955411442,
+    "nonpositive_Jacobian_elements": 0
+  },
+  "imprinted_planar_pressure_patches": true
+}

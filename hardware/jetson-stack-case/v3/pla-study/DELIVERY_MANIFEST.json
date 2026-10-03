@@ -1,0 +1,261 @@
+{
+  "status": "final_locked",
+  "design": "Jetson Orin Nano compact v3 (142x100)",
+  "files": [
+    {
+      "path": "DISCARDED_TRIALS.json",
+      "bytes": 1146,
+      "sha256": "0ee39a9920117825d96883b89ace76bbd6a900528012cca56cd77051d868bf2a"
+    },
+    {
+      "path": "Jetson_compact_v3_PLA_screening_ko.pdf",
+      "bytes": 779452,
+      "sha256": "f4bc6ce602f52c83751f18cb66910037b59e80cae2f461664fce1a3da189b185"
+    },
+    {
+      "path": "README_ko.md",
+      "bytes": 3544,
+      "sha256": "b0ce773c8e5d2565a4cec12c2fe519bb50416695cc2531767010fdd0899cadd7"
+    },
+    {
+      "path": "airflow_sensitivity.png",
+      "bytes": 93149,
+      "sha256": "d8b8ba3cb26851e3082bcd8b03a3a9d3688801179620efc7d0fba0096fff8cfe"
+    },
+    {
+      "path": "analysis_assumptions.json",
+      "bytes": 9181,
+      "sha256": "8305815c5a9a66e545ec1909c96f63e36d6bd0e8e9ef9fae556f7320651adb8f"
+    },
+    {
+      "path": "build_report.py",
+      "bytes": 9443,
+      "sha256": "9c4449d15623447445232d6d886f6a6bbac41171c20c2e15e6e9961b2dd4418f"
+    },
+    {
+      "path": "check_mesh.py",
+      "bytes": 821,
+      "sha256": "b32242a2c4434543c8b255fd53377564a4d320c5043a0ebcc2b55c64c8df9c47"
+    },
+    {
+      "path": "dependencies.txt",
+      "bytes": 1711,
+      "sha256": "7cab814e55ef68d39b166141c3ae8d31439f94163905306303d9376b088c0404"
+    },
+    {
+      "path": "frame.step",
+      "bytes": 194949,
+      "sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb"
+    },
+    {
+      "path": "frame_static_results.png",
+      "bytes": 511588,
+      "sha256": "d05d8567077ad0b1598b9a82726dfc3bfdfcb25af5624652be94485c614245f0"
+    },
+    {
+      "path": "load_footprints.png",
+      "bytes": 102837,
+      "sha256": "4ed416ac2d4fc53fa00943bc2335011506f802af99b76a4d36ff729cb95f00d1"
+    },
+    {
+      "path": "mesh_convergence.csv",
+      "bytes": 403,
+      "sha256": "13f5f4355888441e56d1df4e5144d18be931101cc377cbb4149ed0563a6df0b5"
+    },
+    {
+      "path": "plot_results.py",
+      "bytes": 5793,
+      "sha256": "4650192631aa6e7695ebefa33d6cb5b4e1aa6b47f0a4b666dd1d9c96734f3a04"
+    },
+    {
+      "path": "postprocess.py",
+      "bytes": 3416,
+      "sha256": "2f5f4a58787800456976f6789ac9163251c1d516718206a394a04ccc1e906e01"
+    },
+    {
+      "path": "results/benchmark/check.json",
+      "bytes": 209,
+      "sha256": "6faedac4f00f5a9dc1b205ad19fea726b818d4218f497f1c308e59f8149b96d7"
+    },
+    {
+      "path": "results/benchmark/expected.json",
+      "bytes": 132,
+      "sha256": "04a1272457cef6dbada7d94dec0884eea56cbd9de2acdaedfede31f74469a69e"
+    },
+    {
+      "path": "results/benchmark/patch.cvg",
+      "bytes": 274,
+      "sha256": "65086dedb4572132b815ace04b294909c7f6f337111f9704fc310b02320f67f7"
+    },
+    {
+      "path": "results/benchmark/patch.dat",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "results/benchmark/patch.frd",
+      "bytes": 262265,
+      "sha256": "1c397dcc37784069dc0de9ff98ce9d23a75334883a8785aa35886d9745ddf61e"
+    },
+    {
+      "path": "results/benchmark/patch.inp",
+      "bytes": 57852,
+      "sha256": "15bec956d6b905fe0a81f27ca2af0bbe8919121065dc18c394b37a44a85802b2"
+    },
+    {
+      "path": "results/benchmark/patch.sta",
+      "bytes": 170,
+      "sha256": "01e324ec0ea28f4d1fd7f5e2da1277af53812b873e218be1604c17a4c8e4990d"
+    },
+    {
+      "path": "results/benchmark/solver.log",
+      "bytes": 2265,
+      "sha256": "94abe2ea87b38154919395c76a5e785c51d9f49f6e71e47c99fe4bcd9f4891b9"
+    },
+    {
+      "path": "results/frame-h4/frame.cvg",
+      "bytes": 274,
+      "sha256": "65086dedb4572132b815ace04b294909c7f6f337111f9704fc310b02320f67f7"
+    },
+    {
+      "path": "results/frame-h4/frame.dat",
+      "bytes": 88898,
+      "sha256": "7e1dd6baab87c1e35701bec7ef7e8f3123bcd9fa96079cbbc1e3a9c5838e8cea"
+    },
+    {
+      "path": "results/frame-h4/frame.frd",
+      "bytes": 39213292,
+      "sha256": "75b0ebd32ef40aff05a4cf3e0e00cf8362fcd7cf5a1195e3ed53c46a8faf61c0"
+    },
+    {
+      "path": "results/frame-h4/frame.inp",
+      "bytes": 9288714,
+      "sha256": "5b9feef2651706233668824c7eccc2810536fed9b67fe3a48da5c8205734a0bf"
+    },
+    {
+      "path": "results/frame-h4/frame.msh",
+      "bytes": 11853014,
+      "sha256": "93a96af9ddded146f868d0317b603459e25ec29ee9772b401475f3e66004f411"
+    },
+    {
+      "path": "results/frame-h4/frame.sta",
+      "bytes": 170,
+      "sha256": "01e324ec0ea28f4d1fd7f5e2da1277af53812b873e218be1604c17a4c8e4990d"
+    },
+    {
+      "path": "results/frame-h4/metadata.json",
+      "bytes": 1236,
+      "sha256": "421db63dc516a8d8df53954f9cf6b3873a55b7bf194fd7446428897e0b57c2bf"
+    },
+    {
+      "path": "results/frame-h4/solver.log",
+      "bytes": 2271,
+      "sha256": "ac2a28c0281907750a86b521a69f364cae26119352c42660bf9ed641c6a01590"
+    },
+    {
+      "path": "results/frame-h4/summary.json",
+      "bytes": 1772,
+      "sha256": "e32dffb722cb68f8e9f65b8682f8daf7171cead6a9e1c13b09baa540677c3ac4"
+    },
+    {
+      "path": "results/frame-h5/frame.cvg",
+      "bytes": 274,
+      "sha256": "65086dedb4572132b815ace04b294909c7f6f337111f9704fc310b02320f67f7"
+    },
+    {
+      "path": "results/frame-h5/frame.dat",
+      "bytes": 67274,
+      "sha256": "3aaba485ecaf46b61452bd3871909d56fb853bc73c65511c4f52d5ec2ff2d088"
+    },
+    {
+      "path": "results/frame-h5/frame.frd",
+      "bytes": 26721838,
+      "sha256": "494379573bacbb2f0187215998e12a40152745ec1d273c9dd31096eb14b8066b"
+    },
+    {
+      "path": "results/frame-h5/frame.inp",
+      "bytes": 6174671,
+      "sha256": "0fc26580b666bd5bf34c52b8f6ed00a377c170cbdfc5a93a993f3384261315a4"
+    },
+    {
+      "path": "results/frame-h5/frame.msh",
+      "bytes": 8011612,
+      "sha256": "1392aec81a8777d3a912de34d8f8c994c1f3f56bbda4593b8665a225d0b62f61"
+    },
+    {
+      "path": "results/frame-h5/frame.sta",
+      "bytes": 170,
+      "sha256": "01e324ec0ea28f4d1fd7f5e2da1277af53812b873e218be1604c17a4c8e4990d"
+    },
+    {
+      "path": "results/frame-h5/metadata.json",
+      "bytes": 1235,
+      "sha256": "5df26b485e451e1702c0a47bfdb3d7b7c065293794926bead29931a7df820e16"
+    },
+    {
+      "path": "results/frame-h5/solver.log",
+      "bytes": 2270,
+      "sha256": "63717e37a2bf940ed0df4aaba8dba23658d4d0cdadc1f6f659514f1e8cd71fec"
+    },
+    {
+      "path": "results/frame-h5/summary.json",
+      "bytes": 1784,
+      "sha256": "e62747218e736df92a370df3f53bd291ad516b9a7fd737cc5998a7af9a3479f1"
+    },
+    {
+      "path": "results/input_validation.json",
+      "bytes": 575,
+      "sha256": "03c9fbdd0e7ec9ff9e9f237561815660c77609cec76e976ff2979c5fff8dfb50"
+    },
+    {
+      "path": "results/mesh_checks.json",
+      "bytes": 538,
+      "sha256": "29fba50fbdb71f588963f3e6e72b556be7192070b87666e199aea48fefe0ab16"
+    },
+    {
+      "path": "results/summary.json",
+      "bytes": 4472,
+      "sha256": "37bdb0dec2a51f31925aaa516ac8086eabe98754f42448e2132f1b0b2febf2d0"
+    },
+    {
+      "path": "run_study.py",
+      "bytes": 7337,
+      "sha256": "4916776593d402829c8919f905edf1d26d3a6d737c18a3fbe51e525da1a98f63"
+    },
+    {
+      "path": "seating_contact.step",
+      "bytes": 10472,
+      "sha256": "b009da297aaa1d8b5e993cacc7088bc0e96236c39bc6010287df3e71bf633497"
+    },
+    {
+      "path": "seating_contacts.json",
+      "bytes": 3546,
+      "sha256": "64a1b111b33a7b9a9fae3a5427396c581ed2bcac0d232d5c85f476b4d8a51074"
+    },
+    {
+      "path": "source-cad-manifest.json",
+      "bytes": 3867,
+      "sha256": "3886661af633c162b2589536a1c06c294c92581e35dcf4c01d12eee725f7bfe4"
+    },
+    {
+      "path": "stiffness_sensitivity.csv",
+      "bytes": 318,
+      "sha256": "ac30d7cfd49d2087470077e67e41b1cbb5dcb3b5d9a084cc4429fd513f6fcd27"
+    },
+    {
+      "path": "thermal_sensitivity.csv",
+      "bytes": 2610,
+      "sha256": "dfa8bebd15aeed97dbd08eda7e585b504aae6f2eae1a2458fd66e0ae21849e8e"
+    },
+    {
+      "path": "verify_inputs.py",
+      "bytes": 1188,
+      "sha256": "870ab911176ef7cb6903535d2c7a81d7b8d80a599d594d0ef4d3866cebb9e7b5"
+    },
+    {
+      "path": "verify_solver.py",
+      "bytes": 2404,
+      "sha256": "a31d867d622799d25191c38e39b9ada92bde9b847ecba194081326b450246731"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "solver_exit": 0,
+  "load_N": -10.0,
+  "expected_uz_top_mm": -0.001,
+  "expected_szz_MPa": -0.1,
+  "expected_reaction_z_N": 10
+}

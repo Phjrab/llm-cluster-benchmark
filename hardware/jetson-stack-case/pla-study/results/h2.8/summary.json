@@ -1,0 +1,53 @@
+{
+  "h_mm": 2.8,
+  "nodes": 154234,
+  "elements_C3D10": 88507,
+  "mesh_linearized_volume_mm3": 108554.82432769504,
+  "cad_volume_mm3": 108772.2855790358,
+  "areas_mm2": {
+    "rail": 827.9999999999995,
+    "post": 583.2176954921339
+  },
+  "supports_nodes": 1300,
+  "anchors": [
+    59566,
+    58440
+  ],
+  "E_MPa": 1000.0,
+  "poisson": 0.35,
+  "density_tonne_mm3": 1.24e-09,
+  "kit_mass_kg": 0.3,
+  "upper_tier_print_mass_kg": 0.15,
+  "applied_nodal_load_N": 11.772000000000004,
+  "gravity_selfweight_N_linearized": 1.3205043050518135,
+  "total_load_N_linearized": 13.092504305051817,
+  "source_step_sha256": "e4e8f7035ca695f42bd80ee5f9b31b978fb7ba355a6150397f1098f6c37e280a",
+  "node_order_gmsh_to_ccx": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    9,
+    8
+  ],
+  "max_displacement_mm": 0.012373384554098366,
+  "max_vertical_displacement_mm": 0.0113924,
+  "rail_max_vertical_mm": 0.0113924,
+  "stress_von_mises_peak_MPa": 0.28867474158432405,
+  "stress_von_mises_peak_location_mm": [
+    126.0,
+    92.5,
+    6.0
+  ],
+  "stress_von_mises_peak_excluding_bottom2mm_MPa": 0.28867474158432405,
+  "stress_von_mises_node_p95_MPa": 0.031882493931677615,
+  "rf_sum_at_supports_N": 13.0897912102,
+  "gravity_load_at_supports_N": -0.0027135804272499452,
+  "reaction_z_N": 13.092504790627249,
+  "reaction_balance_relative_error": 3.708804832090572e-08,
+  "geometry_volume_relative_error": 0.001999233997733274
+}

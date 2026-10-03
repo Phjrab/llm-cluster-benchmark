@@ -1,0 +1,4 @@
+kind,E_MPa,max_displacement_mm,method
+frame,500,0.007736146466323318,"linear1/E scaling, not additional solver/calibrated bound"
+frame,1000,0.003868073233161659,"linear1/E scaling, not additional solver/calibrated bound"
+frame,2000,0.0019340366165808295,"linear1/E scaling, not additional solver/calibrated bound"

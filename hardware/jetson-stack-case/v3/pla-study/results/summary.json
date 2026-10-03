@@ -1,0 +1,124 @@
+{
+  "benchmark": {
+    "analytical_compression_mm": 0.001,
+    "actual_compression_mm": 0.001,
+    "reaction_N": 9.9999979,
+    "expected_reaction_N": 10,
+    "stress_zz_range_MPa": [
+      -0.099999,
+      -0.099999
+    ],
+    "passed": true
+  },
+  "meshes": [
+    {
+      "linear_equation_solver": "SPOOLES",
+      "kind": "frame",
+      "h_mm": 5,
+      "nodes": 79814,
+      "elements_C3D10": 43672,
+      "mesh_linearized_volume_mm3": 89410.66791651736,
+      "cad_volume_mm3": 89838.91072035038,
+      "areas_mm2": {
+        "upper": 531.3302486177103,
+        "board": 323.1690224317275
+      },
+      "loads_N": {
+        "board": 2.943,
+        "upper": 8.154059939706679
+      },
+      "support_nodes": 1266,
+      "anchors": [
+        5928,
+        288
+      ],
+      "E_MPa": 1000,
+      "density_tonne_mm3": 1.24e-09,
+      "applied_nodal_load_N": 11.097059939706678,
+      "gravity_selfweight_N_linearized": 1.0876271288036838,
+      "total_load_N_linearized": 12.184687068510362,
+      "source_step_sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb",
+      "seating_contact_sha256": "b009da297aaa1d8b5e993cacc7088bc0e96236c39bc6010287df3e71bf633497",
+      "exact_seating_CAD_area_mm2": 523.3345078963703,
+      "mesh_quality": {
+        "min_determinant_Jacobian_mm3": 0.05466915219571636,
+        "min_gamma": 0.05050502817446647,
+        "nonpositive_Jacobian_elements": 0
+      },
+      "imprinted_planar_pressure_patches": true,
+      "pressure_patch_basis": "polygons derived from actual stock guard bottom intersection with actual rails; curved-edge endpoints approximated by straight chords",
+      "max_displacement_mm": 0.0038527816754583967,
+      "max_vertical_displacement_mm": 0.00360256,
+      "stress_von_mises_peak_MPa": 0.1201462953614713,
+      "stress_peak_location_mm": [
+        126.0,
+        84.58823529411771,
+        0.0
+      ],
+      "stress_node_p95_MPa": 0.021547413772396322,
+      "reaction_z_N": 12.184686054524967,
+      "reaction_balance_relative_error": 8.321800875990785e-08,
+      "geometry_volume_relative_error": 0.004766785353910397,
+      "stress_peak_excluding_bottom2mm_MPa": 0.08557541801914248,
+      "rear_service_notch_region_peak_MPa": 0.08557541801914248
+    },
+    {
+      "kind": "frame",
+      "h_mm": 4,
+      "nodes": 116565,
+      "elements_C3D10": 65196,
+      "mesh_linearized_volume_mm3": 89523.55395951682,
+      "cad_volume_mm3": 89838.91072035038,
+      "areas_mm2": {
+        "upper": 531.5870619619336,
+        "board": 323.1690224317275
+      },
+      "loads_N": {
+        "board": 2.943,
+        "upper": 8.154059939706679
+      },
+      "support_nodes": 1674,
+      "anchors": [
+        7188,
+        288
+      ],
+      "E_MPa": 1000,
+      "density_tonne_mm3": 1.24e-09,
+      "applied_nodal_load_N": 11.097059939706678,
+      "gravity_selfweight_N_linearized": 1.0890003197851466,
+      "total_load_N_linearized": 12.186060259491825,
+      "source_step_sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb",
+      "seating_contact_sha256": "b009da297aaa1d8b5e993cacc7088bc0e96236c39bc6010287df3e71bf633497",
+      "exact_seating_CAD_area_mm2": 523.3345078963703,
+      "mesh_quality": {
+        "min_determinant_Jacobian_mm3": 0.03745855489626486,
+        "min_gamma": 0.05076104410245257,
+        "nonpositive_Jacobian_elements": 0
+      },
+      "imprinted_planar_pressure_patches": true,
+      "pressure_patch_basis": "polygons derived from actual stock guard bottom intersection with actual rails; curved-edge endpoints approximated by straight chords",
+      "linear_equation_solver": "SPOOLES",
+      "max_displacement_mm": 0.003868073233161659,
+      "max_vertical_displacement_mm": 0.00361956,
+      "stress_von_mises_peak_MPa": 0.0947766264840926,
+      "stress_peak_location_mm": [
+        126.0,
+        84.0,
+        0.0
+      ],
+      "stress_node_p95_MPa": 0.021398025889757977,
+      "reaction_z_N": 12.186061037372372,
+      "reaction_balance_relative_error": 6.383363703829073e-08,
+      "geometry_volume_relative_error": 0.0035102469331490527,
+      "stress_peak_excluding_bottom2mm_MPa": 0.08771588218477712,
+      "rear_service_notch_region_peak_MPa": 0.08771588218477712
+    }
+  ],
+  "coarse_to_fine_change_percent_relative_fine": {
+    "frame": {
+      "max_displacement_mm": 0.3953275127307585,
+      "max_vertical_displacement_mm": 0.4696703466719736,
+      "stress_von_mises_peak_MPa": 26.767853867046814
+    }
+  }
+}

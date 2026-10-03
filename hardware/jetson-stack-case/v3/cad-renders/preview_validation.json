@@ -1,0 +1,80 @@
+{
+  "method": "Blender4.3 CPU Cycles CAD render from actual validated FreeCAD native shapes tessellated by MeshPart. Geometry is not redesigned or simplified. These are CAD renders, not FreeCAD GUI screenshots.",
+  "reason": "Cloud FreeCAD GUI repeatedly exited around recoverable document state; recoverable states were not discarded or bypassed.",
+  "footprint_mm": [
+    142,
+    100
+  ],
+  "frame_step_sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb",
+  "files": [
+    "cad-renders/frame-preview.png",
+    "cad-renders/single-level-with-kit.png",
+    "cad-renders/rear-guide-service-channels.png",
+    "cad-renders/three-level-assembly.png",
+    "cad-renders/underside-stock-guard-and-antennas.png",
+    "cad-renders/fit-coupons-preview.png",
+    "cad-renders/io-alignment-top.png"
+  ],
+  "colors": "Rendering-only colors distinguish case, guides/gate and reference electronics.",
+  "raw_reference_meshes_in_public_package": false,
+  "camera_fit": "Full model envelope fitted in horizontal sensor mode with20%margin;14k frame geometry remains unchanged.",
+  "image_file_checks": {
+    "cad-renders/frame-preview.png": {
+      "readable_png": true,
+      "size_px": [
+        1400,
+        1100
+      ],
+      "file_bytes": 1597045
+    },
+    "cad-renders/single-level-with-kit.png": {
+      "readable_png": true,
+      "size_px": [
+        1400,
+        1100
+      ],
+      "file_bytes": 1767302
+    },
+    "cad-renders/rear-guide-service-channels.png": {
+      "readable_png": true,
+      "size_px": [
+        1400,
+        1100
+      ],
+      "file_bytes": 1670486
+    },
+    "cad-renders/three-level-assembly.png": {
+      "readable_png": true,
+      "size_px": [
+        1400,
+        1400
+      ],
+      "file_bytes": 2381898
+    },
+    "cad-renders/underside-stock-guard-and-antennas.png": {
+      "readable_png": true,
+      "size_px": [
+        1400,
+        1100
+      ],
+      "file_bytes": 1465147
+    },
+    "cad-renders/fit-coupons-preview.png": {
+      "readable_png": true,
+      "size_px": [
+        1400,
+        950
+      ],
+      "file_bytes": 944311
+    },
+    "cad-renders/io-alignment-top.png": {
+      "readable_png": true,
+      "size_px": [
+        1400,
+        1100
+      ],
+      "file_bytes": 2588971
+    }
+  },
+  "camera_margin_visual_checked_frame": true
+}

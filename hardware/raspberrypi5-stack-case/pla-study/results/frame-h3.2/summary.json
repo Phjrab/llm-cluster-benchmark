@@ -1,0 +1,45 @@
+{
+  "kind": "frame",
+  "h_mm": 3.2,
+  "nodes": 54811,
+  "elements_C3D10": 30689,
+  "mesh_linearized_volume_mm3": 38701.792057467035,
+  "cad_volume_mm3": 38911.61791027283,
+  "areas_mm2": {
+    "upper": 292.42722254344676,
+    "board": 29.743752269816788
+  },
+  "loads_N": {
+    "board": 1.4715,
+    "upper": 3.901377273983665
+  },
+  "support_nodes": 809,
+  "anchors": [
+    391,
+    23
+  ],
+  "E_MPa": 1000,
+  "density_tonne_mm3": 1.24e-09,
+  "applied_nodal_load_N": 5.372877273983665,
+  "gravity_selfweight_N_linearized": 0.470784079303852,
+  "total_load_N_linearized": 5.8436613532875175,
+  "source_step_sha256": "af14092ee01ea31d4d81c17b7621f9a852fca01901e41b37df3c54c46003b6ee",
+  "mesh_quality": {
+    "min_determinant_Jacobian_mm3": 0.0786122740394124,
+    "min_gamma": 0.016485362993329457,
+    "nonpositive_Jacobian_elements": 0
+  },
+  "imprinted_planar_pressure_patches": true,
+  "max_displacement_mm": 0.024180468379260998,
+  "max_vertical_displacement_mm": 0.0241779,
+  "stress_von_mises_peak_MPa": 0.4102855972211186,
+  "stress_peak_location_mm": [
+    9.0,
+    12.0,
+    2.723515857284e-15
+  ],
+  "stress_node_p95_MPa": 0.0764006161866285,
+  "reaction_z_N": 5.843660043085362,
+  "reaction_balance_relative_error": 2.2420911761435323e-07,
+  "geometry_volume_relative_error": 0.0053923703015802404
+}

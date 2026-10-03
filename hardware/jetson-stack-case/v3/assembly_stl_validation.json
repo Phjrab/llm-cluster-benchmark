@@ -1,0 +1,8 @@
+{
+  "assembly_stl_facets": 39492,
+  "assembly_stl_mesh_is_solid": false,
+  "reread_mesh_is_solid": false,
+  "use": "Visualization only;12 placed components including coincident seating interfaces. Print individual STL files, not this assembly.",
+  "solid_components_in_native_step": 12,
+  "individual_print_meshes_closed": true
+}
