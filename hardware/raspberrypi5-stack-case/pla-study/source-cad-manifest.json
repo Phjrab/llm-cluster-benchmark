@@ -1,0 +1,134 @@
+{
+  "status": "final_locked",
+  "native_file": "RaspberryPi5_ActiveCooler_StackPrototype.FCStd",
+  "package": "RaspberryPi5_ActiveCooler_StackPrototype_v1.zip",
+  "files": [
+    {
+      "filename": "01_repeatable_frame.step",
+      "bytes": 115858,
+      "sha256": "af14092ee01ea31d4d81c17b7621f9a852fca01901e41b37df3c54c46003b6ee"
+    },
+    {
+      "filename": "01_repeatable_frame.stl",
+      "bytes": 378284,
+      "sha256": "22ce4dab67302244582d7d5250ab64cf3cb41f5fb9085367794ae1bc7fea510f"
+    },
+    {
+      "filename": "02_removable_board_pin_print4.step",
+      "bytes": 7763,
+      "sha256": "29762b4ab32e60ace1f087152ada2db2f0f086bfec0df4e0ae6634884f27843a"
+    },
+    {
+      "filename": "02_removable_board_pin_print4.stl",
+      "bytes": 55884,
+      "sha256": "3fd6e248cdbaf4d54eb5c3c5302b4abbc3ded685f4c1b270f3f75cc815540934"
+    },
+    {
+      "filename": "03_removable_edge_keeper_print2.step",
+      "bytes": 11786,
+      "sha256": "6f6cd7691609885abbe29f975e581c01da440b043ed54c65b3a1d60d38ca8b0a"
+    },
+    {
+      "filename": "03_removable_edge_keeper_print2.stl",
+      "bytes": 1484,
+      "sha256": "6f1a4301d67ce8181012f6caf5e7b8de8ec1a67a9dc37a8c525e42b6a8d04f23"
+    },
+    {
+      "filename": "04_full_pin_pattern_2p30.step",
+      "bytes": 36730,
+      "sha256": "f601b7f6c456c2e6fdceab18778702ba7cc0dfcbca677f83b14422a68dbeb144"
+    },
+    {
+      "filename": "04_full_pin_pattern_2p30.stl",
+      "bytes": 170484,
+      "sha256": "8f55a0b9e1d37c20d9466701237f14f49762990c0b1e831d257615429c124387"
+    },
+    {
+      "filename": "05_full_pin_pattern_2p35.step",
+      "bytes": 36770,
+      "sha256": "3bcf352b4f06ffae9d749435c84449f697db0cc36dd5249bfe3fb1f230c10fc5"
+    },
+    {
+      "filename": "05_full_pin_pattern_2p35.stl",
+      "bytes": 170484,
+      "sha256": "8b911719f683b3df196bdf3882bb4c48ce4b9b25b53f41ac18f4a0268ab6d934"
+    },
+    {
+      "filename": "06_full_pin_pattern_2p40.step",
+      "bytes": 36690,
+      "sha256": "1d80d191ca8284994628b333fdc39d5b617baca905f0845ae70910d5d7a5f46b"
+    },
+    {
+      "filename": "06_full_pin_pattern_2p40.stl",
+      "bytes": 170484,
+      "sha256": "2aaad9fd6ffa1a783428c11d195a7118013849a425958cf0a8e656982d137ce3"
+    },
+    {
+      "filename": "07_stack_joint_male_coupon.step",
+      "bytes": 9498,
+      "sha256": "3d63b58979b88aebde9099c26045a3d030da2435ae0deab4325c6f02196aae1b"
+    },
+    {
+      "filename": "07_stack_joint_male_coupon.stl",
+      "bytes": 25184,
+      "sha256": "f950d75d05688b2168f9033a665f3d65c1372d246e8e547e313c010559d6c5c0"
+    },
+    {
+      "filename": "08_stack_joint_female_coupon.step",
+      "bytes": 9846,
+      "sha256": "b1338a41a9dcd5ec4e01eec4436bf7dea0711c7a15292a239394aac8e2420b33"
+    },
+    {
+      "filename": "08_stack_joint_female_coupon.stl",
+      "bytes": 25184,
+      "sha256": "baf68dba0bfd8edc98cd9a6cb61837acdc3c5c505767d241798c8505bed1183a"
+    },
+    {
+      "filename": "README-ko.md",
+      "bytes": 6554,
+      "sha256": "caa1831803bfb042c443deef7b45874d10e35b004f84aa302e16045f0d54f384"
+    },
+    {
+      "filename": "RaspberryPi-reference-LICENSE.txt",
+      "bytes": 1881,
+      "sha256": "4ca2d350552b24137e55587e13fb09a249b757c6af49652ff02ea524d154c7fc"
+    },
+    {
+      "filename": "RaspberryPi5_ActiveCooler_StackPrototype.FCStd",
+      "bytes": 6737280,
+      "sha256": "5c4b95337b7bc493dff68b9f053781db1df2874b7213057d8eefb9af2221abdd"
+    },
+    {
+      "filename": "single-tier-board-and-keepout.png",
+      "bytes": 88666,
+      "sha256": "a670ad0acc0bf3495c90a44812934f91c30847909c0e3751906525c814309a75"
+    },
+    {
+      "filename": "single-tier-four-pin-frame.png",
+      "bytes": 50671,
+      "sha256": "94cd189ada65c56715fb0f8c4367795595ea8b2ddbcab65bc7b7c73c70744c81"
+    },
+    {
+      "filename": "three-tier-actual-freecad.png",
+      "bytes": 118680,
+      "sha256": "80e00bfa1b9d13435f2120cfddcc6b4d2cae136c4e7967c1d4feb1f9fafabd9c"
+    },
+    {
+      "filename": "three-tier-assumed-cooler-keepout.png",
+      "bytes": 129200,
+      "sha256": "79748c548420679cfb56dcc33852070e758561cce73d52506fd142005807f00f"
+    },
+    {
+      "filename": "three_tier_structure_assembly.step",
+      "bytes": 497006,
+      "sha256": "09e712e64dfd4e227979f8728538571e03e06823c024eab2c73cb867cfcffbbd"
+    },
+    {
+      "filename": "validation.json",
+      "bytes": 8663,
+      "sha256": "c6c71ce85c6b3b2e676949805f931a28d27082cb14c981cadc57722e9feb2bdb"
+    }
+  ],
+  "package_bytes": 6844287,
+  "package_sha256": "9d97855ebcbad7965edd1e1b376e756a72a9cec655143b813d25c636b58b31e9"
+}

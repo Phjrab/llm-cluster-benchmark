@@ -1,0 +1,32 @@
+{
+  "format_version": 1,
+  "original_archive": {
+    "name": "RaspberryPi5_v1_PLA_reproducible_study.zip",
+    "bytes": 26377738,
+    "sha256": "224964c2a5089e3c4be2ea3c07167d9199d576c7355fff60d020a293e1452e1e"
+  },
+  "part_count": 4,
+  "maximum_part_bytes": 8388608,
+  "parts": [
+    {
+      "name": "RaspberryPi5_v1_PLA_reproducible_study.zip.part001",
+      "bytes": 8388608,
+      "sha256": "a4ff6529445f69241fcdb3f70df8cdf93074016429992b7f8a1bd3c31515ad9b"
+    },
+    {
+      "name": "RaspberryPi5_v1_PLA_reproducible_study.zip.part002",
+      "bytes": 8388608,
+      "sha256": "cabcff55063e13eb93b2dd4c3173338844ce84ac2b319f4982ef2e3041ea11ef"
+    },
+    {
+      "name": "RaspberryPi5_v1_PLA_reproducible_study.zip.part003",
+      "bytes": 8388608,
+      "sha256": "ea845f34dd3b7622d5c282367609b811993322ff21dbc3b03af6f37adcc8d399"
+    },
+    {
+      "name": "RaspberryPi5_v1_PLA_reproducible_study.zip.part004",
+      "bytes": 1211914,
+      "sha256": "8f13009cfae17f6e623c941bf035ec5b4912807c66569cb4e443c508f6ada091"
+    }
+  ]
+}

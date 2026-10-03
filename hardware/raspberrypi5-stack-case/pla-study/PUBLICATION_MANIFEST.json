@@ -1,0 +1,272 @@
+{
+  "status": "final_locked",
+  "design": "Raspberry Pi 5 + Active Cooler v1",
+  "files": [
+    {
+      "path": "ARCHIVE_RECONSTRUCTION.json",
+      "bytes": 1037,
+      "sha256": "7df600ee540d252b4e9f7399231ff6f0780e22e9893474836a30ce30e1156d60",
+      "git_blob_sha1": "53d39092fb22c531741189a5d485aa3a5ce838ef"
+    },
+    {
+      "path": "DELIVERY_MANIFEST.json",
+      "bytes": 10510,
+      "sha256": "d9d411d646e5573a067d639bf9ceaa8c99ca3eb0268ba196a1b628defc175095",
+      "git_blob_sha1": "07f8b7753dae2828f82d7519ab78ecb541c18dfe"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2890,
+      "sha256": "1b1aa505f47d4b13e267d4c3771d0a0e2b4b836eb3234e4a870550b9ebffff81",
+      "git_blob_sha1": "626e5817ca58acec3786cd0ec3bd83e6172ea026"
+    },
+    {
+      "path": "README_ko.md",
+      "bytes": 2936,
+      "sha256": "fab1c0b49ad49eadd1564a94701ddc5a4f36cfc5dfec9a174dcae50c221421a1",
+      "git_blob_sha1": "dc572f7a5f6b33ac1c55760df729500083e64722"
+    },
+    {
+      "path": "RaspberryPi5_v1_PLA_reproducible_study.zip.part001",
+      "bytes": 8388608,
+      "sha256": "a4ff6529445f69241fcdb3f70df8cdf93074016429992b7f8a1bd3c31515ad9b",
+      "git_blob_sha1": "038cf24fd58c8d1fdd35e3acb9da61f2369ebe4c"
+    },
+    {
+      "path": "RaspberryPi5_v1_PLA_reproducible_study.zip.part002",
+      "bytes": 8388608,
+      "sha256": "cabcff55063e13eb93b2dd4c3173338844ce84ac2b319f4982ef2e3041ea11ef",
+      "git_blob_sha1": "d2c4f900d8d26d00db26ef25581b076841c9313a"
+    },
+    {
+      "path": "RaspberryPi5_v1_PLA_reproducible_study.zip.part003",
+      "bytes": 8388608,
+      "sha256": "ea845f34dd3b7622d5c282367609b811993322ff21dbc3b03af6f37adcc8d399",
+      "git_blob_sha1": "71684cb34008558056186fe72eb003bd3b5ee13a"
+    },
+    {
+      "path": "RaspberryPi5_v1_PLA_reproducible_study.zip.part004",
+      "bytes": 1211914,
+      "sha256": "8f13009cfae17f6e623c941bf035ec5b4912807c66569cb4e443c508f6ada091",
+      "git_blob_sha1": "d7aff3bd6f9e1959c1fd8ddf581d5cb57222ddb7"
+    },
+    {
+      "path": "RaspberryPi5_v1_PLA_screening_ko.pdf",
+      "bytes": 1012662,
+      "sha256": "0d6d1a0ab200c9a0c2ca82ca4ceb12d9633191e1b9fa442b2d640c2e8a8a0726",
+      "git_blob_sha1": "98539702706059d664989eab4894ba19ef55b7b0"
+    },
+    {
+      "path": "airflow_sensitivity.png",
+      "bytes": 102234,
+      "sha256": "f79ad9af6fc38da68a2981adc4d5f2b8d0d521149f7f98210516d1bed421248d",
+      "git_blob_sha1": "37b0cd76a1a94290ef0674fa992b6ea1cef1b891"
+    },
+    {
+      "path": "analysis_assumptions.json",
+      "bytes": 5004,
+      "sha256": "dc480a8271ef8606bf84d2b59a429321e00c076fe47597b436e372ac4cbb1704",
+      "git_blob_sha1": "4d88fb06d72008958febfea49fc788fba945559f"
+    },
+    {
+      "path": "build_report.py",
+      "bytes": 9193,
+      "sha256": "a69201cb0c1f97fce810a853a0fd3ddc1399d53876c58acb742895a1f1ce2956",
+      "git_blob_sha1": "1774b853260d8f474ad959f70526f8ab2f91be0c"
+    },
+    {
+      "path": "check_mesh.py",
+      "bytes": 821,
+      "sha256": "b32242a2c4434543c8b255fd53377564a4d320c5043a0ebcc2b55c64c8df9c47",
+      "git_blob_sha1": "bad791882b63f4751ac4021b9831f8e9b903731c"
+    },
+    {
+      "path": "dependencies.txt",
+      "bytes": 1684,
+      "sha256": "fcff73e32cdb0f685466a2391548dbe4effb5f73cbd87e37c88a86b6292d6590",
+      "git_blob_sha1": "66567616ca31a52a8b00cd52c28533f44a1c66d3"
+    },
+    {
+      "path": "frame.step",
+      "bytes": 115858,
+      "sha256": "af14092ee01ea31d4d81c17b7621f9a852fca01901e41b37df3c54c46003b6ee",
+      "git_blob_sha1": "10a9488c987b13670443e1de0ed77bcd70630970"
+    },
+    {
+      "path": "frame_static_results.png",
+      "bytes": 488238,
+      "sha256": "cc59e9d8f3f6aae71812a89a3f6fc6aaa45e3cc24a2c5e18ff04e7b50e9492b9",
+      "git_blob_sha1": "e6ea6da41ed962ac60561ed9b27823674ca42a76"
+    },
+    {
+      "path": "mesh_convergence.csv",
+      "bytes": 638,
+      "sha256": "85f93a1380551c64e0854d9436c49d1d50d477904558de03403c3fc0db55b0cf",
+      "git_blob_sha1": "d314fe9143657ade58ff6a66c2313474145dfbef"
+    },
+    {
+      "path": "pin.step",
+      "bytes": 7763,
+      "sha256": "29762b4ab32e60ace1f087152ada2db2f0f086bfec0df4e0ae6634884f27843a",
+      "git_blob_sha1": "3bfd9cb64b15a9f850e586b9e71633572f3c57be"
+    },
+    {
+      "path": "pin_static_results.png",
+      "bytes": 381692,
+      "sha256": "196b9afc1f1cd2965a09856089413316c8cfb5cd1046bad59bc4678afbf666ce",
+      "git_blob_sha1": "acbabe2c051fea6a5cdc5b964180680aa41bfe9f"
+    },
+    {
+      "path": "plot_results.py",
+      "bytes": 4157,
+      "sha256": "84dbe77df4d5c89949626ede9ba1d87d09d255dc343d97151b197beeb3d0a964",
+      "git_blob_sha1": "4f950c025ba781f33cdea313513c8f706043b96a"
+    },
+    {
+      "path": "postprocess.py",
+      "bytes": 3126,
+      "sha256": "9491425fdf8fd33d0f2bb3be56d60bd9e2e65de1480896851c6a1f8a079caed0",
+      "git_blob_sha1": "81f6d37008e1018b6c52c8dfaf970589c88a9465"
+    },
+    {
+      "path": "reassemble_archive.py",
+      "bytes": 7622,
+      "sha256": "376f60fb6dbed41637fdb64547424173893b87ef2963ae6a7fb656b2ed9b32ac",
+      "git_blob_sha1": "5b22a73a4cbf16adee82b646bb5b29932a285dfa"
+    },
+    {
+      "path": "results/benchmark/check.json",
+      "bytes": 209,
+      "sha256": "6faedac4f00f5a9dc1b205ad19fea726b818d4218f497f1c308e59f8149b96d7",
+      "git_blob_sha1": "dff95806195da471d76ac86a46aee11d5b46ae96"
+    },
+    {
+      "path": "results/benchmark/expected.json",
+      "bytes": 132,
+      "sha256": "04a1272457cef6dbada7d94dec0884eea56cbd9de2acdaedfede31f74469a69e",
+      "git_blob_sha1": "464b489315cfd7fb4e4b210e53f4e51e4b2f125e"
+    },
+    {
+      "path": "results/frame-h2.2/metadata.json",
+      "bytes": 885,
+      "sha256": "6ef1868acedd815d1116dbdd0c6a871ea862a83a86bf9abbfe775c15d8ea6651",
+      "git_blob_sha1": "be0e4e0800dec798ba2af76c9a77b77013221c84"
+    },
+    {
+      "path": "results/frame-h2.2/summary.json",
+      "bytes": 1306,
+      "sha256": "9b7161bdc5eaad6973f6893f9fbe7290c10b33533a2cc5b3031027f611a25a86",
+      "git_blob_sha1": "ce4b93f33ba5216b1e89de52adea234e65ee82ab"
+    },
+    {
+      "path": "results/frame-h3.2/metadata.json",
+      "bytes": 887,
+      "sha256": "2ef2ef236a0e893b545332d89de92a3c88a9c7ef1a876a2d7666461bf231fa10",
+      "git_blob_sha1": "d71d5bc2206d118a2daa0ad43fe262584baceb1a"
+    },
+    {
+      "path": "results/frame-h3.2/summary.json",
+      "bytes": 1310,
+      "sha256": "190629c98231c6023f3f6d1df3ec16ce66493f0c4971e6b1dda1c156f393c490",
+      "git_blob_sha1": "d46168e72bcd1f0d614e3e584e4ba951c42a2ece"
+    },
+    {
+      "path": "results/mesh_checks.json",
+      "bytes": 1076,
+      "sha256": "6bd79c9fc7ca3bafc16a97c14c23a2cf595c942aa335329a69a661c55eadf6f6",
+      "git_blob_sha1": "589e1e2926ae4c2d781a4786b317850f10fb1fc9"
+    },
+    {
+      "path": "results/pin-h0.45/metadata.json",
+      "bytes": 816,
+      "sha256": "6e6aac257d6b0dcc69dfa939290d566c6de4f48c919c718ed6c70a9a73c6e875",
+      "git_blob_sha1": "6bac94f46d4d75da9743fc30e8773aa9fee242d5"
+    },
+    {
+      "path": "results/pin-h0.45/summary.json",
+      "bytes": 1258,
+      "sha256": "8abcc5b082e98f0b9a73e210b43d5ebed83e12fa5d4cfd9836df0c314d64a8be",
+      "git_blob_sha1": "fe03faf0f9a84b24f83ad16e3755486b461f0f96"
+    },
+    {
+      "path": "results/pin-h0.7/metadata.json",
+      "bytes": 814,
+      "sha256": "d8573258a051b56a8e61d19bd6c1ab257ede56a6e72efdd7f223ad5126f6e51b",
+      "git_blob_sha1": "878ae1a3d22fe929e9b323c2fb2c7f64aed7de62"
+    },
+    {
+      "path": "results/pin-h0.7/summary.json",
+      "bytes": 1255,
+      "sha256": "001b28155a9df8a18301913befdc68c210eafee499e8120e0e835639b5010b55",
+      "git_blob_sha1": "57d095ed8ae94fb165cec465b3d0e2975cd33f39"
+    },
+    {
+      "path": "results/summary.json",
+      "bytes": 6525,
+      "sha256": "c1e7d21066884ea52f1910a809e4e3e84a2721c8884e420cb70438ef37ba7595",
+      "git_blob_sha1": "df6fac4686284513f47a88ab450aba988e320022"
+    },
+    {
+      "path": "run_study.py",
+      "bytes": 7329,
+      "sha256": "84d52a6d92a2fceff05238271c7da7f2d014943f4c5117c6860bf47e4fe059b5",
+      "git_blob_sha1": "eaf0f71bbd35f19ee2d8b2677c679cacc9372f7f"
+    },
+    {
+      "path": "source-cad-manifest.json",
+      "bytes": 4548,
+      "sha256": "d2b9b73c29e0d448d4d42c09c76b8513b509a22161bb88d2e6283fe5c2399c03",
+      "git_blob_sha1": "ec482af3aeb9089c1c448e2f90a6b715de9b787e"
+    },
+    {
+      "path": "stiffness_sensitivity.csv",
+      "bytes": 592,
+      "sha256": "20c4eb5cd42097229a1c4b9444b63a75f75f195917c35ed4ab07e1be41dd14aa",
+      "git_blob_sha1": "3061ec132f3ba6ce718eea1f86685e38ee875830"
+    },
+    {
+      "path": "thermal_sensitivity.csv",
+      "bytes": 3057,
+      "sha256": "546e71d903afae6707b37cf0c59b842e803cb04665b700bc9ed52b0b9b3e2397",
+      "git_blob_sha1": "59c2ad8f4a40e3c833530470baa35db3ad48ccf9"
+    },
+    {
+      "path": "verify_solver.py",
+      "bytes": 2404,
+      "sha256": "a31d867d622799d25191c38e39b9ada92bde9b847ecba194081326b450246731",
+      "git_blob_sha1": "ba4a578938b5049f156b8db9ee3002cc0c96cebc"
+    }
+  ],
+  "canonical_archive": {
+    "format_version": 1,
+    "original_archive": {
+      "name": "RaspberryPi5_v1_PLA_reproducible_study.zip",
+      "bytes": 26377738,
+      "sha256": "224964c2a5089e3c4be2ea3c07167d9199d576c7355fff60d020a293e1452e1e"
+    },
+    "part_count": 4,
+    "maximum_part_bytes": 8388608,
+    "parts": [
+      {
+        "name": "RaspberryPi5_v1_PLA_reproducible_study.zip.part001",
+        "bytes": 8388608,
+        "sha256": "a4ff6529445f69241fcdb3f70df8cdf93074016429992b7f8a1bd3c31515ad9b"
+      },
+      {
+        "name": "RaspberryPi5_v1_PLA_reproducible_study.zip.part002",
+        "bytes": 8388608,
+        "sha256": "cabcff55063e13eb93b2dd4c3173338844ce84ac2b319f4982ef2e3041ea11ef"
+      },
+      {
+        "name": "RaspberryPi5_v1_PLA_reproducible_study.zip.part003",
+        "bytes": 8388608,
+        "sha256": "ea845f34dd3b7622d5c282367609b811993322ff21dbc3b03af6f37adcc8d399"
+      },
+      {
+        "name": "RaspberryPi5_v1_PLA_reproducible_study.zip.part004",
+        "bytes": 1211914,
+        "sha256": "8f13009cfae17f6e623c941bf035ec5b4912807c66569cb4e443c508f6ada091"
+      }
+    ]
+  }
+}

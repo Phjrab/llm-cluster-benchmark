@@ -1,0 +1,33 @@
+{
+  "kind": "frame",
+  "h_mm": 2.2,
+  "nodes": 70299,
+  "elements_C3D10": 39284,
+  "mesh_linearized_volume_mm3": 38701.32240923154,
+  "cad_volume_mm3": 38911.61791027283,
+  "areas_mm2": {
+    "upper": 292.42722254344676,
+    "board": 29.55054038333771
+  },
+  "loads_N": {
+    "board": 1.4715,
+    "upper": 3.901377273983665
+  },
+  "support_nodes": 874,
+  "anchors": [
+    437,
+    23
+  ],
+  "E_MPa": 1000,
+  "density_tonne_mm3": 1.24e-09,
+  "applied_nodal_load_N": 5.372877273983665,
+  "gravity_selfweight_N_linearized": 0.47077836631485626,
+  "total_load_N_linearized": 5.843655640298521,
+  "source_step_sha256": "af14092ee01ea31d4d81c17b7621f9a852fca01901e41b37df3c54c46003b6ee",
+  "mesh_quality": {
+    "min_determinant_Jacobian_mm3": 0.08020920262837429,
+    "min_gamma": 0.1918638444126328,
+    "nonpositive_Jacobian_elements": 0
+  },
+  "imprinted_planar_pressure_patches": true
+}
