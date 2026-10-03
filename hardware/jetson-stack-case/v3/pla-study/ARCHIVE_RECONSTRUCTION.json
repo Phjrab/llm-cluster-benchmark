@@ -1,0 +1,37 @@
+{
+  "format_version": 1,
+  "original_archive": {
+    "name": "Jetson_compact_v3_PLA_reproducible_study.zip",
+    "bytes": 35277070,
+    "sha256": "93e750d11c3e2d890e0c2c9545662530abc3262d19b17f2c3b41731cc2c0a4fc"
+  },
+  "part_count": 5,
+  "maximum_part_bytes": 8388608,
+  "parts": [
+    {
+      "name": "Jetson_compact_v3_PLA_reproducible_study.zip.part001",
+      "bytes": 8388608,
+      "sha256": "111eec18fc0f8fa47d7893b7c22ec9fffdb5d9d9d70c80bfce1ac93eab9af025"
+    },
+    {
+      "name": "Jetson_compact_v3_PLA_reproducible_study.zip.part002",
+      "bytes": 8388608,
+      "sha256": "cb68c4301a97f0a653fb2f46451c542d41003ff94bf9986051953f58940f4e16"
+    },
+    {
+      "name": "Jetson_compact_v3_PLA_reproducible_study.zip.part003",
+      "bytes": 8388608,
+      "sha256": "fde8ff03c07f860471ab194f31870bf47f374ab98198b0ae18d9562c9c327ebd"
+    },
+    {
+      "name": "Jetson_compact_v3_PLA_reproducible_study.zip.part004",
+      "bytes": 8388608,
+      "sha256": "f1e47137657dbc9d17439228a71fde38e333a0fd4710c9d0b92ad5fb1fbe5d1f"
+    },
+    {
+      "name": "Jetson_compact_v3_PLA_reproducible_study.zip.part005",
+      "bytes": 1722638,
+      "sha256": "cd0f5419ab4af3a9f8fa62cacc5d1814d2d7a68e8b7b8c4e2a32612fcbe0a1d2"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "kind": "frame",
+  "h_mm": 4,
+  "nodes": 116565,
+  "elements_C3D10": 65196,
+  "mesh_linearized_volume_mm3": 89523.55395951682,
+  "cad_volume_mm3": 89838.91072035038,
+  "areas_mm2": {
+    "upper": 531.5870619619336,
+    "board": 323.1690224317275
+  },
+  "loads_N": {
+    "board": 2.943,
+    "upper": 8.154059939706679
+  },
+  "support_nodes": 1674,
+  "anchors": [
+    7188,
+    288
+  ],
+  "E_MPa": 1000,
+  "density_tonne_mm3": 1.24e-09,
+  "applied_nodal_load_N": 11.097059939706678,
+  "gravity_selfweight_N_linearized": 1.0890003197851466,
+  "total_load_N_linearized": 12.186060259491825,
+  "source_step_sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb",
+  "seating_contact_sha256": "b009da297aaa1d8b5e993cacc7088bc0e96236c39bc6010287df3e71bf633497",
+  "exact_seating_CAD_area_mm2": 523.3345078963703,
+  "mesh_quality": {
+    "min_determinant_Jacobian_mm3": 0.03745855489626486,
+    "min_gamma": 0.05076104410245257,
+    "nonpositive_Jacobian_elements": 0
+  },
+  "imprinted_planar_pressure_patches": true,
+  "pressure_patch_basis": "polygons derived from actual stock guard bottom intersection with actual rails; curved-edge endpoints approximated by straight chords",
+  "linear_equation_solver": "SPOOLES"
+}

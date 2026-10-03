@@ -1,18 +1,19 @@
 # Cluster hardware prototypes
 
-## HOLD: DO NOT PRINT JETSON V2
+## Current versions
+- [Compact Jetson v3 CAD](jetson-stack-case/v3/README.md): **142 × 100 mm**, unchanged width and reduced front/back depth; corrected guide service channels, editable reference-free native model, seven STEP/STL part/coupon outputs and tier assembly
+- [Compact Jetson v3 PLA study](jetson-stack-case/v3/pla-study/README.md): exact final v3 frame, validated final linear-static cases, airflow energy-balance sensitivity, original input/result archive and reproducibility scripts
+- [Raspberry Pi 5 CAD v1](raspberrypi5-stack-case/v1/README.md): editable native model, eight STEP/STL part/coupon outputs, assembly, previews, validation and official MIT reference notice
+- [Raspberry Pi 5 PLA study](raspberrypi5-stack-case/pla-study/README.md): separate frame and removable-pin linear-static screening, airflow sensitivity, original input/result archive and reproduction scripts
 
-The v2 guide-assembly path is unvalidated and may not assemble as documented. Board-insertion checks assumed guides were already installed. Hold v2 printing pending corrected compact v3 and full assembly/service-path validation; the historical v2 FEM is not assembly proof.
+These are unprinted geometric prototypes and assumption-bound preliminary studies. They do not certify actual fit, strength, temperature, airflow, retention, tipping, vibration or service life. Verify fit coupons, hardware/cable/antenna/fan clearance and sustained-load/temperature behaviour. Three-tier gravity stacks need external restraint; transport and robot movement are unverified. Thermal work is energy-balance sensitivity only, not thermal FEM/CFD or PLA/CPU temperature prediction.
 
-Revision in progress: a compact Jetson revision and its matching study are being prepared. The existing Jetson v2 folder and study remain historical snapshots. The Pi v1 study is now included.
+v3 native core reopening/recompute and CAD assembly/service paths passed. Final GUI visual reopening remains unverified after the cloud FreeCAD GUI exited; upcoming preview images are final-geometry CAD renders, not GUI screenshots or physical-hardware photographs.
 
-CAD and preliminary analysis for benchtop Raspberry Pi 5 and Jetson Orin Nano stacks. These are geometric prototypes, not printed or hardware-qualified products. Application code is unchanged.
+## Historical v2: DO NOT PRINT
+The [Jetson v2 snapshot](jetson-stack-case/v2/README.md) has an unvalidated guide-installation path and may not assemble as documented. Earlier board-insertion checks assumed guides were already installed. Keep v2 printing on hold; use corrected v3 for current CAD review. The [historical v2 study](jetson-stack-case/pla-study/README.md) remains evidence for its stated old geometry/loading, not assembly proof or analysis of v3. Changed contact/load assumptions prevent a simple v2→v3 stiffness/cooling-improvement comparison.
 
-- [Raspberry Pi 5 stack v1](raspberrypi5-stack-case/v1/README.md): editable native model, eight part/coupon outputs, assembly, previews, validation and official MIT reference notice
-- [Raspberry Pi 5 PLA preliminary study](raspberrypi5-stack-case/pla-study/README.md): frame and removable-pin linear-static screening, airflow sensitivity, complete generated input/result archive and reproducibility scripts
-- [Jetson rounded stack v2](jetson-stack-case/v2/README.md): editable reference-free native model, seven part/coupon outputs, assembly, previews and validation; official NVIDIA CAD is linked externally
-- [Jetson PLA preliminary study](jetson-stack-case/pla-study/README.md): source scripts, original generated solver inputs/results in one canonical archive, review PDF, plots, summary and checksums
+## Complete reproducibility and provenance
+Each folder has an exact publication manifest. Study archives use numbered raw byte parts with whole/per-part SHA-256 and a cross-platform Python reassembler; the parts are not independent ZIPs. All final validated solver inputs/results are retained. Discarded/incomplete compact-study trials are documented; their large raw failed-trial files remain local. Generated caches, duplicate user-delivery ZIP variants, temporary files and solver binaries are excluded.
 
-Print the relevant fit coupons first. Confirm actual hardware revision, fasteners, cable/antenna/fan clearance and temperatures. External restraint is required for three-tier stacks; transport, vibration, robot movement and more than three tiers are outside these designs' verified scope.
-
-Each folder has an exact publication manifest. Redundant ZIP variants, caches, temporary files, solver binaries and superseded models are excluded. The PLA study's full archive retains its raw evidence and results; the public Jetson native file intentionally excludes unlicensed external NVIDIA geometry while retaining all owned parametric design features.
+NVIDIA full-kit CAD is linked externally; public Jetson native files contain the owned design only. Pi native reference geometry retains its MIT notice. Application and robot-control code are unchanged. This work remains on a draft PR; no merge or deployment is performed.

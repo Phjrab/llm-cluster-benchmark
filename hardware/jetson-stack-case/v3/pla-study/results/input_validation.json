@@ -1,0 +1,19 @@
+{
+  "seating_contact_sha256": "b009da297aaa1d8b5e993cacc7088bc0e96236c39bc6010287df3e71bf633497",
+  "source_step_sha256": "4b03f9d8fd696466c35360a9d7859cf208a581c82649890b3845c1cf844603bb",
+  "original_actual_contact_areas_mm2": [
+    160.90095852471018,
+    164.54740213237034
+  ],
+  "polygon_chord_areas_mm2": [
+    159.76129814980993,
+    163.4077242819203
+  ],
+  "polygon_to_actual_area_relative_difference": [
+    0.007082993074433608,
+    0.006926137001745047
+  ],
+  "upper_tier_print_mass_kg": 0.11559938530615078,
+  "source_status": "final_locked",
+  "passed": true
+}

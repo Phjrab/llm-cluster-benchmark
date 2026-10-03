@@ -1,0 +1,980 @@
+{
+  "source_sha256_before": "df60a7e14dec11a55812d39bf848fbcbad64c5fc0d7f689cc7e48c369d2836f9",
+  "source_sha256_after": "df60a7e14dec11a55812d39bf848fbcbad64c5fc0d7f689cc7e48c369d2836f9",
+  "removed_objects": [
+    {
+      "name": "OfficialKitReference_Level3",
+      "type": "App::Link",
+      "label": "REFERENCE ONLY - NVIDIA complete developer kit STEP - level 3",
+      "dependents": []
+    },
+    {
+      "name": "OfficialKitReference_Level2",
+      "type": "App::Link",
+      "label": "REFERENCE ONLY - NVIDIA complete developer kit STEP - level 2",
+      "dependents": []
+    },
+    {
+      "name": "OfficialKitReference",
+      "type": "Part::Feature",
+      "label": "REFERENCE ONLY - NVIDIA complete developer kit STEP",
+      "dependents": [
+        "OfficialKitReference_Level2",
+        "OfficialKitReference_Level3"
+      ]
+    },
+    {
+      "name": "OfficialStockBase",
+      "type": "Part::Feature",
+      "label": "REFERENCE ONLY - NVIDIA stock base 375-0137-000",
+      "dependents": []
+    }
+  ],
+  "preserved_object_count": 92,
+  "remaining_objects": [
+    "Parameters",
+    "PerimeterBlank",
+    "AirflowWindow",
+    "VentilatedRing",
+    "CornerPost1",
+    "CornerPost2",
+    "CornerPost3",
+    "CornerPost4",
+    "LocatorPin1",
+    "LocatorPin2",
+    "LocatorPin3",
+    "LocatorPin4",
+    "FrameUnion",
+    "LocatorSocket1",
+    "LocatorSocket2",
+    "LocatorSocket3",
+    "LocatorSocket4",
+    "SocketTools",
+    "StackFrame",
+    "LeftRailSupport",
+    "LeftRailWall",
+    "LeftRailLip",
+    "RightRailSupport",
+    "RightRailWall",
+    "RightRailLip",
+    "ClosedRearStop",
+    "GateSocketPedestal0",
+    "GateSocketPedestal1",
+    "RailFrameUnion",
+    "GateKeyTool0",
+    "GateKeyTool1",
+    "GateKeyTools",
+    "PrintableFrame",
+    "GateBridge",
+    "GateKey0",
+    "GateKey1",
+    "RemovableGate",
+    "CouponSlice",
+    "CouponSection",
+    "CouponBridge",
+    "RailFitCoupon",
+    "PrintableFrame_Level2",
+    "RemovableGate_Level2",
+    "PrintableFrame_Level3",
+    "RemovableGate_Level3",
+    "RoundedPerimeterPlan",
+    "SoftPerimeterEdges",
+    "RoundedCornerPost1",
+    "SoftPostTop1",
+    "RoundedCornerPost2",
+    "SoftPostTop2",
+    "RoundedCornerPost3",
+    "SoftPostTop3",
+    "RoundedCornerPost4",
+    "SoftPostTop4",
+    "PinTipLeadIn1",
+    "PinTipLeadIn2",
+    "PinTipLeadIn3",
+    "PinTipLeadIn4",
+    "SocketEntryLeadIn1",
+    "SocketEntryLeadIn2",
+    "SocketEntryLeadIn3",
+    "SocketEntryLeadIn4",
+    "LeftCenteringBar",
+    "LeftKeeperStem",
+    "LeftKeeperCap",
+    "LeftKeeperOuterLeg",
+    "LeftCenteringInsert",
+    "LeftKeeperClearanceSlot",
+    "RightCenteringBar",
+    "RightKeeperStem",
+    "RightKeeperCap",
+    "RightKeeperOuterLeg",
+    "RightCenteringInsert",
+    "RightKeeperClearanceSlot",
+    "KeeperSlotTools",
+    "FrameWithKeeperSlots",
+    "PinCouponSlice",
+    "PinFitCoupon",
+    "SocketCouponSlice",
+    "SocketFitCoupon",
+    "LeftCenteringInsert_Level2",
+    "RightCenteringInsert_Level2",
+    "LeftCenteringInsert_Level3",
+    "RightCenteringInsert_Level3",
+    "ThreeTierEnclosureExport",
+    "LeftRearGuideServiceTool",
+    "LeftRoundedRearGuideServiceTool",
+    "LeftServicedRearPost",
+    "RightRearGuideServiceTool",
+    "RightRoundedRearGuideServiceTool",
+    "RightServicedRearPost"
+  ],
+  "preserved_all_owned_objects": true,
+  "labels_unchanged": true,
+  "expressions_unchanged": true,
+  "feature_errors": [],
+  "shape_checks": {
+    "PerimeterBlank": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "AirflowWindow": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "VentilatedRing": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 1e-07,
+      "unchanged": true
+    },
+    "CornerPost1": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "CornerPost2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "CornerPost3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "CornerPost4": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LocatorPin1": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LocatorPin2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LocatorPin3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LocatorPin4": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "FrameUnion": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 1e-07,
+      "unchanged": true
+    },
+    "LocatorSocket1": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LocatorSocket2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LocatorSocket3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LocatorSocket4": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "SocketTools": {
+      "valid": true,
+      "solids_before": 8,
+      "solids_after": 8,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "StackFrame": {
+      "valid": true,
+      "solids_before": 5,
+      "solids_after": 5,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 1e-07,
+      "unchanged": true
+    },
+    "LeftRailSupport": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LeftRailWall": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LeftRailLip": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightRailSupport": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightRailWall": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightRailLip": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "ClosedRearStop": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "GateSocketPedestal0": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "GateSocketPedestal1": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RailFrameUnion": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 1e-07,
+      "unchanged": true
+    },
+    "GateKeyTool0": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "GateKeyTool1": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "GateKeyTools": {
+      "valid": true,
+      "solids_before": 2,
+      "solids_after": 2,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "PrintableFrame": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 1e-07,
+      "unchanged": true,
+      "symmetric_difference_mm3": 0.0
+    },
+    "GateBridge": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "GateKey0": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "GateKey1": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RemovableGate": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true,
+      "symmetric_difference_mm3": 0.0
+    },
+    "CouponSlice": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "CouponSection": {
+      "valid": true,
+      "solids_before": 2,
+      "solids_after": 2,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "CouponBridge": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RailFitCoupon": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 9.094947017729282e-13,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true,
+      "symmetric_difference_mm3": 0.0
+    },
+    "PrintableFrame_Level2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 3.643160599749666e-18,
+      "unchanged": true
+    },
+    "RemovableGate_Level2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "PrintableFrame_Level3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": -2.9103830456733704e-11,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 3.643160599749666e-18,
+      "unchanged": true
+    },
+    "RemovableGate_Level3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RoundedPerimeterPlan": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 3.643160599749666e-18,
+      "unchanged": true
+    },
+    "SoftPerimeterEdges": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 1e-07,
+      "unchanged": true
+    },
+    "RoundedCornerPost1": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 3.643160599749666e-18,
+      "unchanged": true
+    },
+    "SoftPostTop1": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 3.643160599749666e-18,
+      "unchanged": true
+    },
+    "RoundedCornerPost2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 3.643160599749666e-18,
+      "unchanged": true
+    },
+    "SoftPostTop2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": -1.8189894035458565e-12,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 3.643160599749666e-18,
+      "unchanged": true
+    },
+    "RoundedCornerPost3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 3.643160599749666e-18,
+      "unchanged": true
+    },
+    "SoftPostTop3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RoundedCornerPost4": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "SoftPostTop4": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "PinTipLeadIn1": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "PinTipLeadIn2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "PinTipLeadIn3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "PinTipLeadIn4": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "SocketEntryLeadIn1": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": -3.552713678800501e-15,
+      "area_delta_mm2": -1.4210854715202004e-14,
+      "max_bounds_delta_mm": 1.1102230246251565e-16,
+      "unchanged": true
+    },
+    "SocketEntryLeadIn2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": -3.552713678800501e-15,
+      "area_delta_mm2": -1.4210854715202004e-14,
+      "max_bounds_delta_mm": 1.1102230246251565e-16,
+      "unchanged": true
+    },
+    "SocketEntryLeadIn3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": -3.552713678800501e-15,
+      "area_delta_mm2": -1.4210854715202004e-14,
+      "max_bounds_delta_mm": 1.1102230246251565e-16,
+      "unchanged": true
+    },
+    "SocketEntryLeadIn4": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": -3.552713678800501e-15,
+      "area_delta_mm2": -1.4210854715202004e-14,
+      "max_bounds_delta_mm": 1.1102230246251565e-16,
+      "unchanged": true
+    },
+    "LeftCenteringBar": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LeftKeeperStem": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LeftKeeperCap": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LeftKeeperOuterLeg": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LeftCenteringInsert": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true,
+      "symmetric_difference_mm3": 0.0
+    },
+    "LeftKeeperClearanceSlot": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightCenteringBar": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightKeeperStem": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightKeeperCap": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightKeeperOuterLeg": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightCenteringInsert": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true,
+      "symmetric_difference_mm3": 0.0
+    },
+    "RightKeeperClearanceSlot": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "KeeperSlotTools": {
+      "valid": true,
+      "solids_before": 2,
+      "solids_after": 2,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "FrameWithKeeperSlots": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 1e-07,
+      "unchanged": true
+    },
+    "PinCouponSlice": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "PinFitCoupon": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 3.643160599749666e-18,
+      "unchanged": true,
+      "symmetric_difference_mm3": 0.0
+    },
+    "SocketCouponSlice": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "SocketFitCoupon": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": -2.2737367544323206e-13,
+      "max_bounds_delta_mm": 1e-07,
+      "unchanged": true,
+      "symmetric_difference_mm3": 0.0
+    },
+    "LeftCenteringInsert_Level2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightCenteringInsert_Level2": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LeftCenteringInsert_Level3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightCenteringInsert_Level3": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "ThreeTierEnclosureExport": {
+      "valid": true,
+      "solids_before": 12,
+      "solids_after": 12,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true,
+      "symmetric_difference_mm3": 0.0
+    },
+    "LeftRearGuideServiceTool": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": -5.684341886080802e-14,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 3.552713678800501e-15,
+      "unchanged": true
+    },
+    "LeftRoundedRearGuideServiceTool": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "LeftServicedRearPost": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightRearGuideServiceTool": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightRoundedRearGuideServiceTool": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    },
+    "RightServicedRearPost": {
+      "valid": true,
+      "solids_before": 1,
+      "solids_after": 1,
+      "volume_delta_mm3": 0.0,
+      "area_delta_mm2": 0.0,
+      "max_bounds_delta_mm": 0.0,
+      "unchanged": true
+    }
+  },
+  "native_saved_reopened_recomputed": true,
+  "assembly_solids": 12,
+  "all_checks_pass": true,
+  "archive_reference_geometry_absent": true,
+  "archive_integrity_ok": true,
+  "gui_document_preserved": true,
+  "public_fcstd_sha256": "5fb8963ae123f15563261683e2512f2af4943f4fd07163fd4f22a8a521792604",
+  "public_fcstd_bytes": 479755,
+  "appearance_preserved_validation": {
+    "archive_integrity_ok": true,
+    "all_preexisting_native_geometry_and_document_bytes_preserved": true,
+    "gui_view_provider_count": 92,
+    "new_construction_views_hidden": true,
+    "public_reference_names_absent": true,
+    "sha256": "5fb8963ae123f15563261683e2512f2af4943f4fd07163fd4f22a8a521792604",
+    "bytes": 479755,
+    "gui_visual_reopen_verified": false,
+    "method": "Preserved v2 native appearance metadata for matching owned/reference object names; added hidden view providers for six new service features. Geometry untouched."
+  }
+}

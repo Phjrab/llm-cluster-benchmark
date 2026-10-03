@@ -1,0 +1,68 @@
+{
+  "native_saved_reopened": true,
+  "native_objects": 96,
+  "parameter_aliases": {
+    "OuterWidth": "142",
+    "OuterDepth": "100",
+    "Pitch": "60",
+    "Floor": "6",
+    "Post": "16",
+    "OuterCornerRadius": "10",
+    "SocketDiameter": "7.8",
+    "RearRailOverlap": "1",
+    "RearServiceRelief": "3.3"
+  },
+  "source_feature_types": {
+    "Parameters": "Spreadsheet::Sheet",
+    "PerimeterBlank": "Part::Box",
+    "RoundedPerimeterPlan": "Part::Fillet",
+    "SoftPostTop3": "Part::Fillet",
+    "LeftServicedRearPost": "Part::Cut",
+    "PrintableFrame": "Part::Cut",
+    "LeftCenteringInsert": "Part::MultiFuse",
+    "RemovableGate": "Part::MultiFuse"
+  },
+  "printables": {
+    "PrintableFrame": {
+      "valid": true,
+      "solids": 1
+    },
+    "RemovableGate": {
+      "valid": true,
+      "solids": 1
+    },
+    "RailFitCoupon": {
+      "valid": true,
+      "solids": 1
+    },
+    "PinFitCoupon": {
+      "valid": true,
+      "solids": 1
+    },
+    "SocketFitCoupon": {
+      "valid": true,
+      "solids": 1
+    },
+    "LeftCenteringInsert": {
+      "valid": true,
+      "solids": 1
+    },
+    "RightCenteringInsert": {
+      "valid": true,
+      "solids": 1
+    }
+  },
+  "recomputed_feature_errors": [],
+  "parameter_perturbation_test": {
+    "pitch61_frame_height_mm": 66.5,
+    "expected_height_mm": 66.5,
+    "valid": true
+  },
+  "restored_frame": {
+    "valid": true,
+    "symmetric_difference_mm3": 0.0,
+    "volume_delta_mm3": 0.0,
+    "height_mm": 65.5
+  },
+  "all_checks_pass": true
+}

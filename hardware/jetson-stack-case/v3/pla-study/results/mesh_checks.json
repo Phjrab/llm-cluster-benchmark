@@ -1,0 +1,20 @@
+[
+  {
+    "case": "frame-h4",
+    "connected_mesh_components": 1,
+    "min_determinant_Jacobian_mm3": 0.03745855489626486,
+    "min_gamma": 0.05076104410245257,
+    "nonpositive_Jacobian_elements": 0,
+    "positive_Jacobian_passed": true,
+    "support_nodes": 1674
+  },
+  {
+    "case": "frame-h5",
+    "connected_mesh_components": 1,
+    "min_determinant_Jacobian_mm3": 0.05466915219571636,
+    "min_gamma": 0.05050502817446647,
+    "nonpositive_Jacobian_elements": 0,
+    "positive_Jacobian_passed": true,
+    "support_nodes": 1266
+  }
+]
