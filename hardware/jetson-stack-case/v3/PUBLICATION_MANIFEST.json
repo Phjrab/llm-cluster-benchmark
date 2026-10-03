@@ -5,6 +5,7 @@
     100
   ],
   "gui_visual_reopen_verified": false,
+  "preview_kind": "final-geometry CAD render, not GUI screenshot",
   "files": [
     {
       "path": "01_repeatable_frame.step",
@@ -92,9 +93,9 @@
     },
     {
       "path": "README.md",
-      "bytes": 3046,
-      "sha256": "ef40f1b80708ec51973348f994a12997e9294c00fed761a0de9fa387025434de",
-      "git_blob_sha1": "7c45f445b8617e8b56ccee7bc27daa35c6a33932"
+      "bytes": 3875,
+      "sha256": "1088ead32367d2d85b49b9cf079ca715fd90fe222aa34408caef37c13f106a17",
+      "git_blob_sha1": "2e832f74bafdddc06b0046c1677630b1b5612268"
     },
     {
       "path": "README_assembly_ko.txt",
@@ -119,6 +120,54 @@
       "bytes": 329,
       "sha256": "b767bb39277dd3ace804102d4f484573ca367d356b964afca1d53245078282cb",
       "git_blob_sha1": "b495f22d711148fd42029696d51e559e0567c0c2"
+    },
+    {
+      "path": "cad-renders/fit-coupons-preview.png",
+      "bytes": 944311,
+      "sha256": "f4b264e66a4464b79f9528d63a42047559b948dc1f10effcdbfd5e5762f65cf4",
+      "git_blob_sha1": "917c3625b1a16543ecc3bdb6806f1c97a445edc5"
+    },
+    {
+      "path": "cad-renders/frame-preview.png",
+      "bytes": 1597045,
+      "sha256": "087183b0171435c55a33f9975212dca52dbb61a5c8d70bb9815e8f28b9d320f8",
+      "git_blob_sha1": "9b0016e2ab05e32e83c59ec26a58e47769f01436"
+    },
+    {
+      "path": "cad-renders/io-alignment-top.png",
+      "bytes": 2588971,
+      "sha256": "1c3687c741e2ab94941b5a3f641c64a27548533fc1a3e2fc13356e248dfca063",
+      "git_blob_sha1": "c291275224706b81cad1b27ed9aea0ebd5e71413"
+    },
+    {
+      "path": "cad-renders/preview_validation.json",
+      "bytes": 2318,
+      "sha256": "7f64ab9499c549614a90c98bc6b1ed9fba9e03bf9c71c4288ebb6c632c63f19f",
+      "git_blob_sha1": "a4f9ef1ef579fe474cf2fd75770b6ddd7f7615c4"
+    },
+    {
+      "path": "cad-renders/rear-guide-service-channels.png",
+      "bytes": 1670486,
+      "sha256": "9e01105e5181d63717b995051b5d3f04b91467a0f0f2635ae3021bbfadaa4c9c",
+      "git_blob_sha1": "7a0ec34f2fa7544605eb023986faf02e65f7aacb"
+    },
+    {
+      "path": "cad-renders/single-level-with-kit.png",
+      "bytes": 1767302,
+      "sha256": "94e5ca533cfc9019ff9acd903af62fa7d035aacd13cd8ab92cc9acec467cc251",
+      "git_blob_sha1": "b5161fbc3cd88e2852ebc2192c82ef1ff2f4f329"
+    },
+    {
+      "path": "cad-renders/three-level-assembly.png",
+      "bytes": 2381898,
+      "sha256": "7326e00d8a27eb93698dca1e0ebb7f0d41a03e06f9c24f76e83912124b88379c",
+      "git_blob_sha1": "e4f46e440a43e489ca33724592bf6a1083a0d0d6"
+    },
+    {
+      "path": "cad-renders/underside-stock-guard-and-antennas.png",
+      "bytes": 1465147,
+      "sha256": "2348219f50e8b9c470f8f5ac807288533fb91a916a0c26d9be562f5a37178db3",
+      "git_blob_sha1": "6afaddc543ece46d7bdd35758ce8c13bcb6e765a"
     },
     {
       "path": "geometry_lock_manifest.json",
