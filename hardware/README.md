@@ -1,5 +1,9 @@
 # Cluster hardware prototypes
 
+## HOLD: DO NOT PRINT JETSON V2
+
+The v2 guide-assembly path is unvalidated and may not assemble as documented. Board-insertion checks assumed guides were already installed. Hold v2 printing pending corrected compact v3 and full assembly/service-path validation; the historical v2 FEM is not assembly proof.
+
 Revision in progress: a compact Jetson revision and its matching study are being prepared. The existing Jetson v2 folder and study remain historical snapshots. The Pi v1 study is now included.
 
 CAD and preliminary analysis for benchtop Raspberry Pi 5 and Jetson Orin Nano stacks. These are geometric prototypes, not printed or hardware-qualified products. Application code is unchanged.

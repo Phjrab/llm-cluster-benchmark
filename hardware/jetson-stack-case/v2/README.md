@@ -1,5 +1,9 @@
 # Jetson Orin Nano rounded stack case v2
 
+## HOLD: DO NOT PRINT V2
+
+The centering-guide installation path is not validated and may not be assemblable as documented. Earlier geometric checks confirmed board insertion only after the guides were already installed. Pure vertical guide insertion crosses the retaining lip; an endwise outer-hook path crosses corner posts. Hold this v2 design pending corrected compact v3 and complete assembly/service-path checks. The historical geometry and reports are preserved; zero overlaps in the final assembled pose do not prove that every part can reach that pose.
+
 Editable native FreeCAD model, seven fabrication/fit-coupon parts in STEP/STL, three-tier enclosure STEP, assembly previews and geometric validation. Start with [Korean assembly notes](README_assembly_ko.txt). The two 1 mm captured centering guides are mandatory; print the rail and pin/socket fit coupons first.
 
 **Provisional prototype. Not physically printed, fitted, thermally certified or mechanically load tested.** Gravity-seated three-tier stacking requires external restraint. The accompanying PLA study is preliminary linear-static analysis and airflow energy-balance sensitivity, not physical certification or a thermal FEM/CFD prediction.

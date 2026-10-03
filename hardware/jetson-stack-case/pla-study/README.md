@@ -1,3 +1,7 @@
+## Historical Jetson v2: hold printing
+
+The centering-guide assembly path is not validated and may not be achievable as documented. Do not print v2 pending corrected compact v3 and complete assembly/service-path checks. The static FEM below is for its stated v2 geometry and loading assumptions; it is not evidence that the case can be assembled. Earlier CAD checks verified board insertion after guides were already installed, not installation of the guides themselves.
+
 # Jetsonstack v2 PLA preliminary study
 
 This is a reproducible **prototype screening study**, dated 2026-10-03, for the

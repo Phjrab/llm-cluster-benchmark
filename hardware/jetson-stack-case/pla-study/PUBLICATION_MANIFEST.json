@@ -1,11 +1,4 @@
 {
-  "format_version": 1,
-  "file_count": 31,
-  "total_file_bytes_excluding_manifest": 43168768,
-  "hash_conventions": {
-    "sha256": "SHA-256 of exact file bytes",
-    "git_blob_sha1": "SHA-1 of UTF-8 header blob <byte-length> followed by NUL and exact file bytes"
-  },
   "files": [
     {
       "path": "ARCHIVE_RECONSTRUCTION.json",
@@ -51,9 +44,9 @@
     },
     {
       "path": "README.md",
-      "bytes": 12236,
-      "sha256": "1d43cc87fd896c1851c21b3cd5a477e0447d9ec278bf4d348a07332bb371ed35",
-      "git_blob_sha1": "4a49698de8552bb01f0a6ef014ea376c8f942fe7"
+      "bytes": 12708,
+      "sha256": "3494ab17afb620517c94bd4b6442fee507d989fc643ba07fbd83d5d353c267a6",
+      "git_blob_sha1": "4f263aa51cbe5f51bf3f7d78937ff3f5289e30ce"
     },
     {
       "path": "README_ko.txt",
@@ -193,5 +186,9 @@
       "sha256": "02472b9849494253ee7cbcb7ee26cf266c05109b0ae3fe55493432d0db9e8bb5",
       "git_blob_sha1": "ac3fcfbd1fe906a82780cf7dafc7911b612de92d"
     }
-  ]
+  ],
+  "hash_conventions": {
+    "sha256": "exact file bytes",
+    "git_blob_sha1": "Git blob header + NUL + exact file bytes"
+  }
 }
