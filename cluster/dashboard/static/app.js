@@ -962,14 +962,14 @@ function renderRuns() {
   }
   table.innerHTML = runs.length ? paginatedRuns.items.map(run => `
     <tr data-run-experiment="${escapeHtml(runExperimentId(run))}">
-      <td><strong>${escapeHtml(run.name || run.run_id)}</strong><br><small>${escapeHtml(run.run_id || "")}</small></td>
+      <td><strong>${escapeHtml(run.name || run.run_id)}</strong><br><small class="identifier" title="${escapeHtml(run.run_id || "")}">${escapeHtml(run.run_id || "")}</small></td>
       <td class="model-cell"><strong title="${escapeHtml(runModelId(run))}">${escapeHtml(shortModelName(runModelId(run)))}</strong>${run.suite_id ? `<span class="suite-badge">SUITE ${escapeHtml(runSuiteLabel(run))}</span>` : ""}</td>
       <td><span class="strategy-badge ${strategyMeta(runStrategy(run)).experimental ? "experimental" : ""}">${escapeHtml(strategyMeta(runStrategy(run)).label)}</span></td>
-      <td title="${escapeHtml(Array.isArray(run.nodes) ? run.nodes.join(", ") : "")}">${Array.isArray(run.nodes) ? run.nodes.length : "—"}${Array.isArray(run.nodes) && run.nodes.length ? `<br><small>${escapeHtml(ellipsis(run.nodes.join(", "), 34))}</small>` : ""}</td>
-      <td title="${runStrategy(run) === "broadcast_compare" ? "모든 복제본이 성공한 논리 요청 비율" : "성공한 실제 호출 비율"}">${runStrategy(run) === "broadcast_compare" && run.all_replicas_success_rate !== undefined ? `${pct(Number(run.all_replicas_success_rate) * 100)}<br><small>all replicas</small>` : run.success_rate !== undefined ? pct(Number(run.success_rate) * 100) : "—"}</td>
-      <td>${run.ttft_p50_s != null ? `${fmt(run.ttft_p50_s, 2)}s` : "—"}</td>
-      <td>${run.e2e_p95_s != null ? `${fmt(run.e2e_p95_s, 2)}s` : "—"}</td>
-      <td>${runThroughputCell(run)}</td>
+      <td class="numeric-cell" title="${escapeHtml(Array.isArray(run.nodes) ? run.nodes.join(", ") : "")}">${Array.isArray(run.nodes) ? run.nodes.length : "—"}${Array.isArray(run.nodes) && run.nodes.length ? `<br><small>${escapeHtml(ellipsis(run.nodes.join(", "), 34))}</small>` : ""}</td>
+      <td class="numeric-cell" title="${runStrategy(run) === "broadcast_compare" ? "모든 복제본이 성공한 논리 요청 비율" : "성공한 실제 호출 비율"}">${runStrategy(run) === "broadcast_compare" && run.all_replicas_success_rate !== undefined ? `${pct(Number(run.all_replicas_success_rate) * 100)}<br><small>all replicas</small>` : run.success_rate !== undefined ? pct(Number(run.success_rate) * 100) : "—"}</td>
+      <td class="numeric-cell">${run.ttft_p50_s != null ? `${fmt(run.ttft_p50_s, 2)}s` : "—"}</td>
+      <td class="numeric-cell">${run.e2e_p95_s != null ? `${fmt(run.e2e_p95_s, 2)}s` : "—"}</td>
+      <td class="numeric-cell">${runThroughputCell(run)}</td>
       <td><span class="run-status ${window.ClusterDashboard?.utils?.statusPresentation(run.status).tone || "unknown"}">${escapeHtml(window.ClusterDashboard?.utils?.statusPresentation(run.status).icon || "?")} ${escapeHtml(window.ClusterDashboard?.utils?.statusPresentation(run.status).label || (run.status || "unknown").toUpperCase())}</span>${run.suite_status && run.suite_status !== "completed" ? `<br><small>SUITE ${escapeHtml(run.suite_status.toUpperCase())}</small>` : ""}</td>
       <td><div class="table-actions"><button type="button" class="table-action" data-view-run="${escapeHtml(run.run_id || "")}" ${run.run_id ? "" : "disabled"}>상세 보기</button><button type="button" class="table-action danger" data-delete-run="${escapeHtml(run.run_id || "")}" ${run.run_id ? "" : "disabled"}>삭제</button></div></td>
     </tr>`).join("") : `<tr><td colspan="10" class="empty-cell">최근 suite는 모델 실행 전 종료되었습니다.</td></tr>`;
@@ -1053,6 +1053,19 @@ function chartPalette(options = {}) {
   };
 }
 
+function chartFont(size = 12, weight = 400, role = "ui") {
+  const family = getComputedStyle(document.documentElement).getPropertyValue(`--font-${role}`).trim();
+  return `${weight} ${size}px ${family || 'sans-serif'}`;
+}
+
+function fitChartText(ctx, text, maxWidth) {
+  const full = String(text || "");
+  if (ctx.measureText(full).width <= maxWidth) return full;
+  let value = full;
+  while (value.length && ctx.measureText(value + "…").width > maxWidth) value = value.slice(0, -1);
+  return value + "…";
+}
+
 function drawEmptyChart(canvas, message) {
   if (!canvas) return;
   const { context, width, height } = setupCanvas(canvas);
@@ -1061,7 +1074,7 @@ function drawEmptyChart(canvas, message) {
   context.fillStyle = palette.background;
   context.fillRect(0, 0, width, height);
   context.fillStyle = palette.text;
-  context.font = "11px ui-monospace, monospace";
+  context.font = chartFont(13);
   context.textAlign = "center";
   context.fillText(message, width / 2, height / 2);
   state.chartModels.delete(canvas.id);
@@ -1093,7 +1106,10 @@ function drawChartCanvas(canvas, model, options = {}) {
   const hidden = options.hidden || new Set();
   const activeSeries = model.series.filter(series => !hidden.has(series.label)).map(series => ({ ...series, color: palette.color(series.color) }));
   const header = options.header || 0;
-  const pad = { left: width < 430 ? 50 : 62, right: 18, top: 16 + header, bottom: 48 };
+  ctx.font = chartFont(12, 400, "numeric");
+  const labelMaximum = Math.max(...activeSeries.flatMap(series => series.values).filter(finite).map(Number), 1) * 1.12;
+  const tickWidth = Math.max(...Array.from({ length: 5 }, (_, i) => ctx.measureText(chartValue(labelMaximum * i / 4)).width));
+  const pad = { left: Math.max(width < 430 ? 50 : 62, Math.ceil(tickWidth + 24)), right: 18, top: 16 + header, bottom: 48 };
   const plotWidth = width - pad.left - pad.right;
   const plotHeight = height - pad.top - pad.bottom;
   const all = activeSeries.flatMap(series => series.values).filter(finite).map(Number);
@@ -1103,26 +1119,26 @@ function drawChartCanvas(canvas, model, options = {}) {
   ctx.fillRect(0, 0, width, height);
   if (header) {
     ctx.fillStyle = "#16251e"; ctx.fillRect(0, 0, width, header - 4);
-    ctx.fillStyle = "#c7f25b"; ctx.font = `700 ${Math.max(16, width / 52)}px ${getComputedStyle(document.documentElement).getPropertyValue("--sans")}`;
-    ctx.fillText(model.title, 28, 34);
-    ctx.fillStyle = "rgba(255,255,255,.58)"; ctx.font = `500 ${Math.max(10, width / 105)}px ui-monospace, monospace`;
-    ctx.fillText(ellipsis(model.subtitle || strategyMeta(model.strategy).label, 120), 28, 55);
+    ctx.fillStyle = "#c7f25b"; ctx.font = chartFont(Math.max(16, width / 52), 600, "display");
+    ctx.fillText(fitChartText(ctx, model.title, width - 56), 28, 34);
+    ctx.fillStyle = "rgba(255,255,255,.58)"; ctx.font = chartFont(Math.max(13, width / 105));
+    ctx.fillText(fitChartText(ctx, model.subtitle || strategyMeta(model.strategy).label, width - 56), 28, 55);
     let legendX = 28; let legendY = 79;
     activeSeries.forEach(series => {
-      const label = ellipsis(series.label, 22); const itemWidth = 32 + ctx.measureText(label).width;
+      const label = fitChartText(ctx, series.label, width * .35); const itemWidth = 32 + ctx.measureText(label).width;
       if (legendX + itemWidth > width - 24) { legendX = 28; legendY += 16; }
       ctx.fillStyle = series.color; ctx.fillRect(legendX, legendY - 7, 16, 3);
       ctx.fillStyle = "rgba(255,255,255,.76)"; ctx.fillText(label, legendX + 22, legendY);
       legendX += itemWidth + 16;
     });
   }
-  ctx.strokeStyle = palette.grid; ctx.fillStyle = palette.text; ctx.font = "12px ui-monospace, monospace"; ctx.lineWidth = 1;
+  ctx.strokeStyle = palette.grid; ctx.fillStyle = palette.text; ctx.font = chartFont(12, 400, "numeric"); ctx.lineWidth = 1;
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = pad.top + plotHeight * tick / 4;
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
     ctx.textAlign = "right"; ctx.fillText(chartValue(maximum * (4 - tick) / 4), pad.left - 8, y + 3);
   }
-  ctx.save(); ctx.translate(13, pad.top + plotHeight / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = palette.text; ctx.font = "600 12px ui-monospace, monospace"; ctx.fillText(`${model.yLabel}${model.unit ? ` (${model.unit})` : ""}`, 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(13, pad.top + plotHeight / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = palette.text; ctx.font = chartFont(12, 500); ctx.fillText(fitChartText(ctx, `${model.yLabel}${model.unit ? ` (${model.unit})` : ""}`, plotHeight - 8), 0, 0); ctx.restore();
   if (!activeSeries.length || !all.length) {
     ctx.fillStyle = palette.text; ctx.textAlign = "center"; ctx.fillText("표시할 계열을 범례에서 선택하세요", pad.left + plotWidth / 2, pad.top + plotHeight / 2);
     return { hits, width, height };
@@ -1159,13 +1175,14 @@ function drawChartCanvas(canvas, model, options = {}) {
     }));
   }
   const labelEvery = Math.max(1, Math.ceil(model.labels.length / Math.max(3, Math.floor(plotWidth / 75))));
-  ctx.fillStyle = palette.text; ctx.font = "12px ui-monospace, monospace"; ctx.textAlign = "center";
+  ctx.fillStyle = palette.text; ctx.font = chartFont(12, 400, model.xLabel === "Run" ? "mono" : "ui"); ctx.textAlign = "center";
   model.labels.forEach((label, index) => {
     if (index % labelEvery && index !== model.labels.length - 1) return;
     const x = model.type === "line" && model.labels.length > 1 ? pad.left + plotWidth * index / (model.labels.length - 1) : pad.left + groupWidth * index + groupWidth / 2;
-    ctx.fillText(ellipsis(label, width < 500 ? 9 : 14), x, height - 25);
+    const labelWidth = Math.max(24, Math.min(groupWidth * labelEvery - 8, 2 * (width - pad.right - x), 2 * (x - pad.left) + 50));
+    ctx.fillText(fitChartText(ctx, label, labelWidth), x, height - 25);
   });
-  if (model.xLabel) { ctx.fillStyle = palette.text; ctx.font = "600 12px ui-monospace, monospace"; ctx.fillText(model.xLabel, pad.left + plotWidth / 2, height - 6); }
+  if (model.xLabel) { ctx.fillStyle = palette.text; ctx.font = chartFont(12, 500); ctx.fillText(fitChartText(ctx, model.xLabel, plotWidth), pad.left + plotWidth / 2, height - 6); }
   return { hits, width, height };
 }
 
@@ -1183,7 +1200,7 @@ function showChartTooltip(canvas, hit, keyboard = false) {
   const left = Math.max(70, Math.min(canvas.clientWidth - 70, hit.x));
   const top = Math.max(66, hit.y);
   tooltip.style.left = `${left}px`; tooltip.style.top = `${top}px`;
-  tooltip.innerHTML = `<strong>${escapeHtml(hit.label)}</strong><span>${escapeHtml(hit.series)} · ${escapeHtml(chartValue(hit.value, hit.unit))}</span>${hit.detail ? `<span>${escapeHtml(hit.detail)}</span>` : ""}`;
+  tooltip.innerHTML = `<strong>${escapeHtml(hit.label)}</strong><span>${escapeHtml(hit.series)} · <b class="numeric">${escapeHtml(chartValue(hit.value, hit.unit))}</b></span>${hit.detail ? `<span>${escapeHtml(hit.detail)}</span>` : ""}`;
   tooltip.hidden = false;
   if (keyboard) canvas.setAttribute("aria-label", `${hit.label}, ${hit.series}, ${chartValue(hit.value, hit.unit)}${hit.detail ? `, ${hit.detail}` : ""}. 화살표 키로 다음 값을 탐색하세요.`);
 }
@@ -1517,7 +1534,8 @@ function buildPublicationSvg(model, options = {}) {
   return { svg: elements.join(""), width, height, sizeMm };
 }
 
-function downloadDashboardPng(chartId) {
+async function downloadDashboardPng(chartId) {
+  await document.fonts.ready;
   const model = state.chartModels.get(chartId); if (!model) return;
   const source = $(`#${chartId}`); const width = Math.max(1000, Math.round(source.clientWidth * 2)); const height = Math.round(width * .52);
   const canvas = document.createElement("canvas");
@@ -1747,7 +1765,7 @@ function drawTelemetryChart() {
   delete canvas.dataset.emptyMessage;
   ctx.fillStyle = palette.background; ctx.fillRect(0, 0, width, height);
   const pad = { left: 34, right: 12, top: 30, bottom: 24 };
-  ctx.strokeStyle = palette.grid; ctx.fillStyle = palette.text; ctx.font = "12px ui-monospace, monospace";
+  ctx.strokeStyle = palette.grid; ctx.fillStyle = palette.text; ctx.font = chartFont(12);
   [0, 25, 50, 75, 100].forEach(value => {
     const y = height - pad.bottom - value / 100 * (height - pad.top - pad.bottom);
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
@@ -2763,7 +2781,7 @@ function bindEvents() {
     if (event.detail.page === "results") renderRuns();
     if (event.detail.page === "compare") window.ClusterDashboard?.research?.renderCompare?.();
   });
-  document.addEventListener("dashboard:themechange", () => {
+  const repaintTypography = () => {
     // Repaint only presentation; preserve filters, hidden series and all form/approval state.
     for (const [id, model] of state.chartModels) {
       const canvas = $(`#${id}`);
@@ -2773,7 +2791,16 @@ function bindEvents() {
       if (canvas.getClientRects().length) drawEmptyChart(canvas, canvas.dataset.emptyMessage);
     });
     if ($("#nodeDetailDialog").open) drawTelemetryChart();
-  });
+  };
+  document.addEventListener("dashboard:themechange", repaintTypography);
+  // Font swaps alter text metrics; repaint presentation without resetting mounted state.
+  let fontFrame;
+  const fontsChanged = () => {
+    cancelAnimationFrame(fontFrame);
+    fontFrame = requestAnimationFrame(repaintTypography);
+  };
+  document.fonts.ready.then(fontsChanged);
+  document.fonts.addEventListener("loadingdone", fontsChanged);
   let resizeTimer;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
