@@ -184,6 +184,7 @@
   border: 1px solid var(--control-line); border-radius: 3px;
   background: var(--surface); color: var(--ink); font-size: 12px; line-height: 1.5;
 }
+.sweep-section input:not([type="checkbox"]), .sweep-section select { height: var(--sweep-control-height); line-height: 18px; }
 .sweep-section select { appearance: auto; }
 .sweep-section textarea { resize: vertical; }
 .sweep-section input::placeholder,
@@ -235,7 +236,7 @@
 .sweep-detail-grid header { align-items: center; gap: 12px; flex-wrap: wrap; }
 .sweep-detail-grid header strong { font-size: 12px; }
 .sweep-result-toolbar label { flex: 1 1 150px; min-width: 0; font-size: 11px; line-height: 1.4; }
-.sweep-result-toolbar select { height: auto; min-width: 0; }
+.sweep-result-toolbar select { height: var(--sweep-control-height); min-width: 0; }
 .sweep-result-toolbar label:has(input) { flex: 0 1 auto; }
 .sweep-result-contract strong, .sweep-warning strong, .sweep-na strong { font-size: 12px; line-height: 1.5; }
 .sweep-result-contract span, .sweep-warning span, .sweep-na span { font-size: 11px; overflow-wrap: anywhere; }
