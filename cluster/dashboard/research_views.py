@@ -8,6 +8,9 @@ written before formal research identity fields existed.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
+import json
+import math
 from typing import Any, Mapping, Sequence
 
 
@@ -16,7 +19,7 @@ QUALITY_VALUES = frozenset({"clean", "warning", "degraded", "unknown"})
 
 
 def _number(value: Any) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         return None
     return float(value)
 
@@ -215,7 +218,46 @@ def normalize_compare_run(run: Mapping[str, Any]) -> dict[str, Any]:
         quality = "unknown"
     platform = platforms[0] if len(platforms) == 1 else "mixed" if platforms else "unknown"
     runtime = runtime_fingerprints[0] if len(runtime_fingerprints) == 1 else "mixed" if runtime_fingerprints else "unknown"
-    power = power_modes[0] if len(power_modes) == 1 else "mixed" if power_modes else "not_applicable"
+    power = power_modes[0] if len(power_modes) == 1 else "mixed" if power_modes else "unknown"
+    parameters = run.get("benchmark_parameters") if isinstance(run.get("benchmark_parameters"), Mapping) else {}
+    evidence = run.get("comparison_conditions") if isinstance(run.get("comparison_conditions"), Mapping) else {}
+    model_configs = run.get("actual_model_config") or []
+
+    def observed(field: str, aliases: tuple[str, ...] = ()) -> str:
+        direct = evidence.get(field) or run.get(field)
+        if direct:
+            return str(direct)
+        if not isinstance(model_configs, list) or not model_configs or len(model_configs) < len(nodes):
+            return "unknown"
+        values = []
+        for item in model_configs:
+            if not isinstance(item, Mapping):
+                return "unknown"
+            value = next((item.get(key) for key in (field, *aliases) if item.get(key)), None)
+            if value is None:
+                return "unknown"
+            values.append(str(value))
+        unique = set(values)
+        return next(iter(unique)) if len(unique) == 1 else "mixed"
+
+    workload_keys = ("n_ctx", "requests_per_scenario", "concurrency", "max_tokens", "temperature", "top_p", "seed", "warmup_requests")
+    workload = {key: parameters.get(key) for key in workload_keys}
+    workload_hash = hashlib.sha256(json.dumps(workload, sort_keys=True).encode()).hexdigest() if all(value is not None for value in workload.values()) else "unknown"
+    source_values = []
+    participants = run.get("participant_nodes") or []
+    for item in participants:
+        deployment = item.get("deployment") if isinstance(item, Mapping) else None
+        deployment = deployment if isinstance(deployment, Mapping) else {}
+        value = deployment.get("source_tree_sha256") or deployment.get("git_commit") or (item.get("git_commit") if isinstance(item, Mapping) else None)
+        source_values.append(str(value) if value else None)
+    source = "unknown"
+    if source_values and all(source_values) and len(source_values) >= len(nodes):
+        unique_sources = set(source_values)
+        source = next(iter(unique_sources)) if len(unique_sources) == 1 else "mixed"
+    instrumentation = run.get("measurement_instrumentation") if isinstance(run.get("measurement_instrumentation"), Mapping) else {}
+    overall = instrumentation.get("overall") if isinstance(instrumentation.get("overall"), Mapping) else {}
+    energy_coverage = overall.get("energy_coverage")
+    energy_complete = isinstance(energy_coverage, Mapping) and energy_coverage.get("complete") is True
     return {
         "run_id": _text(run.get("run_id"), "legacy-run"),
         "campaign_id": _text(identity.get("campaign_id") or run.get("campaign_id"), "uncampaigned"),
@@ -223,6 +265,14 @@ def normalize_compare_run(run: Mapping[str, Any]) -> dict[str, Any]:
         "experiment_type": _text(identity.get("experiment_type"), "legacy"),
         "model_lock": _text(identity.get("model_lock_entry"), "unlocked"),
         "model_id": _text(run.get("model_id")),
+        "model_sha256": observed("model_sha256", ("artifact_sha256",)),
+        "tokenizer_sha256": observed("tokenizer_sha256"),
+        "quantization": observed("quantization"),
+        "prompt_sha256": _text(evidence.get("prompt_sha256") or parameters.get("prompt_sha256")),
+        "workload_fingerprint": _text(evidence.get("workload_fingerprint"), workload_hash),
+        "source_fingerprint": _text(evidence.get("source_fingerprint"), source),
+        "measurement_fingerprint": _text(evidence.get("measurement_fingerprint")),
+        "provenance": _text(run.get("data_provenance") or run.get("provenance"), "saved_run"),
         "platform": platform,
         "platforms": platforms,
         "node_count": len(nodes),
@@ -238,7 +288,11 @@ def normalize_compare_run(run: Mapping[str, Any]) -> dict[str, Any]:
         "started_at": run.get("started_at"),
         "finished_at": run.get("finished_at"),
         "metrics": {
-            "throughput_tokens_s": _number(run.get("cluster_tokens_per_s")),
+            "throughput_tokens_s": _number(run.get("physical_cluster_tokens_per_s", run.get("cluster_tokens_per_s"))),
+            "physical_cluster_tokens_per_s": _number(run.get("physical_cluster_tokens_per_s", run.get("cluster_tokens_per_s"))),
+            "effective_user_tokens_per_s": _number(run.get("effective_user_tokens_per_s")),
+            "logical_requests_per_s": _number(run.get("logical_requests_per_s")),
+            "generated_tokens_per_j": _number(overall.get("generated_tokens_per_j")) if energy_complete else None,
             "requests_s": _number(run.get("requests_per_s")),
             "ttft_p50_s": _number(run.get("ttft_p50_s")),
             "ttft_p95_s": _number(run.get("ttft_p95_s")),

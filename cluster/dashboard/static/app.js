@@ -28,7 +28,7 @@ function finite(value) {
 
 const fmt = (value, digits = 1, fallback = "—") => finite(value) ? Number(value).toFixed(digits) : fallback;
 const pct = value => finite(value) ? `${fmt(value, 0)}%` : "—";
-const DASHBOARD_COLORS = ["#718f17", "#e57c38", "#163126", "#0072b2", "#cc79a7", "#f0e442"];
+const DASHBOARD_COLORS = ["#2458A6", "#A56800", "#24654E", "#8356A6", "#AD3434", "#526170"];
 const PUBLICATION_COLORS = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#000000"];
 let resultPageSize = 10;
 let resultCurrentPage = 1;
@@ -536,44 +536,39 @@ function updateSummary() {
   const enabled = visible.filter(node => node.enabled);
   const online = enabled.filter(node => statusFor(node.name).api);
   const selected = [...state.selectedNodes];
-  const powers = online.map(node => Number(statusFor(node.name).metrics?.power_w)).filter(Number.isFinite);
+  const powers = window.ClusterDashboard.lab.powerSummary(enabled.map(node => statusFor(node.name)));
   $("#onlineCount").textContent = online.length;
   $("#workerCount").textContent = visible.length;
   $("#enabledCount").textContent = enabled.length;
   $("#selectedCount").textContent = selected.length;
   $("#runNodes").textContent = selected.length;
   $("#selectionSummary").textContent = `선택 노드 ${selected.length}대 · ${selected.join(", ")}`;
-  $("#modelCount").textContent = state.models.length || "—";
-  $("#averagePower").textContent = powers.length ? fmt(powers.reduce((a, b) => a + b, 0)) : "—";
+  $("#modelCount").textContent = state.models.length;
+  $("#averagePower").textContent = powers.total !== null ? fmt(powers.total) : "N/A";
+  $("#powerCoverage").textContent = `${powers.observed}/${powers.expected} observed · W`;
   const controller = state.controller || {};
   renderExperimentPowerBanner();
-  const dashboardReady = controller.dashboard?.healthy !== false;
-  const schedulerReady = controller.scheduler?.ready !== false;
-  const storageReady = controller.storage?.ready !== false;
-  $("#controllerStatus").textContent = dashboardReady ? "ONLINE" : "OFFLINE";
+  const dashboardReady = controller.dashboard?.healthy;
+  const schedulerReady = controller.scheduler?.ready;
+  const storageReady = controller.storage?.ready;
+  $("#controllerStatus").textContent = dashboardReady === true ? "ONLINE" : dashboardReady === false ? "OFFLINE" : "UNKNOWN";
   $("#controllerAddress").textContent = controller.host || controller.platform || "macOS";
   $("#controllerName").textContent = controller.host || "Mac Control Plane";
   $("#controllerPlatform").textContent = controller.platform || "macOS";
-  $("#controllerDashboard").textContent = dashboardReady ? "ONLINE" : "OFFLINE";
-  $("#controllerScheduler").textContent = schedulerReady ? "READY" : "CHECKING";
-  $("#controllerStorage").textContent = storageReady ? "READY" : "CHECKING";
+  $("#controllerDashboard").textContent = dashboardReady === true ? "ONLINE" : dashboardReady === false ? "OFFLINE" : "UNKNOWN";
+  $("#controllerScheduler").textContent = schedulerReady === true ? "READY" : schedulerReady === false ? "NOT READY" : "UNKNOWN";
+  $("#controllerStorage").textContent = storageReady === true ? "READY" : storageReady === false ? "NOT READY" : "UNKNOWN";
   const orbit = $("#orbitWorkers");
   if (orbit) {
-    const workerCount = visible.length;
-    orbit.dataset.dense = workerCount > 8 ? "true" : "false";
-    orbit.innerHTML = visible.map((worker, index) => {
+    orbit.innerHTML = visible.map(worker => {
       const stateLabel = orbitWorkerState(worker, statusFor(worker.name));
-      const angle = -90 + (360 / Math.max(workerCount, 1)) * index;
-      const radius = workerCount <= 4 ? 40 : workerCount <= 8 ? 44 : 47;
-      const left = 50 + Math.cos(angle * Math.PI / 180) * radius;
-      const top = 50 + Math.sin(angle * Math.PI / 180) * radius;
-      return `<div class="satellite ${stateLabel.toLowerCase()}" data-orbit-worker="${escapeHtml(worker.name)}" style="--orbit-left:${left.toFixed(3)}%;--orbit-top:${top.toFixed(3)}%" title="${escapeHtml(`${worker.name} · ${worker.host} · ${stateLabel}`)}" aria-label="${escapeHtml(`${worker.name} ${stateLabel}`)}"><i></i><span>${escapeHtml(worker.name)}</span><b>${stateLabel}</b></div>`;
-    }).join("");
+      return `<div class="worker-status-row ${stateLabel.toLowerCase()}" data-orbit-worker="${escapeHtml(worker.name)}"><span>${escapeHtml(worker.name)} · ${escapeHtml(platformName(actualPlatform(worker)))}</span><b>${stateLabel}</b></div>`;
+    }).join("") || '<p>등록된 inference Worker 없음</p>';
   }
   $("#addNodeButton").disabled = false;
   $("#addNodeButton").title = "새 워커를 연결합니다. 등록 노드 수에는 고정 제한이 없습니다.";
   const latest = state.runs.find(run => run.status === "completed");
-  $("#recentThroughput").textContent = latest ? fmt(latest.cluster_tokens_per_s) : "—";
+  $("#recentThroughput").textContent = latest ? fmt(latest.physical_cluster_tokens_per_s ?? latest.cluster_tokens_per_s) : "—";
   updateStrategyGuidance();
   updatePlatformGuidance();
   updateModelAvailability();
@@ -1049,9 +1044,9 @@ function setupCanvas(canvas, options = {}) {
 
 function drawEmptyChart(canvas, message) {
   const { context, width, height } = setupCanvas(canvas);
-  context.fillStyle = "#f8f7f1";
+  context.fillStyle = "#ffffff";
   context.fillRect(0, 0, width, height);
-  context.fillStyle = "#92968f";
+  context.fillStyle = "#526170";
   context.font = "11px ui-monospace, monospace";
   context.textAlign = "center";
   context.fillText(message, width / 2, height / 2);
@@ -1089,7 +1084,7 @@ function drawChartCanvas(canvas, model, options = {}) {
   const all = activeSeries.flatMap(series => series.values).filter(finite).map(Number);
   const maximum = Math.max(...all, 1) * 1.12;
   const hits = [];
-  ctx.fillStyle = options.background || "#f8f7f1";
+  ctx.fillStyle = options.background || "#ffffff";
   ctx.fillRect(0, 0, width, height);
   if (header) {
     ctx.fillStyle = "#16251e"; ctx.fillRect(0, 0, width, header - 4);
@@ -1106,15 +1101,15 @@ function drawChartCanvas(canvas, model, options = {}) {
       legendX += itemWidth + 16;
     });
   }
-  ctx.strokeStyle = "#dedbd0"; ctx.fillStyle = "#747a72"; ctx.font = "9px ui-monospace, monospace"; ctx.lineWidth = 1;
+  ctx.strokeStyle = "#D7DDE2"; ctx.fillStyle = "#526170"; ctx.font = "12px ui-monospace, monospace"; ctx.lineWidth = 1;
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = pad.top + plotHeight * tick / 4;
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
     ctx.textAlign = "right"; ctx.fillText(chartValue(maximum * (4 - tick) / 4), pad.left - 8, y + 3);
   }
-  ctx.save(); ctx.translate(13, pad.top + plotHeight / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#5d645d"; ctx.font = "600 8px ui-monospace, monospace"; ctx.fillText(`${model.yLabel}${model.unit ? ` (${model.unit})` : ""}`, 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(13, pad.top + plotHeight / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#526170"; ctx.font = "600 12px ui-monospace, monospace"; ctx.fillText(`${model.yLabel}${model.unit ? ` (${model.unit})` : ""}`, 0, 0); ctx.restore();
   if (!activeSeries.length || !all.length) {
-    ctx.fillStyle = "#92968f"; ctx.textAlign = "center"; ctx.fillText("표시할 계열을 범례에서 선택하세요", pad.left + plotWidth / 2, pad.top + plotHeight / 2);
+    ctx.fillStyle = "#526170"; ctx.textAlign = "center"; ctx.fillText("표시할 계열을 범례에서 선택하세요", pad.left + plotWidth / 2, pad.top + plotHeight / 2);
     return { hits, width, height };
   }
   const groupWidth = plotWidth / Math.max(1, model.labels.length);
@@ -1149,13 +1144,13 @@ function drawChartCanvas(canvas, model, options = {}) {
     }));
   }
   const labelEvery = Math.max(1, Math.ceil(model.labels.length / Math.max(3, Math.floor(plotWidth / 75))));
-  ctx.fillStyle = "#747a72"; ctx.font = "8px ui-monospace, monospace"; ctx.textAlign = "center";
+  ctx.fillStyle = "#526170"; ctx.font = "12px ui-monospace, monospace"; ctx.textAlign = "center";
   model.labels.forEach((label, index) => {
     if (index % labelEvery && index !== model.labels.length - 1) return;
     const x = model.type === "line" && model.labels.length > 1 ? pad.left + plotWidth * index / (model.labels.length - 1) : pad.left + groupWidth * index + groupWidth / 2;
     ctx.fillText(ellipsis(label, width < 500 ? 9 : 14), x, height - 25);
   });
-  if (model.xLabel) { ctx.fillStyle = "#5d645d"; ctx.font = "600 8px ui-monospace, monospace"; ctx.fillText(model.xLabel, pad.left + plotWidth / 2, height - 6); }
+  if (model.xLabel) { ctx.fillStyle = "#526170"; ctx.font = "600 12px ui-monospace, monospace"; ctx.fillText(model.xLabel, pad.left + plotWidth / 2, height - 6); }
   return { hits, width, height };
 }
 
@@ -1433,29 +1428,32 @@ function buildPublicationSvg(model, options = {}) {
   });
   const legendRowHeight = Number(pointSize(10));
   const legendExtraHeight = Math.max(0, legendRows - 1) * legendRowHeight;
-  const height = Math.round(baseHeight + legendExtraHeight);
-  const svgWidth = sizeMm ? `${sizeMm}mm` : String(width);
-  const svgHeight = sizeMm ? `${(sizeMm * height / width).toFixed(2)}mm` : String(height);
   const includeTitle = options.includeTitle !== false;
   const showValues = Boolean(options.showValues);
   const title = options.title || model.title;
-  const subtitle = options.subtitle || publicationMetadata(model);
-  const pad = { left: Math.round(width * .105), right: Math.round(width * .035), top: (includeTitle ? Math.round(baseHeight * .18) : Math.round(baseHeight * .08)) + legendExtraHeight, bottom: Math.round(baseHeight * .16) };
+  const subtitle = options.subtitle || model.subtitle || publicationMetadata(model);
+  const titleY = Number(pointSize(11)) * 1.15;
+  const subtitleY = titleY + Number(pointSize(7.5)) * 1.4;
+  const legendStartY = includeTitle ? subtitleY + Number(pointSize(7.5)) * 1.4 : legendRowHeight;
+  const pad = { left: Math.max(Math.round(width * .105), Math.round(unitsPerPoint * 38)), right: Math.round(width * .035), top: Math.ceil(legendStartY + legendRowHeight + legendExtraHeight), bottom: Math.round(baseHeight * .16) };
+  const height = Math.round(baseHeight + Math.max(0, pad.top - Math.round(baseHeight * .18)));
+  const svgWidth = sizeMm ? `${sizeMm}mm` : String(width);
+  const svgHeight = sizeMm ? `${(sizeMm * height / width).toFixed(2)}mm` : String(height);
   const plotWidth = width - pad.left - pad.right; const plotHeight = height - pad.top - pad.bottom;
   const all = series.flatMap(item => item.values).filter(finite).map(Number);
   const maximum = Math.max(...all, 1) * 1.12;
   const font = "Arial, Noto Sans CJK KR, Noto Sans KR, sans-serif";
   const elements = [`<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="figure-title figure-desc">`, `<title id="figure-title">${xmlEscape(title)}</title>`, `<desc id="figure-desc">${xmlEscape(`${subtitle}. ${model.yLabel} by ${model.xLabel}.`)}</desc>`, `<rect width="100%" height="100%" fill="#ffffff"/>`];
   if (includeTitle) {
-    elements.push(`<text x="${pad.left}" y="${Math.round(baseHeight * .07)}" font-family="${font}" font-size="${pointSize(11)}" font-weight="700" fill="#111111">${xmlEscape(title)}</text>`);
-    elements.push(`<text x="${pad.left}" y="${Math.round(baseHeight * .115)}" font-family="${font}" font-size="${pointSize(7.5)}" fill="#444444">${xmlEscape(ellipsis(subtitle, width < 900 ? 120 : 180))}</text>`);
+    elements.push(`<text x="${pad.left}" y="${titleY.toFixed(2)}" font-family="${font}" font-size="${pointSize(11)}" font-weight="700" fill="#111111">${xmlEscape(ellipsis(title, Math.max(12, Math.floor(plotWidth / (Number(pointSize(11)) * .6)))))}</text>`);
+    elements.push(`<text x="${pad.left}" y="${subtitleY.toFixed(2)}" font-family="${font}" font-size="${pointSize(7.5)}" fill="#444444">${xmlEscape(ellipsis(subtitle, Math.max(16, Math.floor(plotWidth / (Number(pointSize(7.5)) * .6)))))}</text>`);
   }
   for (let tick = 0; tick <= 5; tick += 1) {
     const y = pad.top + plotHeight * tick / 5; const value = maximum * (5 - tick) / 5;
     elements.push(`<line x1="${pad.left}" y1="${y.toFixed(2)}" x2="${width - pad.right}" y2="${y.toFixed(2)}" stroke="${tick === 5 ? "#333333" : "#dddddd"}" stroke-width="${tick === 5 ? 1.4 : 1}"/>`);
     elements.push(`<text x="${pad.left - 12}" y="${(y + 4).toFixed(2)}" text-anchor="end" font-family="${font}" font-size="${pointSize(7.5)}" fill="#222222">${xmlEscape(chartValue(value))}</text>`);
   }
-  elements.push(`<text transform="translate(${Math.round(width * .026)},${pad.top + plotHeight / 2}) rotate(-90)" text-anchor="middle" font-family="${font}" font-size="${pointSize(8)}" font-weight="600" fill="#111111">${xmlEscape(`${model.yLabel}${model.unit ? ` (${model.unit})` : ""}`)}</text>`);
+  elements.push(`<text transform="translate(${Math.round(unitsPerPoint * 10)},${pad.top + plotHeight / 2}) rotate(-90)" text-anchor="middle" font-family="${font}" font-size="${pointSize(8)}" font-weight="600" fill="#111111">${xmlEscape(`${model.yLabel}${model.unit ? ` (${model.unit})` : ""}`)}</text>`);
   const groupWidth = plotWidth / Math.max(1, model.labels.length);
   if (model.type === "line") {
     series.forEach((item, seriesIndex) => {
@@ -1492,7 +1490,7 @@ function buildPublicationSvg(model, options = {}) {
     elements.push(`<text x="${x.toFixed(2)}" y="${height - pad.bottom + Math.round(baseHeight * .045)}" text-anchor="middle" font-family="${font}" font-size="${pointSize(7)}" fill="#222222">${xmlEscape(ellipsis(label, width < 900 ? 11 : 18))}</text>`);
   });
   elements.push(`<text x="${pad.left + plotWidth / 2}" y="${height - Math.round(baseHeight * .025)}" text-anchor="middle" font-family="${font}" font-size="${pointSize(8)}" font-weight="600" fill="#111111">${xmlEscape(model.xLabel || "")}</text>`);
-  const legendStartY = includeTitle ? Math.round(baseHeight * .147) : Math.round(baseHeight * .038); let legendX = pad.left; let legendY = legendStartY;
+  let legendX = pad.left; let legendY = legendStartY;
   legendEntries.forEach(entry => {
     if (legendX > pad.left && legendX + entry.width > width - pad.right) { legendX = pad.left; legendY += legendRowHeight; }
     elements.push(`<rect x="${legendX}" y="${legendY - width * .008}" width="${width * .022}" height="${width * .006}" fill="${entry.item.color}"/><text x="${legendX + width * .028}" y="${legendY}" font-family="${font}" font-size="${pointSize(7.5)}" fill="#222222">${xmlEscape(entry.label)}</text>`);
@@ -1506,7 +1504,7 @@ function downloadDashboardPng(chartId) {
   const model = state.chartModels.get(chartId); if (!model) return;
   const source = $(`#${chartId}`); const width = Math.max(1000, Math.round(source.clientWidth * 2)); const height = Math.round(width * .52);
   const canvas = document.createElement("canvas");
-  drawChartCanvas(canvas, model, { width, height, ratio: 1, header: 104, background: "#f8f7f1", hidden: chartInteraction(chartId).hidden, cssWidth: `${width}px`, cssHeight: `${height}px` });
+  drawChartCanvas(canvas, model, { width, height, ratio: 1, header: 104, background: "#ffffff", hidden: chartInteraction(chartId).hidden, cssWidth: `${width}px`, cssHeight: `${height}px` });
   canvas.toBlob(blob => blob && downloadBlob(blob, `${safeFilename(model.title)}-dashboard.png`), "image/png");
 }
 
@@ -1729,7 +1727,7 @@ function drawTelemetryChart() {
   if (!history.length) return drawEmptyChart(canvas, "표본 수집 중");
   const { context: ctx, width, height } = setupCanvas(canvas);
   const pad = { left: 34, right: 12, top: 30, bottom: 24 };
-  ctx.strokeStyle = "#d9d6ca"; ctx.fillStyle = "#858980"; ctx.font = "9px ui-monospace, monospace";
+  ctx.strokeStyle = "#d9d6ca"; ctx.fillStyle = "#858980"; ctx.font = "12px ui-monospace, monospace";
   [0, 25, 50, 75, 100].forEach(value => {
     const y = height - pad.bottom - value / 100 * (height - pad.top - pad.bottom);
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
@@ -2715,11 +2713,15 @@ function bindEvents() {
   $("#clearModelsButton").addEventListener("click", () => setSelectedModels([]));
   $("#experimentForm").addEventListener("submit", async event => {
     event.preventDefault();
+    if (state.experimentSubmitPending || ["queued", "running"].includes(state.activeExperiment?.status)) return;
     const participatingNodes = plannedNodeNames();
     const missingOffline = participatingNodes.filter(name => !statusFor(name).api);
     if (missingOffline.length) return toast("노드 API 오프라인", `${missingOffline.join(", ")} 서버를 먼저 시작하세요.`, "error");
     try {
-      const data = await api("/api/experiments", { method: "POST", body: experimentPayload() });
+      const payload = experimentPayload();
+      state.experimentSubmitPending = true;
+      $("#runButton").disabled = true;
+      const data = await api("/api/experiments", { method: "POST", body: payload });
       $("#consoleLog").innerHTML = "";
       state.powerStartWarnings = [];
       state.powerWarningKeys.clear();
@@ -2731,6 +2733,7 @@ function bindEvents() {
       $("#resultExperimentFilter").value = data.definition.experiment_id;
       renderRuns();
     } catch (error) { toast("실험 시작 실패", error.message, "error"); }
+    finally { state.experimentSubmitPending = false; $("#runButton").disabled = false; updateModelAvailability(); }
   });
   $("#cancelButton").addEventListener("click", async () => {
     try { const data = await api("/api/experiments/cancel", { method: "POST" }); setRunState(data.experiment); }

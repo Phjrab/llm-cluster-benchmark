@@ -222,7 +222,7 @@ test("Deep links, invalid routes, keyboard links and model-pack handoff select t
     await page.goto(`/#${id}`);
     await expect(page.locator(`#${id}`)).toBeVisible();
     await expect(page.locator(".main-content > .section:visible")).toHaveCount(1);
-    await expect(page).toHaveTitle(`${title} · MediFlow Cluster Lab`);
+    await expect(page).toHaveTitle(`${title} · LLM Cluster Benchmark`);
   }
 });
 

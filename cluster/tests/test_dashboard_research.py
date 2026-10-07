@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import importlib
 import os
@@ -148,6 +149,44 @@ class CampaignProjectionTests(unittest.TestCase):
 
 
 class CompareProjectionTests(unittest.TestCase):
+    def test_display_projection_preserves_physical_effective_zero_and_unknown(self) -> None:
+        raw = {"run_id": "display-only", "cluster_tokens_per_s": 12, "physical_cluster_tokens_per_s": 12,
+               "effective_user_tokens_per_s": 6, "logical_requests_per_s": 0, "success_rate": 0,
+               "actual_model_config": [{"model_sha256": "a" * 64, "quantization": "Q4"}],
+               "benchmark_parameters": {"prompt_sha256": "b" * 64}}
+        snapshot = copy.deepcopy(raw)
+        value = normalize_compare_run(raw)
+        self.assertEqual(raw, snapshot)
+        self.assertEqual(value["metrics"]["physical_cluster_tokens_per_s"], 12)
+        self.assertEqual(value["metrics"]["effective_user_tokens_per_s"], 6)
+        self.assertEqual(value["metrics"]["logical_requests_per_s"], 0)
+        self.assertEqual(value["metrics"]["success_rate"], 0)
+        self.assertIsNone(value["metrics"]["generated_tokens_per_j"])
+        self.assertEqual(value["model_sha256"], "a" * 64)
+        self.assertEqual(value["tokenizer_sha256"], "unknown")
+        self.assertEqual(value["power_mode"], "unknown")
+        self.assertEqual(value["workload_fingerprint"], "unknown")
+
+    def test_partial_participant_evidence_cannot_become_complete_identity(self) -> None:
+        raw = {
+            "nodes": ["worker-a", "worker-b"],
+            "actual_model_config": [{"tokenizer_sha256": "a" * 64}, {}],
+            "participant_nodes": [{"deployment": {"source_tree_sha256": "b" * 64}}, {}],
+            "physical_cluster_tokens_per_s": 0,
+            "measurement_instrumentation": {"overall": {"energy_coverage": "unknown"}},
+        }
+        value = normalize_compare_run(raw)
+        self.assertEqual(value["tokenizer_sha256"], "unknown")
+        self.assertEqual(value["source_fingerprint"], "unknown")
+        self.assertEqual(value["metrics"]["throughput_tokens_s"], 0)
+        self.assertIsNone(value["metrics"]["generated_tokens_per_j"])
+        self.assertEqual(normalize_compare_run({**raw, "actual_model_config": raw["actual_model_config"][:1]})["tokenizer_sha256"], "unknown")
+        raw["actual_model_config"][1]["tokenizer_sha256"] = "a" * 64
+        raw["participant_nodes"][1]["deployment"] = {"source_tree_sha256": "b" * 64}
+        complete = normalize_compare_run(raw)
+        self.assertEqual(complete["tokenizer_sha256"], "a" * 64)
+        self.assertEqual(complete["source_fingerprint"], "b" * 64)
+
     def test_formal_run_exposes_every_filter_dimension_and_metrics(self) -> None:
         run = {
             "run_id": "run-formal",
