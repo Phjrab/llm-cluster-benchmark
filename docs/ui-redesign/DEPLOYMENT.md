@@ -1,5 +1,9 @@
 # macOS local deployment — 2026-10-07
 
+Subsequent light/dark theme rollout and verification are recorded in
+[THEMES.md](THEMES.md). The service now serves that frontend source without
+a restart; the original deployment record below remains historical.
+
 This is a subsequent deployment explicitly requested by the user after the
 original UI task was committed. The original FINAL_REPORT/VALIDATION describe
 its earlier isolated implementation scope; this record describes the live service.

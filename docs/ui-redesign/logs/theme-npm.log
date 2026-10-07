@@ -1,0 +1,68 @@
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test
+> npm run test:syntax && npm run test:fixtures && npm run test:publication-png && npm run test:e2e
+
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:syntax
+> node --check cluster/dashboard/static/app.js && node --check cluster/dashboard/static/js/navigation.js && node --check cluster/dashboard/static/js/state.js && node --check cluster/dashboard/static/js/api.js && node --check cluster/dashboard/static/js/events.js && node --check cluster/dashboard/static/js/utils.js && node --check cluster/dashboard/static/js/power.js && node --check cluster/dashboard/static/js/console.js && node --check cluster/dashboard/static/js/models.js && node --check cluster/dashboard/static/js/results.js && node --check cluster/dashboard/static/js/research.js && node --check cluster/dashboard/static/js/sweep-builder.js && node --check cluster/dashboard/static/js/sweep-control.js && node --check cluster/dashboard/static/js/sweep-results.js && node --check cluster/dashboard/static/js/lab.js && node --check cluster/dashboard/static/js/theme.js
+
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:fixtures
+> node cluster/tests/test_dashboard_exports.js && node cluster/tests/test_research_lab.js
+
+dashboard export fixtures: OK
+research lab conditions, zero/null, metric semantics, matrix fixtures: OK
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:publication-png
+> node --check scripts/research/render_publication_png.js && node cluster/tests/test_phase11_publication_png.js
+
+phase11 publication PNG fixtures: OK
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:e2e
+> playwright test
+
+[WebServer] INFO:     Started server process [95367]
+[WebServer] INFO:     Waiting for application startup.
+
+[WebServer] INFO:     Application startup complete.
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:46177 (Press CTRL+C to quit)
+
+
+Running 31 tests using 1 worker
+
+(node:95371) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/31] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 390px
+[2/31] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 768px
+[3/31] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 1440px
+[4/31] cluster/tests/e2e/dashboard.spec.js:171:1 › Page navigation preserves edits, supports history and redraws result charts
+[5/31] cluster/tests/e2e/dashboard.spec.js:204:1 › Deep links, invalid routes, keyboard links and model-pack handoff select the right page
+[6/31] cluster/tests/e2e/dashboard.spec.js:229:1 › Dashboard core flow renders workers, models, power warning, creates and recovers an experiment
+[7/31] cluster/tests/e2e/dashboard.spec.js:294:1 › Result responses, private trash deletion, and safe worker disconnect remain interactive
+[8/31] cluster/tests/e2e/dashboard.spec.js:346:1 › Node detail presents a running runtime preparation as a structured operation card
+[9/31] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 390px
+[10/31] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 768px
+[11/31] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 1440px
+[12/31] cluster/tests/e2e/dashboard.spec.js:569:1 › Sweep API unavailable is explained without displaying an empty success state
+[13/31] cluster/tests/e2e/dashboard.spec.js:582:1 › Sweep Builder previews 108 trials and controls disjoint durable runs without hidden authority
+[14/31] cluster/tests/e2e/research-lab.spec.js:4:1 › Saved plan Matrix inspects repeat/status/quality without starting work
+[15/31] cluster/tests/e2e/research-lab.spec.js:25:1 › Explicit baseline and controlled axes synchronize chart, table, CSV and filter removal
+[16/31] cluster/tests/e2e/research-lab.spec.js:50:1 › Empty campaigns and failed research requests remain explicit
+[17/31] cluster/tests/e2e/research-lab.spec.js:61:1 › Offline Worker, long escaped identity, 200% equivalent reflow and protected trash stay usable
+[18/31] cluster/tests/e2e/research-lab.spec.js:80:1 › Pending experiment submission sends one mocked request and formal controls send none
+[19/31] cluster/tests/e2e/research-lab.spec.js:98:1 › Late campaign read cannot replace the latest selection
+[20/31] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1440x900, with readable labels and native focus
+[21/31] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1366x768, with readable labels and native focus
+[22/31] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1024x768, with readable labels and native focus
+[23/31] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 390x844, with readable labels and native focus
+[24/31] cluster/tests/e2e/research-lab.spec.js:146:1 › Worker dialog close glyph and model selection have visible contrast
+[25/31] cluster/tests/e2e/theme.spec.js:8:1 › System default, manual persistence and cross-tab changes follow one preference
+[26/31] cluster/tests/e2e/theme.spec.js:28:3 › Theme remains usable with invalid storage
+[27/31] cluster/tests/e2e/theme.spec.js:28:3 › Theme remains usable with blocked storage
+[28/31] cluster/tests/e2e/theme.spec.js:39:1 › Theme preserves forms, baseline, chart visibility and sweep hash approval
+[29/31] cluster/tests/e2e/theme.spec.js:89:3 › Both themes fit all nine routes and maintain contrast at 1440px
+[30/31] cluster/tests/e2e/theme.spec.js:89:3 › Both themes fit all nine routes and maintain contrast at 390px
+[31/31] cluster/tests/e2e/theme.spec.js:135:1 › Dark dialogs retain keyboard focus and publication export stays white
+  31 passed (41.5s)
