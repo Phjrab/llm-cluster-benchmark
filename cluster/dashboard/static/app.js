@@ -1042,11 +1042,25 @@ function setupCanvas(canvas, options = {}) {
   return { context, width, height, ratio };
 }
 
+function chartPalette(options = {}) {
+  // Explicit white export surfaces remain independent of the screen theme.
+  const styles = options.background ? null : getComputedStyle(document.documentElement);
+  const token = (name, fallback) => styles?.getPropertyValue(name).trim() || fallback;
+  return {
+    background: options.background || token('--surface', '#ffffff'),
+    text: token('--muted', '#526170'), grid: token('--line', '#D7DDE2'),
+    color: color => options.background ? color : globalThis.ClusterDashboard.theme?.chartColor(color) || color,
+  };
+}
+
 function drawEmptyChart(canvas, message) {
+  if (!canvas) return;
   const { context, width, height } = setupCanvas(canvas);
-  context.fillStyle = "#ffffff";
+  const palette = chartPalette();
+  canvas.dataset.emptyMessage = message;
+  context.fillStyle = palette.background;
   context.fillRect(0, 0, width, height);
-  context.fillStyle = "#526170";
+  context.fillStyle = palette.text;
   context.font = "11px ui-monospace, monospace";
   context.textAlign = "center";
   context.fillText(message, width / 2, height / 2);
@@ -1075,8 +1089,9 @@ function ellipsis(text, limit) {
 
 function drawChartCanvas(canvas, model, options = {}) {
   const { context: ctx, width, height } = setupCanvas(canvas, options);
+  const palette = chartPalette(options);
   const hidden = options.hidden || new Set();
-  const activeSeries = model.series.filter(series => !hidden.has(series.label));
+  const activeSeries = model.series.filter(series => !hidden.has(series.label)).map(series => ({ ...series, color: palette.color(series.color) }));
   const header = options.header || 0;
   const pad = { left: width < 430 ? 50 : 62, right: 18, top: 16 + header, bottom: 48 };
   const plotWidth = width - pad.left - pad.right;
@@ -1084,7 +1099,7 @@ function drawChartCanvas(canvas, model, options = {}) {
   const all = activeSeries.flatMap(series => series.values).filter(finite).map(Number);
   const maximum = Math.max(...all, 1) * 1.12;
   const hits = [];
-  ctx.fillStyle = options.background || "#ffffff";
+  ctx.fillStyle = palette.background;
   ctx.fillRect(0, 0, width, height);
   if (header) {
     ctx.fillStyle = "#16251e"; ctx.fillRect(0, 0, width, header - 4);
@@ -1101,15 +1116,15 @@ function drawChartCanvas(canvas, model, options = {}) {
       legendX += itemWidth + 16;
     });
   }
-  ctx.strokeStyle = "#D7DDE2"; ctx.fillStyle = "#526170"; ctx.font = "12px ui-monospace, monospace"; ctx.lineWidth = 1;
+  ctx.strokeStyle = palette.grid; ctx.fillStyle = palette.text; ctx.font = "12px ui-monospace, monospace"; ctx.lineWidth = 1;
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = pad.top + plotHeight * tick / 4;
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
     ctx.textAlign = "right"; ctx.fillText(chartValue(maximum * (4 - tick) / 4), pad.left - 8, y + 3);
   }
-  ctx.save(); ctx.translate(13, pad.top + plotHeight / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#526170"; ctx.font = "600 12px ui-monospace, monospace"; ctx.fillText(`${model.yLabel}${model.unit ? ` (${model.unit})` : ""}`, 0, 0); ctx.restore();
+  ctx.save(); ctx.translate(13, pad.top + plotHeight / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = palette.text; ctx.font = "600 12px ui-monospace, monospace"; ctx.fillText(`${model.yLabel}${model.unit ? ` (${model.unit})` : ""}`, 0, 0); ctx.restore();
   if (!activeSeries.length || !all.length) {
-    ctx.fillStyle = "#526170"; ctx.textAlign = "center"; ctx.fillText("표시할 계열을 범례에서 선택하세요", pad.left + plotWidth / 2, pad.top + plotHeight / 2);
+    ctx.fillStyle = palette.text; ctx.textAlign = "center"; ctx.fillText("표시할 계열을 범례에서 선택하세요", pad.left + plotWidth / 2, pad.top + plotHeight / 2);
     return { hits, width, height };
   }
   const groupWidth = plotWidth / Math.max(1, model.labels.length);
@@ -1144,13 +1159,13 @@ function drawChartCanvas(canvas, model, options = {}) {
     }));
   }
   const labelEvery = Math.max(1, Math.ceil(model.labels.length / Math.max(3, Math.floor(plotWidth / 75))));
-  ctx.fillStyle = "#526170"; ctx.font = "12px ui-monospace, monospace"; ctx.textAlign = "center";
+  ctx.fillStyle = palette.text; ctx.font = "12px ui-monospace, monospace"; ctx.textAlign = "center";
   model.labels.forEach((label, index) => {
     if (index % labelEvery && index !== model.labels.length - 1) return;
     const x = model.type === "line" && model.labels.length > 1 ? pad.left + plotWidth * index / (model.labels.length - 1) : pad.left + groupWidth * index + groupWidth / 2;
     ctx.fillText(ellipsis(label, width < 500 ? 9 : 14), x, height - 25);
   });
-  if (model.xLabel) { ctx.fillStyle = "#526170"; ctx.font = "600 12px ui-monospace, monospace"; ctx.fillText(model.xLabel, pad.left + plotWidth / 2, height - 6); }
+  if (model.xLabel) { ctx.fillStyle = palette.text; ctx.font = "600 12px ui-monospace, monospace"; ctx.fillText(model.xLabel, pad.left + plotWidth / 2, height - 6); }
   return { hits, width, height };
 }
 
@@ -1158,7 +1173,8 @@ function renderChartLegend(canvas, model) {
   const target = $(`#${canvas.id}Legend`);
   if (!target) return;
   const interaction = chartInteraction(canvas.id);
-  target.innerHTML = model.series.map(series => `<button type="button" style="--series-color:${series.color}" data-chart-series="${escapeHtml(series.label)}" aria-pressed="${interaction.hidden.has(series.label) ? "false" : "true"}" title="${escapeHtml(series.label)} 계열 표시 전환">${escapeHtml(series.label)}</button>`).join("");
+  const palette = chartPalette();
+  target.innerHTML = model.series.map(series => `<button type="button" style="--series-color:${palette.color(series.color)}" data-chart-series="${escapeHtml(series.label)}" aria-pressed="${interaction.hidden.has(series.label) ? "false" : "true"}" title="${escapeHtml(series.label)} 계열 표시 전환">${escapeHtml(series.label)}</button>`).join("");
 }
 
 function showChartTooltip(canvas, hit, keyboard = false) {
@@ -1211,6 +1227,7 @@ function setChartModel(chartId, model) {
   if (!canvas || !model?.series?.some(series => series.values.some(finite))) return drawEmptyChart(canvas, model?.emptyMessage || "표시할 측정값 없음");
   model.series = model.series.map((series, index) => ({ ...series, color: series.color || DASHBOARD_COLORS[index % DASHBOARD_COLORS.length] }));
   state.chartModels.set(chartId, model);
+  delete canvas.dataset.emptyMessage;
   const interaction = chartInteraction(chartId);
   const rendered = drawChartCanvas(canvas, model, { hidden: interaction.hidden });
   interaction.hits = rendered.hits; interaction.width = rendered.width; interaction.height = rendered.height;
@@ -1726,17 +1743,20 @@ function drawTelemetryChart() {
   const history = (state.metricHistory.get(state.detailNode) || []).slice(-60);
   if (!history.length) return drawEmptyChart(canvas, "표본 수집 중");
   const { context: ctx, width, height } = setupCanvas(canvas);
+  const palette = chartPalette();
+  delete canvas.dataset.emptyMessage;
+  ctx.fillStyle = palette.background; ctx.fillRect(0, 0, width, height);
   const pad = { left: 34, right: 12, top: 30, bottom: 24 };
-  ctx.strokeStyle = "#d9d6ca"; ctx.fillStyle = "#858980"; ctx.font = "12px ui-monospace, monospace";
+  ctx.strokeStyle = palette.grid; ctx.fillStyle = palette.text; ctx.font = "12px ui-monospace, monospace";
   [0, 25, 50, 75, 100].forEach(value => {
     const y = height - pad.bottom - value / 100 * (height - pad.top - pad.bottom);
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(width - pad.right, y); ctx.stroke();
     ctx.fillText(`${value}`, 4, y + 3);
   });
   const series = [
-    { key: "cpu", label: "CPU", color: "#718f17" },
-    { key: "gpu", label: "GPU", color: "#e57c38" },
-    { key: "ram", label: "RAM", color: "#163126" },
+    { key: "cpu", label: "CPU", color: palette.color(DASHBOARD_COLORS[0]) },
+    { key: "gpu", label: "GPU", color: palette.color(DASHBOARD_COLORS[1]) },
+    { key: "ram", label: "RAM", color: palette.color(DASHBOARD_COLORS[2]) },
   ];
   const step = history.length > 1 ? (width - pad.left - pad.right) / (history.length - 1) : 0;
   series.forEach((item, seriesIndex) => {
@@ -1749,7 +1769,7 @@ function drawTelemetryChart() {
     });
     ctx.stroke();
     ctx.fillStyle = item.color; ctx.fillRect(pad.left + seriesIndex * 64, 8, 9, 9);
-    ctx.fillStyle = "#5f645d"; ctx.fillText(item.label, pad.left + 13 + seriesIndex * 64, 16);
+    ctx.fillStyle = palette.text; ctx.fillText(item.label, pad.left + 13 + seriesIndex * 64, 16);
   });
 }
 
@@ -2742,6 +2762,17 @@ function bindEvents() {
   document.addEventListener("dashboard:pagechange", event => {
     if (event.detail.page === "results") renderRuns();
     if (event.detail.page === "compare") window.ClusterDashboard?.research?.renderCompare?.();
+  });
+  document.addEventListener("dashboard:themechange", () => {
+    // Repaint only presentation; preserve filters, hidden series and all form/approval state.
+    for (const [id, model] of state.chartModels) {
+      const canvas = $(`#${id}`);
+      if (canvas?.getClientRects().length && !canvas.dataset.emptyMessage) setChartModel(id, model);
+    }
+    $$('canvas[data-empty-message]').forEach(canvas => {
+      if (canvas.getClientRects().length) drawEmptyChart(canvas, canvas.dataset.emptyMessage);
+    });
+    if ($("#nodeDetailDialog").open) drawTelemetryChart();
   });
   let resizeTimer;
   window.addEventListener("resize", () => {
