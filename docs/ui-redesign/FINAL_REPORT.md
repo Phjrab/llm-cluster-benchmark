@@ -67,3 +67,10 @@ are NOT_RUN; equivalent narrow reflow and representative contrast/focus were tes
 No SSH management, model download, real inference/benchmark/campaign, power change,
 production process termination, push, PR, merge, release or deployment occurred.
 No requested implementation blocker remains.
+
+## Subsequent authorized macOS deployment
+
+The user subsequently requested local deployment. The Dashboard is running on
+loopback using the existing Controller launcher; see [DEPLOYMENT.md](DEPLOYMENT.md)
+for exact source, live verification, operation and rollback. The earlier isolated
+UI results above remain historical evidence.

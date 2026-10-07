@@ -43,3 +43,10 @@ representative focus/contrast and equivalent narrow reflow were verified.
 
 No deployment/server process was modified. Own ephemeral test/capture resources
 were closed, existing listeners preserved. No persisted preference/schema changes.
+
+## Subsequent authorized macOS deployment
+
+The user subsequently requested local deployment. The Dashboard is running on
+loopback using the existing Controller launcher; see [DEPLOYMENT.md](DEPLOYMENT.md)
+for exact source, live verification, operation and rollback. The earlier isolated
+UI results above remain historical evidence.
