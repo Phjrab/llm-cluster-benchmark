@@ -402,7 +402,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .result-cards { display: grid; grid-template-columns: 1.35fr repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); }
 .result-card { min-height: 140px; padding: 22px; background: var(--paper); display: flex; flex-direction: column; justify-content: space-between; }
 .result-card.primary-result { background: var(--lime); }
-.result-card span { color: var(--muted); font: 600 12px/1.4 var(--mono); letter-spacing: .08em; }.primary-result span, .primary-result strong, .primary-result small { color: var(--on-action); }
+.result-card span { color: var(--muted); font: 600 12px/1.4 var(--mono); letter-spacing: .08em; }.primary-result span, .primary-result strong, .result-card.primary-result small { color: var(--on-action); }
 .result-card strong { font-size: 32px; letter-spacing: -.06em; }.primary-result strong { font-size: 42px; }
 .result-card small { color: var(--muted); font-size: 12px; }
 .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 0 0 25px; }
@@ -442,7 +442,7 @@ tbody tr:hover { background: rgba(36,88,166,.1); }
 .strategy-badge.experimental { background: rgba(255,107,61,.13); color: var(--red); }
 .model-cell { max-width: 250px; }.model-cell strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.model-cell small { color: var(--muted); font: 500 12px/1.4 var(--mono); }.suite-badge { display: inline-block; margin-top: 5px; padding: 3px 5px; background: rgba(0,114,178,.10); color: var(--info); font: 600 12px/1.4 var(--mono); }
 .result-strategy { display: inline-block; width: max-content; margin-top: 7px; padding: 4px 6px; background: rgba(22,49,38,.12); color: var(--forest); font: 600 12px/1.4 var(--mono); font-style: normal; letter-spacing: 0; }
-.primary-result .result-strategy { background: rgba(22,49,38,.16); color: var(--forest); }
+.primary-result .result-strategy { background: transparent; color: var(--on-action); }
 .empty-cell { text-align: center; color: var(--muted); }
 footer { display: flex; justify-content: space-between; padding: 25px 5vw; background: var(--surface); border-top: 1px solid var(--line-light); color: var(--muted); font: 500 12px/1.4 var(--mono); }
 
@@ -488,10 +488,10 @@ footer { display: flex; justify-content: space-between; padding: 25px 5vw; backg
 .ssh-key-status { padding: 5px 8px; border: 1px solid var(--orange); border-radius: 99px; color: var(--orange); font: 700 12px/1.4 var(--mono); letter-spacing: .12em; }.ssh-key-status.ready { border-color: var(--success); color: var(--success); }
 .ssh-public-key-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 14px; align-items: center; padding: 14px 16px; }
 .ssh-public-key-row > div:first-child { min-width: 0; }.ssh-public-key-row span, .ssh-command-head span { display: block; margin-bottom: 6px; color: var(--muted); font: 600 12px/1.4 var(--mono); letter-spacing: .12em; }.ssh-public-key-row code { display: block; overflow: hidden; color: var(--ink); font: 500 12px/1.5 var(--mono); text-overflow: ellipsis; white-space: nowrap; }.ssh-public-key-row small { display: block; margin-top: 6px; color: var(--orange); font-size: 12px; line-height: 1.45; }
-.ssh-key-actions { display: flex; gap: 7px; }.ssh-key-actions .button { color: var(--ink); }
+.ssh-key-actions { display: flex; gap: 7px; }.ssh-key-actions .button:not(.primary) { color: var(--ink); }
 .ssh-command-card { margin: 0 16px 14px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
-.ssh-command-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 13px; border-bottom: 1px solid var(--line); }.ssh-command-head span { margin-bottom: 4px; color: var(--lime); }.ssh-command-head strong { color: var(--muted); font-size: 12px; }.ssh-command-head .button { flex: none; }.ssh-command-head .button.primary { color: var(--forest); }
-.ssh-command-card pre { max-height: 150px; margin: 0; padding: 14px; overflow: auto; }.ssh-command-card code { color: var(--success-bg); font: 500 12px/1.65 var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; }
+.ssh-command-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 13px; border-bottom: 1px solid var(--line); }.ssh-command-head span { margin-bottom: 4px; color: var(--lime); }.ssh-command-head strong { color: var(--muted); font-size: 12px; }.ssh-command-head .button { flex: none; }.ssh-command-head .button.primary { color: var(--on-action); }
+.ssh-command-card pre { max-height: 150px; margin: 0; padding: 14px; overflow: auto; }.ssh-command-card code { color: var(--ink); font: 500 12px/1.65 var(--mono); overflow-wrap: anywhere; white-space: pre-wrap; }
 .pairing-note { margin: 0; padding: 0 16px 15px; color: var(--muted); font-size: 12px; line-height: 1.65; }
 .probe-result { display: grid; gap: 7px; margin-top: 15px; padding: 14px; border: 1px solid var(--line); background: var(--surface); }
 .probe-result.ready { border-left: 4px solid var(--success); }.probe-result.warning { border-left: 4px solid var(--orange); }.probe-result.failed { border-left: 4px solid var(--red); }
@@ -585,7 +585,7 @@ footer { display: flex; justify-content: space-between; padding: 25px 5vw; backg
 .publication-note { margin: 12px 0 0; padding: 10px 12px; border-left: 3px solid #0072b2; background: rgba(0,114,178,.07); color: var(--muted); font: 500 12px/1.5 var(--mono); }
 .toast-stack { position: fixed; right: 22px; bottom: 22px; z-index: 100; display: grid; gap: 9px; }
 .toast { max-width: 360px; padding: 13px 16px; background: var(--surface); color: var(--ink); box-shadow: var(--shadow); border-left: 3px solid var(--lime); font-size: 12px; animation: toast-in .25s ease; }
-.toast.error { border-left-color: var(--red); }.toast strong { display: block; margin-bottom: 3px; }.toast span { color: var(--success-bg); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.toast.error { border-left-color: var(--red); }.toast strong { display: block; margin-bottom: 3px; }.toast span { color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(7px); } }
 
 /* Phase 13: Controller, library, terminal, and durable-result surfaces. */

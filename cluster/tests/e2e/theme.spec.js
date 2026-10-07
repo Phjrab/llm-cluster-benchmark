@@ -93,6 +93,7 @@ for (const width of [1440, 390]) {
     await page.goto('/'); await expect(page.locator('#overviewGate')).toHaveText('FORMAL BLOCKED');
     for (const mode of ['light', 'dark']) {
       await page.evaluate(mode => ClusterDashboard.theme.set(mode), mode);
+      await page.evaluate(() => ClusterDashboard.toast('테마 검증', '읽을 수 있는 알림 문구'));
       for (const route of ['overview','nodes','models','experiment','sweeps','results','campaign','compare','research']) {
         if (width === 390) await page.locator('#pageSelect').selectOption(route);
         else await page.locator(`.nav-link[href="#${route}"]`).click();
@@ -111,7 +112,7 @@ for (const width of [1440, 390]) {
             const c = rgb(getComputedStyle(el).backgroundColor), a = c[3] ?? 1;
             return a === 1 ? c : c.slice(0,3).map((v,i) => v*a+background(el.parentElement)[i]*(1-a));
           };
-          const text = ['#pageTitle','#themeToggle','.nav-link.active','.section-heading h2','#overviewGate','#comparisonNotice','#researchEligibility','.strategy-caution','.primary-result span','.participant-card dt','#sweepWorkerHint'].flatMap(selector => {
+          const text = ['#pageTitle','#themeToggle','.nav-link.active','.section-heading h2','#overviewGate','#comparisonNotice','#researchEligibility','.strategy-caution','.primary-result span','.primary-result small','.primary-result .result-strategy','.participant-card dt','#sweepWorkerHint','.toast span','.model-library-viewmodes button.active'].flatMap(selector => {
             const el = document.querySelector(selector); if (!el?.getClientRects().length) return [];
             const fg = luminance(rgb(getComputedStyle(el).color)), bg = luminance(background(el));
             return [{ selector, target: 4.5, ratio: (Math.max(fg,bg)+.05)/(Math.min(fg,bg)+.05) }];

@@ -42,6 +42,9 @@ const server = http.createServer((req, res) => {
             await page.locator('#sweepPreviewButton').click(); await page.locator('#sweepPreviewContent').waitFor();
           }
           if (route === 'nodes') await page.locator('[data-node-card="jetson-worker-01"] .node-detail-button').click();
+          if (route !== 'nodes') await page.evaluate(() => {
+            document.documentElement.style.scrollBehavior = 'auto'; window.scrollTo(0, 0);
+          });
           await page.evaluate(() => document.fonts.ready);
           await page.waitForTimeout(250);
           assert.equal(await page.locator('html').getAttribute('data-theme'), mode);
