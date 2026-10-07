@@ -15,7 +15,7 @@ async function navigate(page, route, width) {
 async function capture(page, name) {
   fs.mkdirSync(out, {recursive:true});
   await page.screenshot({path:path.join(out, name + '.png'), animations:'disabled'});
-  if(name.startsWith('compare-') && !name.includes('dark')) await page.screenshot({path:path.join(out,name+'-full.png'),fullPage:true,animations:'disabled'});
+  if((name.startsWith('compare-') && !name.includes('dark')) || name.startsWith('models-')) await page.screenshot({path:path.join(out,name+'-full.png'),fullPage:true,animations:'disabled'});
 }
 async function fontsFor(cdp, selector) {
   const {root} = await cdp.send('DOM.getDocument');
@@ -35,11 +35,19 @@ for (const [width,height] of [[1920,1080],[1440,900],[1280,800],[390,844]]) {
     const errors=[]; page.on('pageerror',e=>errors.push(e.message));
     await page.goto('/#overview');
     await expect(page.locator('#overviewGate')).toHaveText('FORMAL BLOCKED');
+    await page.waitForFunction(()=>Boolean(ClusterDashboard.research.state.readiness));
     for (const route of routes) {
       await navigate(page,route,width);
       if(route==='compare') await page.locator('#compareBaseline').selectOption('pi-baseline');
       if(route==='sweeps') {await page.locator('[data-sweep-model]').first().check(); await page.locator('#sweepPreviewButton').click(); await expect(page.locator('#sweepPreviewContent')).toBeVisible();}
       await capture(page,`${route}-${width}`);
+      if(route==='models') {
+        await page.locator('[data-model-view="vendors"]').click();
+        await expect(page.locator('[data-vendor-open]').first()).toBeAttached();
+        await page.locator('[data-vendor-open]').first().evaluate(e=>e.scrollIntoView({block:'center',behavior:'instant'}));
+        await capture(page,`vendors-${width}`);
+        await page.locator('[data-model-view="models"]').click();
+      }
       expect(await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth)).toBeLessThanOrEqual(2);
     }
     await navigate(page,'overview',width);
@@ -157,6 +165,7 @@ test('Sweep SVG axes use loaded UI faces at readable size on mobile',async({page
   const result={sweep_id:'type-demo',trials:[{trial_id:'type-trial',repeat_index:1,status:'completed',condition:{n_ctx:4096,concurrency:1},attempts:[{attempt_id:'type-attempt',run_id:'type-run',representative:true,status:'completed',metrics:{cluster_tokens_per_s:7.5},request_evidence:{}}]}]};
   await page.route('**/api/sweeps/type-demo/results',route=>route.fulfill({contentType:'application/json',body:JSON.stringify(result)}));
   await page.setViewportSize({width:390,height:844}); await page.goto('/#sweeps');
+  await expect(page.locator('#activeSweepGrid')).toContainText('저장된 sweep 없음');
   await page.evaluate(async()=> {ClusterDashboard.state.selectedSweepId='type-demo';ClusterDashboard.state.sweepDetails.set('type-demo',{sweep:{sweep_id:'type-demo',status:'completed'}});await ClusterDashboard.sweepResults.load('type-demo');});
   await expect(page.locator('.sweep-chart svg')).toBeVisible();
   await page.evaluate(()=>document.fonts.ready);

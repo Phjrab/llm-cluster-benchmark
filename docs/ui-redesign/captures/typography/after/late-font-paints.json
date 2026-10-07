@@ -1,0 +1,182 @@
+[
+  {
+    "text": "7.84",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "0.00",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "물리 처리량 (tok/s)",
+    "font": "500 12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "★ pi-baseline",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "pi-round-robin",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "pi-broadcast",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "jetson-other",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "Run",
+    "font": "500 12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "31.4",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "23.5",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "15.7",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "7.84",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "0.00",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "물리 처리량 (tok/s)",
+    "font": "500 12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "★ pi-baseline",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "pi-round-robin",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "pi-broadcast",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "jetson-other",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "Run",
+    "font": "500 12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loading",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "31.4",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "23.5",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "15.7",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "7.84",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "0.00",
+    "font": "12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "물리 처리량 (tok/s)",
+    "font": "500 12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "★ pi-baseline",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "pi-round-robin",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "pi-broadcast",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "jetson-other",
+    "font": "12px \"IBM Plex Mono\", \"Pretendard Variable\", Pretendard, ui-monospace, SFMono-Regular, monospace",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  },
+  {
+    "text": "Run",
+    "font": "500 12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif",
+    "status": "loaded",
+    "canvas": "researchCompareChart"
+  }
+]

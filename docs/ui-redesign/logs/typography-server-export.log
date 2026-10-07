@@ -1,0 +1,1 @@
+{"status":"completed","renderer":"playwright-chromium","playwright_version":"1.62.1","browser_version":"151.0.7922.34","outputs":[{"dpi":300,"width_mm":85,"width_px":1004,"height_px":709,"path":"png-300dpi/fixture.png"},{"dpi":600,"width_mm":85,"width_px":2008,"height_px":1418,"path":"png-600dpi/fixture.png"}]}

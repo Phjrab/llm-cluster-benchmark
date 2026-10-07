@@ -1,0 +1,82 @@
+{
+  "#fontKorean": [
+    {
+      "familyName": ".SF NS",
+      "postScriptName": ".SFNS-Regular",
+      "isCustomFont": false,
+      "glyphCount": 2
+    },
+    {
+      "familyName": "Apple SD Gothic Neo",
+      "postScriptName": "AppleSDGothicNeo-Regular",
+      "isCustomFont": false,
+      "glyphCount": 6
+    }
+  ],
+  "#fontLatin": [
+    {
+      "familyName": ".SF NS",
+      "postScriptName": ".SFNS-Regular",
+      "isCustomFont": false,
+      "glyphCount": 22
+    }
+  ],
+  "#fontNumeric": [
+    {
+      "familyName": ".SF NS",
+      "postScriptName": ".SFNS-Regular",
+      "isCustomFont": false,
+      "glyphCount": 26
+    },
+    {
+      "familyName": "Apple SD Gothic Neo",
+      "postScriptName": "AppleSDGothicNeo-Regular",
+      "isCustomFont": false,
+      "glyphCount": 4
+    }
+  ],
+  "#fontIdentity": [
+    {
+      "familyName": ".SF NS",
+      "postScriptName": ".SFNS-Regular",
+      "isCustomFont": false,
+      "glyphCount": 45
+    },
+    {
+      "familyName": "Apple SD Gothic Neo",
+      "postScriptName": "AppleSDGothicNeo-Regular",
+      "isCustomFont": false,
+      "glyphCount": 4
+    }
+  ],
+  "#fontPath": [
+    {
+      "familyName": "Menlo",
+      "postScriptName": "Menlo-Regular",
+      "isCustomFont": false,
+      "glyphCount": 48
+    },
+    {
+      "familyName": "Apple SD Gothic Neo",
+      "postScriptName": "AppleSDGothicNeo-Regular",
+      "isCustomFont": false,
+      "glyphCount": 4
+    }
+  ],
+  "#compareRunsTable tr:first-child td:first-child strong": [
+    {
+      "familyName": ".SF NS",
+      "postScriptName": ".SFNS-Bold",
+      "isCustomFont": false,
+      "glyphCount": 11
+    }
+  ],
+  "#compareRunsTable tr:first-child td:nth-child(7) strong": [
+    {
+      "familyName": ".SF NS",
+      "postScriptName": ".SFNS-Bold",
+      "isCustomFont": false,
+      "glyphCount": 9
+    }
+  ]
+}

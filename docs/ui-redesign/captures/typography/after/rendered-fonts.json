@@ -1,0 +1,76 @@
+{
+  "#fontKorean": [
+    {
+      "familyName": "Pretendard Variable",
+      "postScriptName": "PretendardVariable-Regular",
+      "isCustomFont": true,
+      "glyphCount": 6
+    },
+    {
+      "familyName": "Inter Variable",
+      "postScriptName": "InterVariable",
+      "isCustomFont": true,
+      "glyphCount": 2
+    }
+  ],
+  "#fontLatin": [
+    {
+      "familyName": "Inter Variable",
+      "postScriptName": "InterVariable",
+      "isCustomFont": true,
+      "glyphCount": 22
+    }
+  ],
+  "#fontNumeric": [
+    {
+      "familyName": "Inter Variable",
+      "postScriptName": "InterVariable",
+      "isCustomFont": true,
+      "glyphCount": 30
+    }
+  ],
+  "#fontIdentity": [
+    {
+      "familyName": "Pretendard Variable",
+      "postScriptName": "PretendardVariable-Regular",
+      "isCustomFont": true,
+      "glyphCount": 4
+    },
+    {
+      "familyName": "IBM Plex Mono",
+      "postScriptName": "IBMPlexMono",
+      "isCustomFont": true,
+      "glyphCount": 45
+    }
+  ],
+  "#fontPath": [
+    {
+      "familyName": "Pretendard Variable",
+      "postScriptName": "PretendardVariable-Regular",
+      "isCustomFont": true,
+      "glyphCount": 4
+    },
+    {
+      "familyName": "IBM Plex Mono",
+      "postScriptName": "IBMPlexMono",
+      "isCustomFont": true,
+      "glyphCount": 48
+    }
+  ],
+  "#compareRunsTable tr:first-child td:first-child strong": [
+    {
+      "familyName": "IBM Plex Mono",
+      "postScriptName": "IBMPlexMono",
+      "isCustomFont": true,
+      "glyphCount": 11
+    }
+  ],
+  "#compareRunsTable tr:first-child td:nth-child(7) strong": [
+    {
+      "familyName": "Inter Variable",
+      "postScriptName": "InterVariable-Medium",
+      "isCustomFont": true,
+      "glyphCount": 10
+    }
+  ]
+}

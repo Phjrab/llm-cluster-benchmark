@@ -11,3 +11,5 @@
 - External MLflow/W&B pages were not re-fetched; their links in the supplied REFERENCES were used as design context only. No external backend or service was installed.
 
 - Final visual review corrected leftover dark-theme close/model-filter/error colors and publication clipping. Partial per-participant tokenizer/source evidence remains UNKNOWN; one known Worker cannot stand in for missing peers. After capture refuses uncommitted Dashboard source to keep manifest SHA accurate.
+
+- Typography extension (`d72cd07`): self-host official Inter 4.1, Pretendard 1.3.9 and regular IBM Plex Mono from IBM/plex 6.4.2; semantic UI/display/numeric/mono tokens replace broad monospace styling. Canvas/SVG/PNG use explicit roles and repaint after font swaps. Academic publication fonts remain independent. See [Typography rules and evidence](TYPOGRAPHY.md).

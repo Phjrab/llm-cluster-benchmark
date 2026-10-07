@@ -1,0 +1,12 @@
+{
+  "stage": "before",
+  "viewport": [
+    1280,
+    800
+  ],
+  "fixture": "research-lab-v1",
+  "source_commit": "bbf341952c66470e943507c058874e1f702bc318",
+  "source_diff": "",
+  "live_actions": 0,
+  "errors": []
+}
