@@ -1,5 +1,49 @@
 # macOS local deployment — 2026-10-07
 
+## Typography rollout and GitHub push — 2026-10-07
+
+The user subsequently authorized GitHub push and operational deployment. The
+established operational target remains the macOS Dashboard at
+**http://127.0.0.1:8080/**, served from this checkout.
+
+- Pushed `codex/ui-llm-cluster-research-lab` to `origin` using a normal push and
+  configured its upstream. Implementation/evidence HEAD: `b478b50`; typography
+  runtime source: `d72cd07`. This deployment record is committed and pushed
+  separately afterward.
+- Existing Controller PID 73798 remains running. Static/template delivery uses
+  the current checkout, so no restart or dependency installation was needed.
+  The initial sandboxed status check reported unhealthy because its loopback
+  request was restricted; the unrestricted check reported running.
+- Health checked at `2026-10-07T10:01:02.134804+00:00`: `ok=true`,
+  `service=cluster-dashboard`, `role=controller`, `inference_enabled=false`.
+- Root HTML references the `20261007.type` cache version. All 22 referenced
+  static assets plus font files checked by the rollout smoke match the checkout
+  byte-for-byte (the total checked asset count is 22, including the fonts).
+- Actual browser resource observation found all three local WOFF2 files.
+  Independent Chromium regression smoke confirmed HTTP 200, FontFaceSet loaded,
+  and CDP rendered fonts: Korean heading uses Pretendard Variable; numeric result
+  cell uses Inter Variable; Run ID cell includes IBM Plex Mono. Canvas uses the
+  numeric Inter stack at 12px.
+- Read-only live smoke passed all nine hash routes at 1440×900 with zero
+  document horizontal overflow, zero page errors, and zero blocked write or
+  external requests. Existing 29 run rows remain visible. No baseline selection
+  was introduced; the page continues to display ratios as N/A until selected.
+- The in-app browser observation recorded `c.nodeName.toLowerCase` errors and its
+  read-only wrapper returned an empty iterable for FontFaceSet despite size 3.
+  The independent browser smoke returned the three loaded faces and no page
+  errors. These observation limitations are retained here rather than reported
+  as an error-free in-app-browser check.
+- Private live evidence stays ignored: `.artifacts/ui-deployment/typography-rollout.json`,
+  `typography-live-smoke.json`, `typography-live.jpg`, `typography-live-1440.png`.
+  Synthetic regression/export evidence and prior before/after verification are
+  documented in [TYPOGRAPHY.md](TYPOGRAPHY.md). Live result exports were not
+  generated in this rollout; their existing fixture verification remains valid.
+
+No SSH management, Worker changes, model downloads, benchmark/campaign execution,
+power changes, main-branch merge, or public network exposure were performed.
+The historical deployment and its earlier no-push statement below describe the
+original rollout, before this subsequent authorization.
+
 Subsequent light/dark theme rollout and verification are recorded in
 [THEMES.md](THEMES.md). The service now serves that frontend source without
 a restart; the original deployment record below remains historical.
