@@ -1,0 +1,5 @@
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:publication-png
+> node --check scripts/research/render_publication_png.js && node cluster/tests/test_phase11_publication_png.js
+
+phase11 publication PNG fixtures: OK

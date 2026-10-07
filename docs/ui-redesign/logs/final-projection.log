@@ -1,0 +1,23 @@
+test_blocking_drift_marks_campaign_ineligible (cluster.tests.test_dashboard_research.CampaignProjectionTests.test_blocking_drift_marks_campaign_ineligible) ... ok
+test_detail_keeps_bounded_events_and_cell_quality (cluster.tests.test_dashboard_research.CampaignProjectionTests.test_detail_keeps_bounded_events_and_cell_quality) ... ok
+test_progress_repeat_result_coverage_and_estimate_are_projected (cluster.tests.test_dashboard_research.CampaignProjectionTests.test_progress_repeat_result_coverage_and_estimate_are_projected) ... ok
+test_repository_manifest_can_feed_projection_without_write_migration (cluster.tests.test_dashboard_research.CampaignProjectionTests.test_repository_manifest_can_feed_projection_without_write_migration) ... ok
+test_compare_payload_builds_filter_catalog_and_newest_first (cluster.tests.test_dashboard_research.CompareProjectionTests.test_compare_payload_builds_filter_catalog_and_newest_first) ... ok
+test_display_projection_preserves_physical_effective_zero_and_unknown (cluster.tests.test_dashboard_research.CompareProjectionTests.test_display_projection_preserves_physical_effective_zero_and_unknown) ... ok
+test_formal_run_exposes_every_filter_dimension_and_metrics (cluster.tests.test_dashboard_research.CompareProjectionTests.test_formal_run_exposes_every_filter_dimension_and_metrics) ... ok
+test_legacy_result_is_visible_with_explicit_unknown_fallbacks (cluster.tests.test_dashboard_research.CompareProjectionTests.test_legacy_result_is_visible_with_explicit_unknown_fallbacks) ... ok
+test_partial_participant_evidence_cannot_become_complete_identity (cluster.tests.test_dashboard_research.CompareProjectionTests.test_partial_participant_evidence_cannot_become_complete_identity) ... ok
+test_non_phase_formal_requirement_cannot_appear_eligible (cluster.tests.test_dashboard_research.ResearchReadinessTests.test_non_phase_formal_requirement_cannot_appear_eligible) ... ok
+test_readiness_separates_model_license_source_runtime_power_and_instrumentation (cluster.tests.test_dashboard_research.ResearchReadinessTests.test_readiness_separates_model_license_source_runtime_power_and_instrumentation) ... ok
+test_runtime_source_power_and_phase_drift_are_explicit_blockers (cluster.tests.test_dashboard_research.ResearchReadinessTests.test_runtime_source_power_and_phase_drift_are_explicit_blockers) ... ok
+test_additive_research_routes_and_legacy_result_fallback (cluster.tests.test_dashboard_research.ResearchRouteTests.test_additive_research_routes_and_legacy_result_fallback) ... <repo>/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+  from starlette.testclient import TestClient as TestClient  # noqa
+ok
+test_campaign_control_routes_delegate_to_facade (cluster.tests.test_dashboard_research.ResearchRouteTests.test_campaign_control_routes_delegate_to_facade) ... ok
+test_campaign_start_requires_confirmation_and_respects_formal_gate (cluster.tests.test_dashboard_research.ResearchRouteTests.test_campaign_start_requires_confirmation_and_respects_formal_gate) ... ok
+test_unknown_campaign_is_404_without_creating_artifacts (cluster.tests.test_dashboard_research.ResearchRouteTests.test_unknown_campaign_is_404_without_creating_artifacts) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 1.925s
+
+OK

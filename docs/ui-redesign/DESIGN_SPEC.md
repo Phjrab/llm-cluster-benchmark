@@ -1,0 +1,15 @@
+# Benchmark Research Lab design
+
+Primary question: under controlled conditions, how did a strategy differ, and is the comparison supported by evidence?
+
+The shell uses a 176 px compact navigation rail, a 72 px context header, and nine mounted hash pages. On narrow screens the existing page selector remains. Overview gives the saved-plan Matrix the first working area. Campaign adds the same Matrix above durable status/control. Compare places conditions beside a single large plot, followed by the linked run table. Worker inventory is compact; telemetry and cell detail use existing/native dialogs.
+
+Tokens live in one `styles.css :root`: background `#F4F5F7`, surface `#FFFFFF`, text `#1F2933`, muted text `#526170`, line `#D7DDE2`, action `#2458A6`, warning `#875500`, error `#AD3434`. Old variable names remain compatibility aliases. Series colors are separate from action/status tokens. Publication charts keep their established white background, Okabe–Ito palette and physical units.
+
+Body text is 14 px, labels at least 12 px, tables 13–14 px. Numeric values use tabular figures, small radii 2–4 px and system/local font fallbacks. No CDN, analytics, logo copy, dependency or decorative orbit is introduced. Original CSS rules are edited at source rather than accumulating `!important` theme overrides.
+
+Matrix rows use saved model / strategy / prompt. Columns use stored platform cohort and Worker set/count. Only existing cells create axes. Empty intersections say Not planned; pending says Planned/not run; completed without a linked run says Missing; failed/cancelled are explicit. Cell repeat and quality are distinct from campaign phase and formal gate. A click opens read-only inspection.
+
+Compare's condition rail preserves all existing filters. Runtime/power/quality are native expandable advanced filters. A selected baseline remains selected when filtered out, and the chart/table/CSV show N/A until a visible measurable baseline is selected. A controlled-axis select explicitly permits the intended independent variables. Changed workload/model/tokenizer/source/measurement/provenance/phase remain incompatible. Broadcast physical totals and replica latency/success cannot be silently combined with ordinary request metrics.
+
+Native dialogs provide keyboard focus trapping, Escape and return focus. Focus-visible rings and glyph/text status distinguish meaning without color. Tables scroll inside their own containers. Reduced-motion removes transitions/animation. The browser tests check representative text contrast, keyboard navigation, viewport overflow and native dialog focus; this is not accessibility certification.

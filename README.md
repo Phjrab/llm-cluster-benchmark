@@ -42,22 +42,44 @@ Broadcast의 `physical_cluster_tokens_per_s`에는 복제 응답이 모두 들�
 [증거·캡처 목록](docs/portfolio/evidence.md)에 확인 가능한 범위와 필요한
 본인 확인 항목을 분리했습니다.
 
-## Dashboard 화면 예시
+## Benchmark Research Lab Dashboard
 
-아래 이미지는 2026-09-28 저장소 Dashboard를 격리 실행하고 **테스트용 fixture**로
-촬영한 UI 시연입니다. 표시된 가상 Worker, 모델 상태, 처리량과 지연 수치는
-실측 장비 결과나 연구 평가가 아닙니다. 원본과 화면별 구분은 로컬
-`llm_cluster_ui_capture_2026-09-28/pages_v3/`의 `CAPTURE_MANIFEST.csv`에
-기록했습니다.
+개요와 Campaign은 저장된 plan의 **Experiment Matrix**를 중심으로 구성합니다.
+셀에서 실제 조건·반복·실행 상태·측정 품질·연결된 run을 확인하고, Compare에서
+baseline과 통제된 비교 축을 선택해 단일 그래프와 run table을 함께 봅니다.
+Controller 관리 상태는 추론 Worker와 별도 표시합니다.
 
-| 노드 등록·상태 UI | 실험 설계 UI |
+물리 처리량, 유효 사용자 처리량, 논리 요청 처리량과 지원되는 에너지 지표를
+구분합니다. 모델·입력·측정 조건의 근거가 부족하거나 서로 호환되지 않으면
+speedup은 `N/A`이며, 결측 전력은 0W로 바꾸지 않습니다. 실행 완료, 측정 품질,
+데이터 출처, 연구 단계, formal gate는 각각 독립적으로 표시합니다.
+
+아래는 2026-10-07 실제 Chromium에서 같은 **synthetic fixture**로 촬영한 UI
+시연입니다. 가상 Worker와 모든 수치는 화면 검증용이며 실측 성능·연구 결과가
+아닙니다. [before/after manifest](docs/ui-redesign/captures/CAPTURE_MANIFEST.csv),
+[전체 Compare 화면](docs/ui-redesign/captures/after-compare-full-1440.png),
+[검증과 미검증 범위](docs/ui-redesign/VALIDATION.md)에 출처를 기록했습니다.
+
+| 저장된 plan Matrix | 조건별 Compare |
 |---|---|
-| ![가상 Jetson·Raspberry Pi Worker가 표시된 노드 관리 UI 시연](docs/images/readme/02_nodes.png) | ![실행하지 않은 실험 설계 UI 시연](docs/images/readme/04_experiment_builder.png) |
+| ![synthetic fixture Experiment Matrix; 실장비 결과 아님](docs/ui-redesign/captures/after-matrix-1440.png) | ![synthetic fixture baseline 비교; 실측 성능 아님](docs/ui-redesign/captures/after-compare-1440.png) |
 
-결과 페이지의 `18.3 tok/s`, `0.42 s` 등은 레이아웃 확인용 fixture 값입니다.
-실제 benchmark 측정치로 인용하지 마세요.
+과거 2026-09-28 fixture 화면은 [Worker 관리](docs/images/readme/02_nodes.png),
+[실험 설계](docs/images/readme/04_experiment_builder.png),
+[결과 화면](docs/images/readme/06_results.png)에 보존했습니다. 과거 화면의
+`18.3 tok/s`, `0.42 s` 역시 레이아웃용 fixture 값이며 benchmark 측정치가 아닙니다.
+당시 원본 구분은 로컬 `llm_cluster_ui_capture_2026-09-28/pages_v3/` manifest에 있습니다.
 
-![fixture 결과가 표시된 LLM Cluster Dashboard; 실측 성능 아님](docs/images/readme/06_results.png)
+개발 검증과 실제 before/after 재생성은 기존 Node 22+/고정 Playwright 환경에서
+다음 명령으로 진행합니다. 캡처는 static loopback 서버와 API fixture만 사용하며
+SSH·다운로드·실험·campaign·전력 변경을 실행하지 않습니다. `after`는 Dashboard
+소스가 커밋된 상태에서만 허용합니다.
+
+```bash
+DASHBOARD_TEST_PORT=46176 npm test
+npm run capture:ui -- before
+npm run capture:ui -- after
+```
 
 ## Controller quick start
 
