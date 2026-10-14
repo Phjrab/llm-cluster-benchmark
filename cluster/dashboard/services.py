@@ -1107,7 +1107,9 @@ def _sweep_workers() -> List[WorkerReference]:
             platform = "unknown"
         values: Dict[str, Any] = {
             "worker_id": node.name,
-            "endpoint_identity": f"{node.host}:{node.api_port}",
+            "endpoint_identity": "endpoint-" + hashlib.sha256(
+                f"{node.host}:{node.api_port}".encode("ascii")
+            ).hexdigest(),
             "platform": platform,
             "availability": "valid" if live.get("api") is True else "blocked" if live else "unknown",
             "rpc_layer": "valid" if capabilities.get("rpc_layer_v1") is True else "unknown",
