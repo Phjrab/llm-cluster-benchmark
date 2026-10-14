@@ -9,6 +9,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from fastapi import FastAPI
@@ -726,6 +727,29 @@ class SweepRouteTests(SweepServiceTests):
                 self.facade.sweep_event_stream = original
             self.assertEqual(streamed.status_code, 200)
             self.assertEqual(observed, {"sweep_id": "route_lifecycle", "cursor": 2})
+
+
+class LiveWorkerReferenceTests(unittest.TestCase):
+    def test_real_lan_endpoints_remain_distinct_and_load_profile_is_detected(self):
+        from cluster.dashboard import services
+
+        nodes = [
+            SimpleNamespace(name="pi-worker-01", role="worker", host="192.168.50.101", api_port=8000, platform="raspberry-pi"),
+            SimpleNamespace(name="pi-worker-02", role="worker", host="192.168.50.102", api_port=8000, platform="raspberry-pi"),
+        ]
+        status = [
+            {"name": node.name, "api": True, "profile": {"platform_kind": "raspberry-pi"},
+             "capabilities": {"load_profile_v1": True}}
+            for node in nodes
+        ]
+        with mock.patch.object(services, "read_enabled_nodes", return_value=nodes), mock.patch.object(
+            services.status_monitor, "snapshot", return_value=status
+        ):
+            workers = services._sweep_workers()
+
+        self.assertEqual([worker.worker_id for worker in workers], [node.name for node in nodes])
+        self.assertEqual(len({worker.endpoint_identity for worker in workers}), 2)
+        self.assertTrue(all(worker.load_profile == "valid" for worker in workers))
 
 
 if __name__ == "__main__":
