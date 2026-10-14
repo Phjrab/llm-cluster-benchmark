@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import hashlib
 import time
+import asyncio
+import queue
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Optional
 
@@ -118,7 +121,7 @@ def mount_worker_routes(
         return {"ok": True, "status": current["status"], "fencing_epoch": current["fencing_epoch"]}
 
     @app.post("/api/select-model")
-    async def select_model(payload: SelectModelRequest, request: Request) -> Dict[str, object]:
+    def select_model(payload: SelectModelRequest, request: Request) -> Dict[str, object]:
         require_owner(request)
         try:
             if runtime.platform_kind == "raspberry-pi" and payload.n_gpu_layers > 0:
@@ -138,13 +141,13 @@ def mount_worker_routes(
         return {"ok": True, "current": current}
 
     @app.post("/api/unload-model")
-    async def unload_model(request: Request) -> Dict[str, object]:
+    def unload_model(request: Request) -> Dict[str, object]:
         require_owner(request)
         backend.unload_model()
         return {"ok": True, "current": backend.current_model_info()}
 
     @app.post("/cluster/input/prepare")
-    async def prepare_input(payload: PrepareInputRequest, request: Request) -> Dict[str, object]:
+    def prepare_input(payload: PrepareInputRequest, request: Request) -> Dict[str, object]:
         require_owner(request)
         from .prompt_preparation import PreparationError
         prepare = getattr(backend, "prepare_input", None)
@@ -275,8 +278,50 @@ def mount_worker_routes(
                     {"message": "Worker inference failed", "failure": public_failure},
                 )
 
+        async def buffered_events():
+            # One producer owns the entire backend generator. Starlette may
+            # advance a sync iterator on different pool threads; the backend's
+            # reentrant inference lock must be released by its owning thread.
+            pending = queue.Queue(maxsize=16)
+            stopped = threading.Event()
+
+            def produce():
+                iterator = iter(events())
+                try:
+                    for event in iterator:
+                        while not stopped.is_set():
+                            try:
+                                pending.put(event, timeout=0.1)
+                                break
+                            except queue.Full:
+                                pass
+                        if stopped.is_set():
+                            break
+                finally:
+                    iterator.close()
+                    while True:
+                        try:
+                            pending.put(None, timeout=0.1)
+                            break
+                        except queue.Full:
+                            if stopped.is_set():
+                                try:
+                                    pending.get_nowait()
+                                except queue.Empty:
+                                    pass
+
+            threading.Thread(target=produce, name="worker-inference-stream", daemon=True).start()
+            try:
+                while True:
+                    event = await asyncio.to_thread(pending.get)
+                    if event is None:
+                        break
+                    yield event
+            finally:
+                stopped.set()
+
         return StreamingResponse(
-            events(),
+            buffered_events(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
@@ -348,7 +393,7 @@ def mount_worker_routes(
         return response
 
     @app.get("/cluster/models")
-    async def cluster_models() -> Dict[str, Any]:
+    def cluster_models() -> Dict[str, Any]:
         return {"ok": True, "node": runtime.node_name, "models": backend.model_inventory()}
 
     @app.post("/cluster/models/verify")

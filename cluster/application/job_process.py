@@ -160,7 +160,8 @@ def run_job(
                 return
             if current.get("cancel_requested") is True:
                 cancel_event.set()
-                return
+                # Continue heartbeating while in-flight inference and cleanup
+                # drain; the targeted cancel watchdog still owns this lease.
             if current.get("pause_requested") is True:
                 pause_event.set()
             else:

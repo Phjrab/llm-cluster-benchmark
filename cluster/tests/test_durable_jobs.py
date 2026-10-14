@@ -498,6 +498,32 @@ class JobProcessTests(unittest.TestCase):
             self.assertTrue((jobs / "job_spawn.log").exists())
             self.assertEqual((jobs / "job_spawn.log").stat().st_mode & 0o777, 0o600)
 
+    def test_cancelling_child_keeps_lease_heartbeat_until_cleanup(self) -> None:
+        from cluster.application.resources import FilesystemResourceCoordinator, WorkerResource
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            jobs = root / "jobs"
+            repository = FilesystemJobRepository(jobs)
+            coordinator = FilesystemResourceCoordinator(jobs / "_resources")
+            lease = coordinator.acquire(owner_job_id="job_cancel_heartbeat",
+                owner_attempt_id="job_cancel_heartbeat", workers=[WorkerResource("worker-1", "192.168.50.101", 8000)],
+                hold_reason="test", admission_limit=1)
+            repository.write("job_cancel_heartbeat", dict(job_id="job_cancel_heartbeat", suite_id="suite_cancel_heartbeat",
+                status="queued", config=config().__dict__, model_ids=["models/a.gguf"],
+                continue_on_model_error=False, model_cooldown_s=0, total=1, model_total=1,
+                started_at="2026-08-20T00:00:00+00:00", resource_reservation=lease))
+            def run(**kwargs):
+                repository.update("job_cancel_heartbeat", lambda value: value.update(cancel_requested=True))
+                before = coordinator.active()[0]["heartbeat_at"]
+                time.sleep(0.65)
+                self.assertGreater(coordinator.active()[0]["heartbeat_at"], before)
+                self.assertTrue(kwargs["cancel_event"].is_set())
+                return dict(status="cancelled", models=[], summaries=[], errors=[], completed_models=0, completed_work_units=0)
+            with mock.patch.object(job_process, "filesystem_suite_runner", return_value=SimpleNamespace(run=run)):
+                self.assertEqual(job_process.run_job("job_cancel_heartbeat", jobs, root / "nodes.csv", root / "results"), 0)
+            self.assertEqual(coordinator.active(), [])
+
     def test_child_job_process_persists_running_events_and_completed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
