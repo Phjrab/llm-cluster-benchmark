@@ -430,12 +430,20 @@ class TransportInstrumentationTests(unittest.TestCase):
             host="192.168.0.16",
             api_url="http://192.168.0.16:8000",
         )
-        with mock.patch(
+        with mock.patch.dict("os.environ", {
+            "CLUSTER_RESOURCE_OWNER_ID": "job_smoke",
+            "CLUSTER_RESOURCE_LEASE_ID": "lease_smoke",
+            "CLUSTER_RESOURCE_FENCING_EPOCH": "7",
+        }), mock.patch(
             "cluster.benchmark.transport.urllib.request.urlopen", return_value=Response()
-        ):
+        ) as opener:
             record = stream_worker_request(
                 node, config, RequestTask(1, 1, "single", "pi-02")
             )
+        headers = {key.lower(): value for key, value in opener.call_args.args[0].header_items()}
+        self.assertEqual(headers["x-cluster-resource-owner"], "job_smoke")
+        self.assertEqual(headers["x-cluster-resource-lease"], "lease_smoke")
+        self.assertEqual(headers["x-cluster-fencing-epoch"], "7")
         self.assertTrue(record["ok"])
         self.assertEqual(record["input_tokens"], 4)
         self.assertEqual(record["total_tokens"], 6)
