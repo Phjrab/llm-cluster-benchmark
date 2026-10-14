@@ -280,6 +280,28 @@ class JobRegistryRecoveryTests(unittest.TestCase):
         self.assertEqual(second.active()["process"]["pid"], identity.pid)
         self.assertEqual(second.active()["latest_event"]["type"], "request_completed")
 
+    def test_completed_suite_waits_for_live_child_resource_cleanup(self) -> None:
+        from cluster.application.resources import WorkerResource
+        service = self.service()
+        job, identity = self.job()
+        lease = service.resources.acquire(
+            owner_job_id=job["job_id"], owner_attempt_id=job["job_id"],
+            workers=[WorkerResource("worker-1", "192.168.50.101", 8000)],
+            hold_reason="test", admission_limit=1,
+        )
+        job["resource_reservation"] = lease
+        service.repository.write(job["job_id"], job)
+        self.inspector.identities[identity.pid] = identity
+        self.write_suite(job["suite_id"], "completed")
+        service.recover()
+        self.assertEqual(service.repository.read(job["job_id"])["status"], "running")
+        self.assertEqual(service.resources.active()[0]["status"], "held")
+        # A dead child with a finished suite still requires reconciliation.
+        self.inspector.identities.clear()
+        service.recover()
+        self.assertEqual(service.repository.read(job["job_id"])["status"], "orphaned")
+        self.assertEqual(service.resources.active()[0]["status"], "quarantined")
+
     def test_recovery_retries_one_transient_missing_identity_sample(self) -> None:
         job, identity = self.job()
         FilesystemJobRepository(self.jobs).write(job["job_id"], job)
