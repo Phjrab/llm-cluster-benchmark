@@ -67,6 +67,9 @@ class MeasurementNormalizationTests(unittest.TestCase):
                     "power": {"total_w": 12.5},
                     "temperatures_c": {"soc": 51.0},
                     "cpu": {"frequency_mhz": 1728},
+                    "ram_used_mb": 1234.5,
+                    "ram_available_mb": 5678.0,
+                    "swap_used_mb": 0.0,
                     "network": {"bytes_sent": 10, "bytes_received": 20},
                     "telemetry_collection_overhead_s": 0.004,
                 },
@@ -82,6 +85,9 @@ class MeasurementNormalizationTests(unittest.TestCase):
         self.assertEqual(sample["run_id"], "run_01")
         self.assertEqual(sample["scenario_id"], "single")
         self.assertEqual(sample["node"], "jetson-01")
+        self.assertEqual(sample["ram_used_mb"], 1234.5)
+        self.assertEqual(sample["ram_available_mb"], 5678.0)
+        self.assertEqual(sample["swap_used_mb"], 0.0)
         self.assertEqual(sample["monotonic_elapsed_s"], 1.0125)
         self.assertEqual(sample["collection_overhead_s"], 0.025)
         self.assertIsNone(sample["controller_collection_interval_s"])
