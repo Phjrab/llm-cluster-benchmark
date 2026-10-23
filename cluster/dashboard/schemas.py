@@ -170,6 +170,16 @@ class ExperimentPayload(BaseModel):
     node_names: List[str] = Field(min_length=1)
     model_id: str = ""
     model_ids: List[str] = Field(default_factory=list, max_length=32)
+    input_binding: Optional[Dict[str, str]] = None
+
+    @field_validator("input_binding")
+    @classmethod
+    def check_input_binding(cls, value):
+        if value is not None:
+            from cluster.domain.runtime_profile import validate_input_binding
+            validate_input_binding(value)
+        return value
+
     continue_on_model_error: bool = True
     model_cooldown_s: float = Field(2.0, ge=0.0, le=300.0)
     max_parallel_jobs: Literal[1, 2] = Field(1, exclude=True)

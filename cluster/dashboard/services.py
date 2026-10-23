@@ -1181,7 +1181,7 @@ def resolve_sweep_request(request: Mapping[str, Any], refresh: bool = False):
                 "input_token_source": "unavailable",
                 "input_tokens_exact": False,
             }))
-    return preview_catalog_sweep(
+    preview = preview_catalog_sweep(
         spec,
         selections={str(key): str(value) for key, value in selections.items()},
         catalog=read_model_catalog(),
@@ -1191,6 +1191,11 @@ def resolve_sweep_request(request: Mapping[str, Any], refresh: bool = False):
         acceptances=read_model_license_acceptances(),
         gated_access=False,
     )
+
+    from cluster.dashboard.service_layers.sweep_evidence import observations, enrich_preview
+    evidence = observations(JOBS_DIR, status_monitor.snapshot(),
+                            fresh=status_monitor.observation()["freshness"] == "FRESH")
+    return enrich_preview(preview, evidence)
 
 
 def list_models() -> List[Dict[str, Any]]:

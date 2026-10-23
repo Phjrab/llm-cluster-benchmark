@@ -169,7 +169,7 @@ class MedicalPipelineTests(unittest.TestCase):
         self.assertTrue(self.plan.executable,self.plan.to_dict())
         self.config=build_cell_config(self.plan,trial_id=self.plan.trials[0].trial_id,sweep_id='medical-fake',attempt_id='attempt-fake',prompt_text=text)
 
-    def run_fake(self,mode='full'):
+    def run_fake(self,mode='full', *, indexed=True, expected_status='completed'):
         answer='{"cough":true,"fever":false,"chest_pain":false,"dyspnea":null}'
         class MedicalLlama(FakeLlama):
             def create_completion(self,**kw):
@@ -189,7 +189,10 @@ class MedicalPipelineTests(unittest.TestCase):
             if method=='POST':
                 response=client.post(path,json=payload)
                 if response.status_code!=200: raise ValueError(response.text)
-                return response.json()
+                value=response.json()
+                if path=='/cluster/input/prepare' and getattr(self,'drop_prepared_hash',False):
+                    value['preparation'].pop('rendered_prompt_sha256')
+                return value
             return {'profile':{}}
         def stream(req,**kwargs):
             r=client.post('/cluster/chat/stream',json=json.loads(req.data))
@@ -198,9 +201,122 @@ class MedicalPipelineTests(unittest.TestCase):
         runner=BenchmarkRunner(_load_model,lambda *a:[],lambda *a:None,ScenarioExecutor(stream_worker_request,mock.Mock(side_effect=AssertionError('native RPC'))),mock.Mock())
         with mock.patch('cluster.benchmark.runner.request_json',side_effect=request),mock.patch('cluster.benchmark.transport.urllib.request.urlopen',side_effect=stream):
             summary=runner.run(self.config,[WorkerNode('j1','127.0.0.2','fake',22,8000,'/home/fake/project')],self.root/'results')
-        self.assertEqual(summary['status'],'completed')
+        self.assertEqual(summary['status'],expected_status)
         self.run_dir=Path(summary['result_dir'])
-        return index_runs(self.bundle,self.package['id'],self.plan.to_dict(),[self.run_dir])
+        return index_runs(self.bundle,self.package['id'],self.plan.to_dict(),[self.run_dir]) if indexed else summary
+
+    def standalone_binding(self):
+        trace=self.config.sweep
+        return {"preparation_id":"standalone-input-1", **{k:trace[k] for k in
+                ("prompt_sha256","model_sha256","template_sha256")}}
+
+    def test_standalone_job_native_input_without_inventing_sweep(self):
+        binding=self.standalone_binding()
+        self.config=dataclasses.replace(self.config,sweep=None,input_binding=binding)
+        self.config.validate()
+        result=self.run_fake(indexed=False)
+        row=json.loads((self.run_dir/'responses.jsonl').read_text())
+        stored=json.loads((self.run_dir/'config.json').read_text())
+        self.assertIsNone(stored['sweep'])
+        self.assertEqual(stored['input_binding'],binding)
+        self.assertEqual(row['preparation_id'],binding['preparation_id'])
+        self.assertEqual(row['rendered_prompt_sha256'],hashlib.sha256(b'[1,10,11,2]').hexdigest())
+        self.assertTrue(row['input_tokens_exact'])
+        self.assertEqual(row['input_tokens'],4)
+        self.assertTrue(evaluate(rubrics()['DOC02'],row)['correct'])
+        self.assertEqual(len((self.run_dir/'requests.csv').read_text().splitlines()[0].split(',')),19)
+        self.assertNotIn('required_points',self.inputs[0][-1]['content'])
+        self.assertFalse(row['diagnostic_identity']['sweep_id'])
+        self.assertEqual(result['actual_model_config'][0]['input_preparation']['preparation_id'],binding['preparation_id'])
+
+    def test_completed_native_job_evidence_is_read_only_and_strictly_bound(self):
+        from cluster.dashboard.service_layers.sweep_evidence import observations, enrich_preview
+        from cluster.application.sweep_planner import compile_plan
+        self.config=dataclasses.replace(self.config,sweep=None,input_binding=self.standalone_binding())
+        summary=self.run_fake(indexed=False)
+        deployment=dict(verified=True,working_tree_clean=True,source_commit='a'*40,source_tree_sha256='b'*64)
+        runtime=dict(verified=True,kind='cuda',llama_cpp_python='0.3.20',runtime_fingerprint='c'*16)
+        summary['participant_nodes']=[dict(name='j1',host='127.0.0.2',api_port=8000,capture_status='captured',
+            detected_platform='jetson',deployment=deployment,runtime_backend=runtime)]
+        live=[dict(name='j1',host='127.0.0.2',api_port=8000,api=True,deployment=deployment,
+            profile=dict(platform_kind='jetson',runtime_backend=runtime))]
+        job=dict(job_id='job_fake',status='completed',config=dataclasses.asdict(self.config),summaries=[summary],
+            resource_reservation=dict(status='released',cleanup_verified=True,owner_job_id='job_fake',worker_ids=['j1']))
+        jobs=self.root/'jobs';jobs.mkdir();path=jobs/'job_fake.json'
+        def write(value): path.write_text(json.dumps(value))
+        write(job)
+        observed=observations(jobs,live,fresh=True)
+        self.assertEqual(len(observed),1)
+        self.assertNotIn(self.config.prompt,json.dumps(observed))
+        context=dataclasses.replace(self.plan.context,
+            prompts=tuple(dataclasses.replace(p,rendered_input_tokens=None,input_tokens_exact=False,input_token_source='unavailable') for p in self.plan.context.prompts),
+            model_checks=tuple(dataclasses.replace(c,status='unknown',code='MODEL_RUNTIME_NOT_VERIFIED') if c.kind=='runtime' else c for c in self.plan.context.model_checks))
+        from cluster.application.sweep_models import CatalogSweepPreview
+        preview=CatalogSweepPreview(compile_plan(self.plan.spec,context),())
+        self.assertFalse(preview.plan.executable)
+        self.assertTrue(enrich_preview(preview,observed).plan.executable)
+        conflict=[*observed,{**observed[0],'input_tokens':99}]
+        self.assertFalse(enrich_preview(preview,conflict).plan.executable)
+        for key,value in [('model_sha256','f'*64),('prompt_sha256','f'*64),('node','j2'),('template_hash','f'*64)]:
+            self.assertFalse(enrich_preview(preview,[{**observed[0],key:value}]).plan.executable)
+        self.assertEqual(observations(jobs,live,fresh=False),[])
+        for mutate in [lambda j:j.update(status='failed'),
+                       lambda j:j['resource_reservation'].update(cleanup_verified=False),
+                       lambda j:j['resource_reservation'].update(owner_job_id='other'),
+                       lambda j:j['summaries'][0].update(failed=1),
+                       lambda j:j['summaries'][0].update(native_input_evidence=[]),
+                       lambda j:j['summaries'][0]['native_input_evidence'][0].update(preparation_id='other'),
+                       lambda j:j['summaries'][0]['participant_nodes'][0]['deployment'].update(source_tree_sha256='f'*64),
+                       lambda j:j['summaries'][0]['participant_nodes'][0]['runtime_backend'].update(runtime_fingerprint='f'*16),
+                       lambda j:j['summaries'][0]['participant_nodes'][0].update(host='127.0.0.3')]:
+            bad=copy.deepcopy(job);mutate(bad);write(bad)
+            self.assertEqual(observations(jobs,live,fresh=True),[])
+        write(job);before=path.read_bytes();stamp=path.stat().st_mtime_ns
+        for _ in range(3): self.assertEqual(observations(jobs,live,fresh=True),observed)
+        self.assertEqual(path.read_bytes(),before);self.assertEqual(path.stat().st_mtime_ns,stamp)
+        with mock.patch('cluster.dashboard.service_layers.sweep_evidence.MAX_FILE_BYTES',10):
+            self.assertEqual(observations(jobs,live,fresh=True),[])
+        path.unlink();path.symlink_to(self.run_dir/'summary.json')
+        self.assertEqual(observations(jobs,live,fresh=True),[])
+
+    def test_bound_stream_rejects_missing_or_wrong_native_provenance(self):
+        from cluster.domain.runtime_profile import require_bound_response
+        self.config=dataclasses.replace(self.config,sweep=None,input_binding=self.standalone_binding())
+        self.run_fake(indexed=False)
+        row=json.loads((self.run_dir/'responses.jsonl').read_text())
+        # Response storage contains template_hash under its compatibility name.
+        row['template_hash']=TEMPLATE;row['inference_path']='prepared_chat_completion'
+        require_bound_response(row,self.config,self.config.max_tokens)
+        for key,value in [('preparation_id','other'),('input_tokens_exact',False),
+                          ('effective_max_tokens',1024),('model_sha256','f'*64),
+                          ('rendered_prompt_sha256',None)]:
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                require_bound_response({**row,key:value},self.config,self.config.max_tokens)
+
+    def test_standalone_missing_native_hash_fails_before_generation(self):
+        self.config=dataclasses.replace(self.config,sweep=None,input_binding=self.standalone_binding())
+        self.drop_prepared_hash=True
+        with self.assertRaises(ValueError):
+            self.run_fake(indexed=False,expected_status='failed')
+        self.assertFalse(list((self.root/'results').glob('*/responses.jsonl')))
+
+    def test_standalone_binding_validation_and_legacy_identity(self):
+        from cluster.domain.experiment import ExperimentConfig, normalized_config_identity
+        binding=self.standalone_binding()
+        cfg=dataclasses.replace(self.config,sweep=None,input_binding=binding)
+        cfg.validate()
+        self.assertEqual(ExperimentConfig.from_dict(dataclasses.asdict(cfg),strict=True),cfg)
+        for change in [dict(sweep=self.config.sweep),dict(campaign_id='formal-1'),
+                       dict(pilot_id='pilot_1'),dict(execution_strategy='model_parallel_rpc',n_threads=None,n_batch=None),
+                       dict(prompt='different input')]:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                dataclasses.replace(cfg,**change).validate()
+        for b in [{**binding,'preparation_id':'../unsafe'}, {**binding,'response':'secret'},
+                  {**binding,'model_sha256':'not-a-hash'}]:
+            with self.assertRaises(ValueError):
+                ExperimentConfig.from_dict({**dataclasses.asdict(cfg),'input_binding':b})
+        legacy=dataclasses.replace(cfg,input_binding=None)
+        self.assertNotIn('input_binding',normalized_config_identity(legacy))
 
     def test_preset_native_payload_persistence_evaluation_and_blind_export(self):
         index=self.run_fake()

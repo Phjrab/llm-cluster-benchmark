@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from cluster.clusterctl import worker_auth_headers, worker_resource_headers
 from cluster.domain.experiment import ExperimentConfig
 from cluster.domain.errors import ErrorCode
+from cluster.domain.runtime_profile import preparation_trace, require_bound_response
 from cluster.domain.failures import failure_from_message
 from cluster.infrastructure.sse import parse_sse_events
 
@@ -53,8 +54,9 @@ def stream_worker_request(
         "top_p": config.top_p,
         "seed": config.seed,
     }
-    if config.sweep is not None:
-        payload["prepared_input_id"] = config.sweep["attempt_id"]
+    prepared = preparation_trace(config)
+    if prepared is not None:
+        payload["prepared_input_id"] = prepared["attempt_id"]
     request_body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         f"{node.api_url}/cluster/chat/stream",
@@ -87,6 +89,7 @@ def stream_worker_request(
                     output_parts.append(str(event.get("text", "")))
                 elif event_type == "done":
                     server_metrics = event.get("metrics") or {}
+                    require_bound_response(server_metrics, config, payload["max_tokens"])
                     ok = True
                 elif event_type == "error":
                     error = str(event.get("message", "worker error"))

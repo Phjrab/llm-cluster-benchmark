@@ -17,7 +17,7 @@ from .identifiers import (
     validate_node_id,
     validate_suite_id,
 )
-from .runtime_profile import validate_sweep_trace
+from .runtime_profile import validate_sweep_trace, validate_input_binding
 from .strategy import ExecutionStrategy, RpcSplitMode, RpcSplitPolicy, SweepMode
 
 
@@ -84,6 +84,7 @@ class ExperimentConfig:
     n_threads: Optional[int] = None
     n_batch: Optional[int] = None
     sweep: Optional[Dict[str, Any]] = None
+    input_binding: Optional[Dict[str, str]] = None
     rpc_gpu_layers: Union[str, int] = "all"
     diagnostics_mode: str = "lifecycle"
 
@@ -107,6 +108,9 @@ class ExperimentConfig:
         if values.get("sweep") is not None:
             validate_sweep_trace(values["sweep"])
             values["sweep"] = json.loads(json.dumps(values["sweep"]))
+        if values.get("input_binding") is not None:
+            validate_input_binding(values["input_binding"])
+            values["input_binding"] = dict(values["input_binding"])
         return cls(**values)
 
     def validate(self) -> None:
@@ -194,6 +198,12 @@ class ExperimentConfig:
         has_pilot_identity = bool(self.pilot_id or self.pilot_cell_id) or any(
             value != 0 for value in (self.pilot_repeat_index, self.pilot_order_index)
         )
+        if self.input_binding is not None:
+            validate_input_binding(self.input_binding)
+            if self.sweep is not None or has_formal_identity or has_pilot_identity or self.experiment_type:
+                raise DomainValidationError("input binding is only for standalone exploratory jobs")
+            if self.input_binding["prompt_sha256"] != hashlib.sha256(self.prompt.encode("utf-8")).hexdigest():
+                raise DomainValidationError("input binding prompt identity mismatch")
         if self.sweep is not None:
             validate_sweep_trace(self.sweep)
             model_identity = self.sweep.get("model_identity") or {}
@@ -321,6 +331,8 @@ class ExperimentConfig:
             self.n_threads is not None or self.n_batch is not None
         ):
             raise DomainValidationError("n_threads and n_batch are not supported by model_parallel_rpc")
+        if strategy is ExecutionStrategy.MODEL_PARALLEL_RPC and self.input_binding is not None:
+            raise DomainValidationError("standalone input binding does not support RPC")
         if strategy is not ExecutionStrategy.MODEL_PARALLEL_RPC and self.rpc_gpu_layers != "all":
             raise DomainValidationError("rpc_gpu_layers is only valid for model_parallel_rpc")
         if self.sweep is not None:
@@ -361,7 +373,7 @@ def normalized_config_identity(config: ExperimentConfig) -> Dict[str, Any]:
         if name in {"prompt", "ignored_config_keys"}:
             continue
         value = getattr(config, name)
-        if name in {"n_threads", "n_batch", "sweep"} and value is None:
+        if name in {"n_threads", "n_batch", "sweep", "input_binding"} and value is None:
             continue
         if name == "rpc_gpu_layers" and value == "all":
             continue

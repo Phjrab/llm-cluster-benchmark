@@ -46,6 +46,7 @@ class ModelCandidate(Record):
     runtime_verified_workers: tuple[str, ...]
     reason_codes: tuple[str, ...]
     formal_approval: str = "not_assessed"
+    observed_run_refs: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)

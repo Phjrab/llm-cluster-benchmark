@@ -64,7 +64,7 @@ def _stream_rpc_request(
 
 
 def _load_model(node: Node, config: ExperimentConfig) -> Dict[str, Any]:
-    from cluster.domain.runtime_profile import require_applied_profile
+    from cluster.domain.runtime_profile import require_applied_profile, preparation_trace
     payload = {"model_id": config.model_id, "n_ctx": config.n_ctx, "n_gpu_layers": config.n_gpu_layers}
     payload.update({key: getattr(config, key) for key in ("n_threads", "n_batch") if getattr(config, key) is not None})
     result = request_json(
@@ -82,8 +82,8 @@ def _load_model(node: Node, config: ExperimentConfig) -> Dict[str, Any]:
         # Core persists the applied evidence, then rejects before warmup. Do not
         # prepare an adjusted model or lose its actual config in an early raise.
         return {"node": node.name, **current}
-    if config.sweep is not None:
-        trace = config.sweep
+    trace = preparation_trace(config)
+    if trace is not None:
         try:
             preparation = request_json(f"{node.api_url}/cluster/input/prepare", method="POST", timeout=120.0,
                 payload=dict(preparation_id=trace["attempt_id"], message=config.prompt, history=[],
@@ -149,6 +149,8 @@ def _describe_node_environment(node: Node) -> Dict[str, Any]:
         },
         "inference_threads": profile.get("inference_threads"),
         "git_commit": profile.get("git_commit") or remote.get("git_commit"),
+        "deployment": {key: (health.get("deployment") or {}).get(key) for key in
+                       ("verified", "source_commit", "source_tree_sha256", "working_tree_clean")},
         "telemetry": {
             "provider": capabilities.get("telemetry"),
             "ready": capabilities.get("telemetry_ready"),

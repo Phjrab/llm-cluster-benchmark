@@ -39,6 +39,24 @@ DescribeNode = Callable[[Any], Dict[str, Any]]
 TelemetrySnapshot = Callable[[Any], Dict[str, Any]]
 
 
+def native_input_evidence(config, loaded, records):
+    """Small hash-only proof; response quality is deliberately not an admission gate."""
+    if config.input_binding is None:
+        return []
+    output = []
+    for actual in loaded:
+        prepared = actual.get("input_preparation") or {}
+        rows = [row for row in records if row.get("node") == actual.get("node")]
+        keys = ("preparation_id", "model_sha256", "prompt_sha256", "template_hash",
+                "input_tokens", "input_token_source", "input_tokens_exact",
+                "rendered_prompt_sha256", "rendered_prompt_hash_source")
+        if rows and all(row.get("ok") is True and all(row.get(k) == prepared.get(k) for k in keys)
+                        for row in rows):
+            output.append({"node": actual["node"], "successful_requests": len(rows),
+                           **{k: prepared.get(k) for k in keys}})
+    return output
+
+
 def benchmark_parameters(config: ExperimentConfig) -> Dict[str, Any]:
     strategy = get_strategy(config.execution_strategy)
     return {
@@ -369,10 +387,10 @@ class BenchmarkRunner:
                             raise RuntimeError(
                                 f"Failed to load model on {node.name}: {exc}"
                             ) from exc
-                from cluster.domain.runtime_profile import require_applied_profile, require_prepared_input
+                from cluster.domain.runtime_profile import require_applied_profile, require_prepared_input, preparation_trace
                 for info in loaded:
                     require_applied_profile(info, config)
-                    if config.sweep is not None:
+                    if preparation_trace(config) is not None:
                         if info.get("input_preparation_error"):
                             raise ValueError(info["input_preparation_error"])
                         require_prepared_input(info.get("input_preparation") or {}, config)
@@ -501,6 +519,8 @@ class BenchmarkRunner:
                 "nodes": [node.name for node in nodes],
                 "participant_nodes": participant_nodes,
                 "actual_model_config": loaded,
+                **({"native_input_evidence": native_input_evidence(config, loaded, records)}
+                   if config.input_binding is not None else {}),
                 "model_compatibility": model_compatibility_evidence(
                     config, participant_nodes, loaded, records, status=final_status
                 ),

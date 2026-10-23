@@ -2,6 +2,25 @@
 from .errors import DomainValidationError
 from .sweep import ModelReference, RpcProfile, ref, digest, integer, choice
 
+
+def validate_input_binding(value):
+    """Explicit native preparation for a concrete job; not a Sweep or ownership ID."""
+    required = {"preparation_id", "model_sha256", "template_sha256", "prompt_sha256"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise DomainValidationError("invalid input binding fields")
+    ref(value["preparation_id"])
+    for key in required - {"preparation_id"}:
+        digest(value[key])
+
+
+def preparation_trace(config):
+    if config.sweep is not None:
+        return config.sweep
+    binding = getattr(config, "input_binding", None)
+    if binding is None:
+        return None
+    return {**binding, "attempt_id": binding["preparation_id"], "prompt_mode": "same_text"}
+
 # Only hashes/IDs/counts may enter this public trace; never prompt/token arrays.
 def validate_sweep_trace(value):
     required = {"sweep_id", "plan_sha256", "cell_id", "trial_id", "attempt_id",
@@ -47,13 +66,14 @@ def require_applied_profile(current, config):
     factory = current.get("factory_config") or {}
     effective = current.get("effective_config") or {}
     names = [k for k in ("n_threads", "n_batch") if getattr(config, k) is not None]
-    if config.sweep is not None:
+    trace = preparation_trace(config)
+    if trace is not None:
         names += ["n_ctx", "n_gpu_layers"]
         if current.get("adjustment_reasons"):
             raise DomainValidationError("SWEEP_CONDITION_MISMATCH: adjusted load")
-        if current.get("model_sha256") != config.sweep["model_sha256"]:
+        if current.get("model_sha256") != trace["model_sha256"]:
             raise DomainValidationError("SWEEP_MODEL_IDENTITY_MISMATCH")
-        identity = config.sweep.get("model_identity")
+        identity = trace.get("model_identity")
         if identity and (
             current.get("model_id") != identity["model_id"]
             or current.get("model_size_bytes") != identity.get("size_bytes")
@@ -69,7 +89,7 @@ def require_applied_profile(current, config):
 
 
 def require_prepared_input(prepared, config):
-    trace = config.sweep
+    trace = preparation_trace(config)
     for key, value in {
         "preparation_id": trace["attempt_id"], "prompt_sha256": trace["prompt_sha256"],
         "template_hash": trace["template_sha256"], "model_sha256": trace["model_sha256"],
@@ -84,3 +104,29 @@ def require_prepared_input(prepared, config):
         raise DomainValidationError("SWEEP_INPUT_BUDGET_UNVERIFIED")
     if trace["prompt_mode"] == "token_length_profile" and count != trace["target_input_tokens"]:
         raise DomainValidationError("TOKEN_PROFILE_TARGET_MISMATCH")
+    if getattr(config, "input_binding", None) is not None:
+        digest(prepared.get("rendered_prompt_sha256"))
+        if prepared.get("rendered_prompt_hash_source") != "chat_template_token_ids_v1":
+            raise DomainValidationError("RENDERED_INPUT_HASH_UNVERIFIED")
+
+
+def require_bound_response(metrics, config, output_budget):
+    """Opt-in concrete jobs must not silently accept an old/proxy Worker reply."""
+    if config.input_binding is None:
+        return
+    trace = preparation_trace(config)
+    expected = {
+        "preparation_id": trace["attempt_id"], "model_sha256": trace["model_sha256"],
+        "prompt_sha256": trace["prompt_sha256"], "template_hash": trace["template_sha256"],
+        "effective_n_ctx": config.n_ctx, "requested_max_tokens": output_budget,
+        "effective_max_tokens": output_budget, "input_tokens_exact": True,
+        "input_token_source": "prepared_chat_template",
+        "rendered_prompt_hash_source": "chat_template_token_ids_v1",
+        "inference_path": "prepared_chat_completion",
+    }
+    if any(metrics.get(key) != value for key, value in expected.items()):
+        raise DomainValidationError("BOUND_RESPONSE_UNVERIFIED")
+    digest(metrics.get("rendered_prompt_sha256"))
+    count = metrics.get("input_tokens")
+    if type(count) is not int or count < 1 or count + output_budget > config.n_ctx:
+        raise DomainValidationError("BOUND_RESPONSE_BUDGET_UNVERIFIED")
