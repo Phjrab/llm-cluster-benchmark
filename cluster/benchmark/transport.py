@@ -10,7 +10,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from cluster.clusterctl import worker_auth_headers
+from cluster.clusterctl import worker_auth_headers, worker_resource_headers
 from cluster.domain.experiment import ExperimentConfig
 from cluster.domain.errors import ErrorCode
 from cluster.domain.failures import failure_from_message
@@ -56,7 +56,7 @@ def stream_worker_request(
     request = urllib.request.Request(
         f"{node.api_url}/cluster/chat/stream",
         data=request_body,
-        headers={"Content-Type": "application/json", "Accept": "text/event-stream", **worker_auth_headers()},
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream", **worker_auth_headers(), **worker_resource_headers()},
         method="POST",
     )
     started_wall = utc_now()

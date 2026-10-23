@@ -1,0 +1,1329 @@
+{
+  "repository": "Phjrab/llm-cluster-benchmark",
+  "viewport_manifests": "before/manifest-*.json and after/manifest-*.json",
+  "captures": [
+    {
+      "file": "before/campaign-1280.png",
+      "bytes": 141158,
+      "sha256": "049dd3d99fc8d8caf4eec7321dd65517aaa70ad48b668e1a134f9c025d7bb6fe",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/campaign-1440.png",
+      "bytes": 163515,
+      "sha256": "edf1fd2971b8eb9cb14b8f9108c3835e03401fad46f0e53c3cc7ff87ed2d5653",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/campaign-1920.png",
+      "bytes": 187178,
+      "sha256": "8e0637b409a17a310fbbcfa7d9bb3b2d1c46fb45884296f38f60896f2556bdfd",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/campaign-390.png",
+      "bytes": 60242,
+      "sha256": "290ccc2463fe8fc23640c69f4eaf6ad6f78dd86640d338c363d2f5c534d9adf1",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-1280-full.png",
+      "bytes": 161359,
+      "sha256": "1eb46dbd8a0aa84dee848477b23f3b7ccecccae17191e6d693a1e61beded7fa9",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-1280.png",
+      "bytes": 117594,
+      "sha256": "fbc2c835de2d23d326007a30534967f09df4d137e41857d7d5af8ebec58a8bd2",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-1440-full.png",
+      "bytes": 182218,
+      "sha256": "8b4f36c29a9d148ad150671640468ec0bee922e17e010bb5620929ba366b38cd",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-1440.png",
+      "bytes": 127577,
+      "sha256": "711f845a1ad1acd55e12b28a52c44b9791af051cf1952c109b0bfe730e4451b2",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-1920-full.png",
+      "bytes": 222609,
+      "sha256": "b95a5b0ce074b47f181e4e8d2f645bbdac20a1b945a358741fa2a605fd91ce55",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-1920.png",
+      "bytes": 163457,
+      "sha256": "a83d21ec1dd130a4f175b117cdfc9d5ca234ee95b15d1ba9d9aa8456916e0499",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-390-full.png",
+      "bytes": 123200,
+      "sha256": "886b12daa0ad7780a1565d3341048207b6f5829765bb17b2472fc0ed70b997c3",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-390.png",
+      "bytes": 52103,
+      "sha256": "652679074c6ca07fbe81e3c306bfd7a4cb126d15c17e52be3dda0a870e027494",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-dark-1280.png",
+      "bytes": 117979,
+      "sha256": "982c768a98342cf85afbb470cf8a8eb3b389a6509007ae528ee72fa0c28e4262",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-dark-1440.png",
+      "bytes": 127717,
+      "sha256": "05b3ac8ebb37cd6ab0fd0585d4ae5bb52142d32e70a1b8e053984cd7156be294",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-dark-1920.png",
+      "bytes": 163233,
+      "sha256": "82e5322ac79c62cfd6ade82131df40ffdc040bfad951ab441281c62b03be8dfc",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/compare-dark-390.png",
+      "bytes": 52445,
+      "sha256": "117d781e4fff455919363706ab12d5c639fa7c2d9205ee194f2575cd4b1f6828",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/dashboard.png",
+      "bytes": 76288,
+      "sha256": "fe8655cefe9415557c001bebe542abca0a9e5e203b94586d73611b1c7656963d",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/empty-1440.png",
+      "bytes": 130303,
+      "sha256": "a9f75d462543c6909a32351de36f43198a1609f39dade058ac4c8a799cffaf7d",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/error-1440.png",
+      "bytes": 143123,
+      "sha256": "f7202315ca906e9301d177d454b097f05c315b364e1195eefccd043edae3873d",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/experiment-1280.png",
+      "bytes": 107772,
+      "sha256": "8603748afc380fe8afb301113c78ab5d0ceb23a9608d45d2a252eaefbb6f5746",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/experiment-1440.png",
+      "bytes": 122308,
+      "sha256": "34b70e2d671d5b6e37190240cb1218f7f17fe7c26f93bed25a424ef0a7c6a90b",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/experiment-1920.png",
+      "bytes": 148847,
+      "sha256": "83ac79aaf57fb087bd92f688f57a40030aa9c7bfe62c7b11c55e81d75c07001b",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/experiment-390.png",
+      "bytes": 60079,
+      "sha256": "0610bc0187b8291d5bba788a3c386dce5676f6a4e56fb88cbfbd2c12c29bd26c",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/identity-details-1440.png",
+      "bytes": 106122,
+      "sha256": "a354728fb04bf61bd9faae6a4015569823f0c8f6c37f4eb4fecaac2fbca31eff",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/matrix-modal-1280.png",
+      "bytes": 157903,
+      "sha256": "223b29347254708bfa66cb789a6276e1bd609c967b597b5e0990899961b31638",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/matrix-modal-1440.png",
+      "bytes": 194957,
+      "sha256": "e4308a7d91b1ad50a5704be18c5b9d0b97cf775548b5a603b5f44aac85566f5a",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/matrix-modal-1920.png",
+      "bytes": 243756,
+      "sha256": "6b6a17da97db039a305db3750df0b5863c46e56466a08d759d5e3ebc6e34fedb",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/matrix-modal-390.png",
+      "bytes": 70044,
+      "sha256": "17c155db2d27ad3662fb59468f1b308f68bb7f93a6bf52d2f7c90de7ebbdecef",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/models-1280-full.png",
+      "bytes": 186484,
+      "sha256": "c2a5acd9f04e35a8bf5265876c36dfaf12e44eb0722447473b34dd13cb51da0e",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/models-1280.png",
+      "bytes": 134145,
+      "sha256": "b9852d30f5c6ac94bcaf6ea2e82c1adb8b9fbf1530864132433f07250d5ba93a",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/models-1440-full.png",
+      "bytes": 185077,
+      "sha256": "5004bdc9abb58ca015ffc0edb70eec3d431d989e60be5fe9d256db313af0415f",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/models-1440.png",
+      "bytes": 146099,
+      "sha256": "6b4568f5893382db940bf58b8ee87319b9a51ae2e6995a3a66a8c1dec4f1f446",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/models-1920-full.png",
+      "bytes": 193409,
+      "sha256": "27d39b1e8bac65c95bbddef32932a47693a28ff2362331620d20bb7830f37abe",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/models-1920.png",
+      "bytes": 170296,
+      "sha256": "dcdf3d48f751c86283a13c0e026b6aeec0a35b5f59b76ce50356e79361f37689",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/models-390-full.png",
+      "bytes": 169739,
+      "sha256": "3312c727eca56322eb33c079a865a41c72e2bead1b79f50ce27011a2d8552ae9",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/models-390.png",
+      "bytes": 73371,
+      "sha256": "c91eca4fb2bd42d547658733a39bb0c86a32168b1c61a5020dd931e7f4407dbd",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/nodes-1280.png",
+      "bytes": 120053,
+      "sha256": "acf7aed2a141d3f8ccdd1a09e5a37af038f4c4990b4b3717cf0c34b76e7669bf",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/nodes-1440.png",
+      "bytes": 137625,
+      "sha256": "ab7adb096515194958686a8ceee55107cdab5f25cf07d1d4c463401102e1f0d7",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/nodes-1920.png",
+      "bytes": 162736,
+      "sha256": "f0df6f6aa5dde5223623aeba8d338ce949ea2363019cebb1adeee49392dc3c52",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/nodes-390.png",
+      "bytes": 58380,
+      "sha256": "5bd089f62ce568f221b2be7ea507e17a6c84fa2d92e2168c0e2f51a8e38b9139",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/overview-1280.png",
+      "bytes": 141194,
+      "sha256": "7117eb98d97686793e48a39b04ba2ee638a98767cc14337cff218b1c983d0f0b",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/overview-1440.png",
+      "bytes": 165191,
+      "sha256": "8b68e705d03e0114b30539ad20c66338e3be79704d7a9ee9ecd5969255de1167",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/overview-1920.png",
+      "bytes": 187159,
+      "sha256": "f2f2630cff72d3ac3f884e35bd55dbc5d83e5d52bfc4405cb921570051be4370",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/overview-390.png",
+      "bytes": 57726,
+      "sha256": "5c88f1ac726a184ae12a519b2897262ca1aff16337d4c2aa84fefe434985e2f9",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/publication.png",
+      "bytes": 69621,
+      "sha256": "a3cdb5b1107f8f47ca0ceff18e954bdea1763d6ca29f4f421153c547699bf373",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/publication.svg",
+      "bytes": 4670,
+      "sha256": "59d96122a652d05090ae8a0d476578f6825fc1261382c78efe4fdfbdb86e2cb5",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/research-1280.png",
+      "bytes": 126611,
+      "sha256": "dc58acc6e257ba1c2190f32432a84b404c0a87d1fcda765656cb228a6aaf9fa1",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/research-1440.png",
+      "bytes": 144593,
+      "sha256": "53c368a21a57e40a2f5cc98ef185c2dcf4d5abf56a7a1a704fe901e57f6d8cdf",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/research-1920.png",
+      "bytes": 154355,
+      "sha256": "49c30059469717531dce373a6062f757826d1606cf57182040d6290b30e99f2e",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/research-390.png",
+      "bytes": 54948,
+      "sha256": "5af267dcf5b39204eeb43d3efbdc43f24a183e26677c09ea2bfb3cbae639de50",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/results-1280.png",
+      "bytes": 91004,
+      "sha256": "a4d41568d386669346b120598843d3fafb372789d3dc8a5ac4371efa3a34bb18",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/results-1440.png",
+      "bytes": 98217,
+      "sha256": "0e25d7e9e098e096fcea1d73ce89eaa66935b5b84a4bf842df2e1318b77c217f",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/results-1920.png",
+      "bytes": 112570,
+      "sha256": "669de1b895f8747f1b7ee237b95a089c985f8d00c125c1b9401f46e1470de212",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/results-390.png",
+      "bytes": 45818,
+      "sha256": "b52b191ed3b85d70cfcd02877b06dbdec9f3f153105800c0d7fc40d101e32402",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/specimen-1440.png",
+      "bytes": 124136,
+      "sha256": "d6c32331589f594b5e8fe83f7638a9c3bf3b1dcb1846945eaf866045625cce54",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/sweep-svg-390.png",
+      "bytes": 42187,
+      "sha256": "413a5952ea7af4fc9f6216dc2c8cc95c8a3bd3a9e47680ca69aac5802de2c99f",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/sweeps-1280.png",
+      "bytes": 127009,
+      "sha256": "4ae120bd786f9628f6fb16a06be98b45cdbef8b60ff085fc104447e34ae6c5b1",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/sweeps-1440.png",
+      "bytes": 143022,
+      "sha256": "0b63d5e59f8e298500b6fd794e4bba3cffcd31bf6a9f29a1c1e134b8fc4cb040",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/sweeps-1920.png",
+      "bytes": 175907,
+      "sha256": "f7c00e1ac7dc005dc80c366965111ba8f713a7e9a9ef0fd29a7ffe3b21179a21",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/sweeps-390.png",
+      "bytes": 39774,
+      "sha256": "b1a950dced385edb9acd3b0b47a10155e49676d455dff2dd0b8c012920c4ca29",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/table-identities-1440.png",
+      "bytes": 118051,
+      "sha256": "699b33045c1dda3d10f15d5d1b1273d11cbfc592b62827d17996a0d42af58faa",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/table-scroll-720.png",
+      "bytes": 56595,
+      "sha256": "77ba77360eec2fc88f6a0837d804fdb6e495284e0d96cf432e9ca18cf7afcb77",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/tooltip-1440.png",
+      "bytes": 147751,
+      "sha256": "2143f5c680c544c3ab8e111737b1c25e1280a9a5aacd270b96f265e52100a20c",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/vendors-1280.png",
+      "bytes": 139068,
+      "sha256": "89b87a7a3adf5794ee5df45061414a7188d55cb9ee5e46b0f992f872ed160785",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/vendors-1440.png",
+      "bytes": 149101,
+      "sha256": "5d9b278c29988a3bfbd3ff84840338fdf62c159f45b178d98f0161c8d4674843",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/vendors-1920.png",
+      "bytes": 198340,
+      "sha256": "1e116c6e509d36c039a2dde3e571a978c11c04a968df1bf4babd802269f429ab",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/vendors-390.png",
+      "bytes": 76018,
+      "sha256": "c5841ca15981dd99630b245618715f3f0810a7e9eeb703cbe5719b314f8c2c55",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/worker-modal-1280.png",
+      "bytes": 94753,
+      "sha256": "1b5d30d9274a72c8c4ed4aac141dfacfd78fe91b3b3064b69c7d86079bb561df",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/worker-modal-1440.png",
+      "bytes": 109987,
+      "sha256": "85f5c623ca79de911f426e3e4d218e00cc5ed300368ac1bd83eec8333d3009f0",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/worker-modal-1920.png",
+      "bytes": 190438,
+      "sha256": "9983e5a297bf8f48a733c9a51835aee0636be67a58ae7ad57117b634b4eb2023",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/worker-modal-390.png",
+      "bytes": 38607,
+      "sha256": "4a73089cfc7f3fd1684602ed20ba07e573376d9690975b710920cd674e19090d",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "before/zoom-equivalent-200.png",
+      "bytes": 57939,
+      "sha256": "ee908e8812dc20a9a0a9f9bd4e5e01c36e5153e14bbfc719afaff547a6c340a1",
+      "source_commit": "bbf3419",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/campaign-1280.png",
+      "bytes": 155771,
+      "sha256": "b866135e0e3c19478c596c1be8d8decb56950e0221e62888822c1f9cf6fef307",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/campaign-1440.png",
+      "bytes": 171177,
+      "sha256": "265248f89ec65f0d6d7383bfc4dddd30f872fdf53353c7fae4a74bd4901c0d15",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/campaign-1920.png",
+      "bytes": 196352,
+      "sha256": "0012b02fafd3252c12584370d20cbdc420cf5d565e0b1796a7c5540914b380ca",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/campaign-390.png",
+      "bytes": 67303,
+      "sha256": "30c29314e4f73e22ea8e43a991b1cf74e9144eb929d82e0d8460246b0eebb68f",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-1280-full.png",
+      "bytes": 209385,
+      "sha256": "936a68b5f18ab8c84f25c9606c2fd6c217a7d44147edf5878041a64f266806da",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-1280.png",
+      "bytes": 125568,
+      "sha256": "aa8337200ea1ebd6a2c1bc08b26dcb91334d4918e9fe5730c8244352228832f1",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-1440-full.png",
+      "bytes": 239382,
+      "sha256": "a7efe6a3d41fcf71c6620bfa281650b8f72bab1d0152e864cd49a058366a539f",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-1440.png",
+      "bytes": 136981,
+      "sha256": "9dd3098e23a0c9385d162bd01bfbc2e305cb5e8345ea44044d26c642d2506339",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-1920-full.png",
+      "bytes": 275053,
+      "sha256": "968fdb0e949d92160b29f383f8f482729aa0893e01c038131f031c41f81f0f6e",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-1920.png",
+      "bytes": 180082,
+      "sha256": "5971a1033d4028d580521872205bafb60f922ea084281d585dcd5629145c771c",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-390-full.png",
+      "bytes": 145692,
+      "sha256": "d66c2da69c6ec9e30ea945778df3629569b87678470bd56deeeca5df2dc0b305",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-390.png",
+      "bytes": 58167,
+      "sha256": "24de516eeb72031c3f934c67dc0afa975d6a07930e90e4a6416f517cced7b755",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-dark-1280.png",
+      "bytes": 125820,
+      "sha256": "5370fdfac499ff63d7ac07863ff0fdf3eda8676e45823ecdfd1b286e4ec1240d",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-dark-1440.png",
+      "bytes": 137262,
+      "sha256": "edd7ea96c454a1be31fa4ca2ebb6744780e82aa7f0778a9fce55e330228b20f9",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-dark-1920.png",
+      "bytes": 179489,
+      "sha256": "f17606cc4838bd3592d910143d7dfedb9dda9899b7239d421b5baf2b710e1cde",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/compare-dark-390.png",
+      "bytes": 58829,
+      "sha256": "126ee6210a1f345183d962ebe189ff60e6003607329476b1735f87c1a5736d2f",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/dashboard.png",
+      "bytes": 74497,
+      "sha256": "3d888d044e607bb0b4f96b207ecaec72d4f18384958c41b53be995e1295bdd4f",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/empty-1440.png",
+      "bytes": 147615,
+      "sha256": "036bc41421bcf5d9b957efe3b3eed005730a5eaac2d96bda03c1b5559049a55e",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/error-1440.png",
+      "bytes": 160487,
+      "sha256": "f0cf535d3426ae2108f9d6ce1b75138047a5931321913ff17a78bd6a95c000dd",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/experiment-1280.png",
+      "bytes": 117147,
+      "sha256": "36773927d0263b9a8b8070a874487b83c743d29b51fead67ab342e9a19ab3e0d",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/experiment-1440.png",
+      "bytes": 128089,
+      "sha256": "2756dbd9962f8b3f1d9c0463abd2bd82f7dfd811102ecef341e91d53ca83ff4d",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/experiment-1920.png",
+      "bytes": 162099,
+      "sha256": "02ec076f768c5158c07e8a82d9316fcec346ea60562865fc172d8d0239f748aa",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/experiment-390.png",
+      "bytes": 64141,
+      "sha256": "f3ed94ec31da8aa350564a347a351b809e49c37581a0fd8675189ab3f1716561",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/identity-details-1440.png",
+      "bytes": 102719,
+      "sha256": "69e449cafa24a68aeacbfb2372368f4761ab33074053f16ff1b1d407028b920d",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/late-font-compare-1440.png",
+      "bytes": 144353,
+      "sha256": "77fd3b43338fb6d35958ffd445d694a169445dc40c39bdb0e4c2417dee494ea0",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/matrix-modal-1280.png",
+      "bytes": 166513,
+      "sha256": "6a70c72b3481d854dc482c67af21dbbf587844663ad2322a6aad1d28426bd8c7",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/matrix-modal-1440.png",
+      "bytes": 206700,
+      "sha256": "4e407a3054a20dc2218ab4df88748dff8090f51c17e4f24fd963babe546093b0",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/matrix-modal-1920.png",
+      "bytes": 261181,
+      "sha256": "f4a3acac0496b47e06f0cff1267033d2783a2309511c8f2444c1edb9458411a9",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/matrix-modal-390.png",
+      "bytes": 68040,
+      "sha256": "c5650629b615b2e2392dc2beaa8f0a32c4d3a2ca6162e5b1a48d5445859d6980",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/models-1280-full.png",
+      "bytes": 215499,
+      "sha256": "b955595e78dccb70aeab0a6a85b428a25cb1be64be0a8c45fabd966a5910f7ed",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/models-1280.png",
+      "bytes": 151730,
+      "sha256": "20f5bebb7cc69b429fc3f03a9eeb53171a275c46a9ccbb74bd9aba33354f7284",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/models-1440-full.png",
+      "bytes": 213702,
+      "sha256": "13b364236b79a7d3d0f199461ec334dc69978ce0a2b85377ad1867da4ca6d29b",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/models-1440.png",
+      "bytes": 163507,
+      "sha256": "40896abd334e391d13d77febc0b637d7869c096d172d9c5daa3771e256b288c1",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/models-1920-full.png",
+      "bytes": 220937,
+      "sha256": "f07631a6c11af8cdc1f61b350c545beae4109fd3d696e6fc5093f447c8252e0e",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/models-1920.png",
+      "bytes": 191858,
+      "sha256": "e34a873961ce6a2d814ea84a18e52564d75f7f44a38896e294d9a35957f2f0b4",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/models-390-full.png",
+      "bytes": 191970,
+      "sha256": "e88d753b529306b90061a19a13cfaf9ea3ce20ff42b0b51db22ae3f1b93058aa",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/models-390.png",
+      "bytes": 72331,
+      "sha256": "b982e2e6ba8fe4ac3ba952c0f3203da4e337913802f80ab2773e90f3efbfc78c",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/nodes-1280.png",
+      "bytes": 131431,
+      "sha256": "490a479c7e6a5cf2c97212f50375449891ee90087653520d371d40384ad1a1a8",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/nodes-1440.png",
+      "bytes": 149995,
+      "sha256": "aa93468846cc021c3332176b673af597ce1fa2ff6ed1c4360a5c4112af966144",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/nodes-1920.png",
+      "bytes": 178598,
+      "sha256": "799b11786fd53125494d0cfa28b65a17d64423de80a0d297337efd158c1a396a",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/nodes-390.png",
+      "bytes": 59082,
+      "sha256": "2ea5aec286862b29448a3df43b9214f5f6484dae8e7e87590d28f0f2c5d41794",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/overview-1280.png",
+      "bytes": 159413,
+      "sha256": "86dae6fce6da17bb925f697b345e78b2f626afc92c6e031bc60f6522bf796473",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/overview-1440.png",
+      "bytes": 175767,
+      "sha256": "968293e0d870f854cd6a0d488102b95ad8e50e30d3056c6875c8037a4c8e42e9",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/overview-1920.png",
+      "bytes": 203030,
+      "sha256": "c4d2de9405835fadc4a78789bccf5f553e18149f0771deb656097b4c97529a86",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/overview-390.png",
+      "bytes": 59837,
+      "sha256": "ea15da1abe1b4c59db2dee1ec404a6c37274d7df6ea8e0add250068e07570b85",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/publication.png",
+      "bytes": 69621,
+      "sha256": "a3cdb5b1107f8f47ca0ceff18e954bdea1763d6ca29f4f421153c547699bf373",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/publication.svg",
+      "bytes": 4670,
+      "sha256": "4440ec856b743b7596d5ece718785e044ec4cc1d1320b65c822d91e7bb5e990a",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/research-1280.png",
+      "bytes": 143076,
+      "sha256": "bc523c41299ff62ebd5b8f8c74984549016e9d51edadb4a6f55f4ee1dc2d9cdd",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/research-1440.png",
+      "bytes": 150729,
+      "sha256": "ea7d7aad7f347cf72e961e9acb4cd5b9217a3b5c1d1fbf4f22e61b33f94cd34c",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/research-1920.png",
+      "bytes": 174137,
+      "sha256": "5739cc7b3a71ae804f8205657e4d2280196a30c0b2272f4a4f4b2331605ab828",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/research-390.png",
+      "bytes": 58994,
+      "sha256": "78f5241f07c61194c4d471a659582394bdb2e9eb42de4b74e343b7d0aa4e834a",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/results-1280.png",
+      "bytes": 101104,
+      "sha256": "cb90fef6a19b0e7b15e3ccfe9a5ea01d917de2a6ca2437843709065ee8880c3d",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/results-1440.png",
+      "bytes": 110363,
+      "sha256": "1a150b27f1d5cc0530526fe194c3dba5500e2f92776683aa1a24daa9d65dde0b",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/results-1920.png",
+      "bytes": 125222,
+      "sha256": "454d5ec0a4d330fadd9a367744cfb0fdd0b28a0117b122a98a6b45008c00cd6a",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/results-390.png",
+      "bytes": 53335,
+      "sha256": "b42687547f915a4d0e440540e35974717983a5b4eec217e9fb29ba909d1d1fe3",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/server-publication-300dpi.png",
+      "bytes": 46556,
+      "sha256": "ce0c946da4e0853630a296d444d4aadef2acb49fa444b00426d3d167d883be31",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/server-publication-600dpi.png",
+      "bytes": 99976,
+      "sha256": "4060a16ca8b31f6e22ac114c0081061edadc77ad147687875cfcb02305583f1a",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/specimen-1440.png",
+      "bytes": 121984,
+      "sha256": "e8c69cd0781179c540b177b93e500ab3b1438a2cca812f3f144a5faf52ea1fce",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/sweep-svg-390.png",
+      "bytes": 43815,
+      "sha256": "43b840413e77f84c83cb96d6b40debfd954c7466b1c52c1ec30104e825e14564",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/sweeps-1280.png",
+      "bytes": 136908,
+      "sha256": "656365d8407fca56614d1e6ca075f9faf9d079a84d57f6013b49060b6d2d7e21",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/sweeps-1440.png",
+      "bytes": 148359,
+      "sha256": "f81288a56132291bd9b11a4cc4b82df57c14fe71f20f2e0a2efa6a8a8e5604b7",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/sweeps-1920.png",
+      "bytes": 193474,
+      "sha256": "aa9dd84324b1ad6bb149f86067720ae8d9c27cff44b0caeee7ae9d3658f9c2ff",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/sweeps-390.png",
+      "bytes": 42543,
+      "sha256": "2d49035054108d7f6f51970ff9e9d103bf4af6c3cc79362b2adcd5dea8f5293e",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/table-identities-1440.png",
+      "bytes": 147217,
+      "sha256": "e78161bf713f2954d49b92b93835dbc0d0bcca4fc5a7556a10a143f929cf4ee2",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/table-scroll-720.png",
+      "bytes": 60661,
+      "sha256": "bb4ef4c7155eb3b420b7ca6b00e39690f4765884378f6503ec5d0c0943d24bfc",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/tooltip-1440.png",
+      "bytes": 156301,
+      "sha256": "f56623546a9e8c50f611cfd06d23f57841fc45b570c1637f473f25e1554fc10c",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/vendors-1280.png",
+      "bytes": 132362,
+      "sha256": "43342c05949ae71f24f4a3389c4331a67796ad830f82c674fde889cbcffa3b52",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/vendors-1440.png",
+      "bytes": 154407,
+      "sha256": "9e3d2d4de35ffad7968d1150e994fcfbb091f242af045de0ba07e5b8c8a73229",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/vendors-1920.png",
+      "bytes": 213345,
+      "sha256": "1bc755806f90995e2ae555776a1c5104660776a9be4937e285d7e975e9a6a671",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/vendors-390.png",
+      "bytes": 78811,
+      "sha256": "6ac845a314beb393bd9ab4749712482dbdc63637e7769d3d8ff57dbae949b421",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/worker-modal-1280.png",
+      "bytes": 94512,
+      "sha256": "9b9324cc7c3b0dc61c38e204127e6e3fbe76978204900274ddd56ba94d30d934",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/worker-modal-1440.png",
+      "bytes": 113093,
+      "sha256": "efffd92ec7fd860a3235d9fc071f1368f86928b1cb7058aa95876102b1e5b50a",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/worker-modal-1920.png",
+      "bytes": 200130,
+      "sha256": "3611c70193119a194887e59fdd10d2dde6e5e153f3229807693492c367293eab",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/worker-modal-390.png",
+      "bytes": 38284,
+      "sha256": "2748da0510217121de2aec9d08b585ea7767dceeaf9983b8ec8c8267173af552",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    },
+    {
+      "file": "after/zoom-equivalent-200.png",
+      "bytes": 60979,
+      "sha256": "c679f428d0f841b3084879c6b3cb2fbc1e26a2c3bdf3211de284e00585ef62dd",
+      "source_commit": "d72cd07",
+      "fixture": "research-lab-v1",
+      "provenance": "synthetic",
+      "live_actions": 0
+    }
+  ]
+}

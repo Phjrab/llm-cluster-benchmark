@@ -41,7 +41,7 @@
       title.textContent = label;
       group.textContent = category;
       select.value = id;
-      document.title = `${label} · MediFlow Cluster Lab`;
+      document.title = `${label} · LLM Cluster Benchmark`;
       if (focus) title.focus({ preventScroll: true });
       window.scrollTo({ top: 0, left: 0, behavior: "instant" });
       // Canvas charts need their new visible dimensions before redrawing.

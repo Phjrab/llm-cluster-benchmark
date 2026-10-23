@@ -1,0 +1,32 @@
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:e2e
+> playwright test
+
+[WebServer] INFO:     Started server process [3764]
+
+[WebServer] INFO:     Waiting for application startup.
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:4173 (Press CTRL+C to quit)
+
+
+Running 13 tests using 1 worker
+
+(node:3772) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/13] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 390px
+[2/13] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 768px
+[3/13] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 1440px
+[4/13] cluster/tests/e2e/dashboard.spec.js:171:1 › Page navigation preserves edits, supports history and redraws result charts
+[5/13] cluster/tests/e2e/dashboard.spec.js:204:1 › Deep links, invalid routes, keyboard links and model-pack handoff select the right page
+[6/13] cluster/tests/e2e/dashboard.spec.js:229:1 › Dashboard core flow renders workers, models, power warning, creates and recovers an experiment
+[7/13] cluster/tests/e2e/dashboard.spec.js:294:1 › Result responses, private trash deletion, and safe worker disconnect remain interactive
+[8/13] cluster/tests/e2e/dashboard.spec.js:346:1 › Node detail presents a running runtime preparation as a structured operation card
+[9/13] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 390px
+[10/13] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 768px
+[11/13] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 1440px
+[12/13] cluster/tests/e2e/dashboard.spec.js:569:1 › Sweep API unavailable is explained without displaying an empty success state
+[13/13] cluster/tests/e2e/dashboard.spec.js:582:1 › Sweep Builder previews 108 trials and controls disjoint durable runs without hidden authority
+  13 passed (26.5s)

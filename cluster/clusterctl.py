@@ -818,24 +818,28 @@ def request_json(
     timeout: float = 10.0,
 ) -> Dict[str, Any]:
     data = None
-    headers = {"Accept": "application/json", **worker_auth_headers()}
-    owner_id = os.getenv("CLUSTER_RESOURCE_OWNER_ID", "").strip()
-    lease_id = os.getenv("CLUSTER_RESOURCE_LEASE_ID", "").strip()
-    fencing_epoch = os.getenv("CLUSTER_RESOURCE_FENCING_EPOCH", "").strip()
-    if owner_id and lease_id and fencing_epoch:
-        headers.update(
-            {
-                "X-Cluster-Resource-Owner": owner_id,
-                "X-Cluster-Resource-Lease": lease_id,
-                "X-Cluster-Fencing-Epoch": fencing_epoch,
-            }
-        )
+    headers = {"Accept": "application/json", **worker_auth_headers(), **worker_resource_headers()}
+
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, headers=headers, method=method)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def worker_resource_headers() -> Dict[str, str]:
+    """Forward the current durable job's fencing identity to Worker requests."""
+    owner_id = os.getenv("CLUSTER_RESOURCE_OWNER_ID", "").strip()
+    lease_id = os.getenv("CLUSTER_RESOURCE_LEASE_ID", "").strip()
+    fencing_epoch = os.getenv("CLUSTER_RESOURCE_FENCING_EPOCH", "").strip()
+    if owner_id and lease_id and fencing_epoch:
+        return {
+            "X-Cluster-Resource-Owner": owner_id,
+            "X-Cluster-Resource-Lease": lease_id,
+            "X-Cluster-Fencing-Epoch": fencing_epoch,
+        }
+    return {}
 
 
 def ensure_worker_token() -> str:

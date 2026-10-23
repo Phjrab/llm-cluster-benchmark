@@ -101,7 +101,10 @@
       <div class="vendor-overview-stats"><span><b>${group.installed}</b> 설치됨</span><span><b>${group.supported}</b> 권장·호환</span><span><b>${group.families.length}</b> 패밀리</span></div>
       <p>${group.families.length ? group.families.map(value => dashboard.escapeHtml(value)).join(" · ") : "분류되지 않은 모델군"}</p>
       <div class="vendor-model-names">${group.models.map(model => `<span>${dashboard.escapeHtml(model.catalog?.display_name || model.filename || model.id)}</span>`).join("")}</div>
-      <footer><small>${group.platforms.length ? group.platforms.map(value => dashboard.escapeHtml(value)).join(" · ") : "플랫폼 검증 대기"}</small><button type="button" class="button ghost compact" data-vendor-open="${dashboard.escapeHtml(group.vendor)}">모델 상세 보기</button></footer>
+      <footer>
+        <div class="vendor-platforms">${group.platforms.length ? group.platforms.map(value => `<span class="vendor-platform-label">${dashboard.escapeHtml(value === "jetson" ? "Jetson" : value === "raspberry-pi" ? "Raspberry Pi" : value)}</span>`).join("") : "<small>플랫폼 검증 대기</small>"}</div>
+        <button type="button" class="button ghost compact" data-vendor-open="${dashboard.escapeHtml(group.vendor)}">모델 상세 보기</button>
+      </footer>
     </article>`).join("");
   }
 

@@ -28,7 +28,7 @@ for (const moduleName of ["state.js", "api.js", "events.js"]) {
   vm.runInContext(fs.readFileSync(modulePath, "utf8"), context, { filename: modulePath });
 }
 vm.runInContext(fs.readFileSync(appPath, "utf8"), context, { filename: appPath });
-for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "results.js", "research.js"]) {
+for (const moduleName of ["utils.js", "power.js", "console.js", "models.js", "results.js", "lab.js", "research.js"]) {
   const modulePath = path.join(dashboardRoot, "static/js", moduleName);
   vm.runInContext(fs.readFileSync(modulePath, "utf8"), context, { filename: modulePath });
 }
@@ -38,7 +38,7 @@ const appSource = fs.readFileSync(appPath, "utf8");
 assert.match(template, /01<\/span>개요[\s\S]*02<\/span>노드[\s\S]*03<\/span>모델[\s\S]*04<\/span>실험[\s\S]*05<\/span>스윕[\s\S]*06<\/span>결과[\s\S]*07<\/span>캠페인[\s\S]*08<\/span>비교[\s\S]*09<\/span>연구 준비/);
 assert.match(template, /CONTROLLER[\s\S]*DASHBOARD[\s\S]*SCHEDULER[\s\S]*STORAGE/);
 assert.doesNotMatch(template, /HEAD · CONTROL \+ INFERENCE/);
-for (const moduleName of ["state.js", "api.js", "events.js", "utils.js", "power.js", "console.js", "models.js", "results.js", "research.js", "sweep-builder.js", "sweep-control.js", "sweep-results.js"]) {
+for (const moduleName of ["state.js", "api.js", "events.js", "utils.js", "power.js", "console.js", "models.js", "results.js", "lab.js", "research.js", "sweep-builder.js", "sweep-control.js", "sweep-results.js"]) {
   assert.match(template, new RegExp(`/static/js/${moduleName.replace(".", "\\.")}`));
 }
 const sweepBuilderSource = fs.readFileSync(path.join(dashboardRoot, "static/js/sweep-builder.js"), "utf8");
@@ -140,12 +140,12 @@ assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/events.j
 assert.doesNotMatch(fs.readFileSync(path.join(dashboardRoot, "static/js/api.js"), "utf8"), /sessionStorage\.setItem\("clusterToken", fromUrl\)/);
 assert.match(template, /ssh-identity-panel[\s\S]*WORKER TERMINAL COMMAND[\s\S]*pairingCommandTarget[\s\S]*pairingCommand/);
 assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
-assert.match(template, /styles\.css\?v=20260928\.pages[\s\S]*sweeps\.css\?v=20260920\.1/);
-assert.match(template, /models\.js\?v=20260920\.2/);
+assert.match(template, /styles\.css\?v=20261019\.model-details[\s\S]*sweeps\.css\?v=20261007\.type/);
+assert.match(template, /models\.js\?v=20261007\.vendor/);
 assert.match(template, /power\.js\?v=20260920\.1/);
-assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*navigation\.js\?v=20260928\.1[\s\S]*app\.js\?v=20260928\.pages[\s\S]*sweep-builder\.js\?v=20260920\.2[\s\S]*sweep-control\.js\?v=20260920\.1[\s\S]*sweep-results\.js\?v=20260920\.1/);
+assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*navigation\.js\?v=20261007\.lab[\s\S]*app\.js\?v=20261007\.type[\s\S]*sweep-builder\.js\?v=20260920\.2[\s\S]*sweep-control\.js\?v=20261019\.studies[\s\S]*sweep-results\.js\?v=20261019\.studies/);
 assert.match(template, /results\.js\?v=20260920\.2/);
-assert.match(template, /research\.js\?v=20260920\.1/);
+assert.match(template, /research\.js\?v=20261007\.type/);
 const researchSource = fs.readFileSync(path.join(dashboardRoot, "static/js/research.js"), "utf8");
 assert.match(researchSource, /blocking_requirements/);
 assert.match(researchSource, /formal_execution_allowed/);
@@ -513,7 +513,8 @@ assert.doesNotMatch(JSON.stringify(researchChart.series), /99/);
 const lowerIsBetter = vm.runInContext(`ClusterDashboard.research.baselineRatio(
   { metrics: { ttft_p50_s: 1 } }, { metrics: { ttft_p50_s: 2 } }, "ttft_p50_s"
 )`, context);
-assert.equal(lowerIsBetter, 2);
+assert.equal(lowerIsBetter, null); // Missing comparison identity must not produce speedup.
+// Complete-evidence latency direction remains covered by test_research_lab.js.
 const safeResearchCsv = vm.runInContext(`ClusterDashboard.research.compareCsv([
   { run_id: "=cmd", campaign_id: "campaign", model_lock: "unlocked", model_id: "a.gguf", platform: "unknown", node_count: 1, strategy: "legacy", runtime_fingerprint: "unknown", power_mode: "not_applicable", measurement_quality: "unknown", status: "completed", metrics: { throughput_tokens_s: 2 } }
 ], "throughput_tokens_s", "=cmd")`, context);

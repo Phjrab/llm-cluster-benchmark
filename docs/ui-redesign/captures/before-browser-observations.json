@@ -1,0 +1,613 @@
+{
+  "errors": [],
+  "details": [
+    {
+      "route": "#overview",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#compare",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#nodes",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#sweeps",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#research",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "viewport": "1440x900",
+      "network": [
+        {
+          "method": "GET",
+          "path": "/"
+        },
+        {
+          "method": "GET",
+          "path": "/static/styles.css"
+        },
+        {
+          "method": "GET",
+          "path": "/static/sweeps.css"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/state.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/api.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/events.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/navigation.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/app.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-builder.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-control.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-results.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/utils.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/power.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/console.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/models.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/results.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/research.js"
+        },
+        {
+          "method": "GET",
+          "path": "/api/bootstrap"
+        },
+        {
+          "method": "GET",
+          "path": "/api/controller/status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/sweeps/capabilities"
+        },
+        {
+          "method": "GET",
+          "path": "/api/huggingface/status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/events"
+        },
+        {
+          "method": "GET",
+          "path": "/api/campaigns"
+        },
+        {
+          "method": "GET",
+          "path": "/api/research/compare"
+        },
+        {
+          "method": "GET",
+          "path": "/api/research/readiness"
+        },
+        {
+          "method": "GET",
+          "path": "/api/sweeps"
+        },
+        {
+          "method": "GET",
+          "path": "/api/campaigns/lab-demo-plan"
+        },
+        {
+          "method": "GET",
+          "path": "/api/events"
+        },
+        {
+          "method": "POST",
+          "path": "/api/sweeps/preview"
+        },
+        {
+          "method": "GET",
+          "path": "/api/events"
+        },
+        {
+          "method": "GET",
+          "path": "/api/nodes/jetson-worker-01/power"
+        }
+      ]
+    },
+    {
+      "route": "#overview",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#compare",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#nodes",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#sweeps",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#research",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "viewport": "1366x768",
+      "network": [
+        {
+          "method": "GET",
+          "path": "/"
+        },
+        {
+          "method": "GET",
+          "path": "/static/styles.css"
+        },
+        {
+          "method": "GET",
+          "path": "/static/sweeps.css"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/state.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/api.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/events.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/navigation.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/app.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-builder.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-control.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-results.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/utils.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/power.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/console.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/models.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/results.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/research.js"
+        },
+        {
+          "method": "GET",
+          "path": "/api/bootstrap"
+        },
+        {
+          "method": "GET",
+          "path": "/api/controller/status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/sweeps/capabilities"
+        },
+        {
+          "method": "GET",
+          "path": "/api/huggingface/status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/events"
+        },
+        {
+          "method": "GET",
+          "path": "/api/campaigns"
+        },
+        {
+          "method": "GET",
+          "path": "/api/research/compare"
+        },
+        {
+          "method": "GET",
+          "path": "/api/research/readiness"
+        },
+        {
+          "method": "GET",
+          "path": "/api/sweeps"
+        },
+        {
+          "method": "GET",
+          "path": "/api/campaigns/lab-demo-plan"
+        },
+        {
+          "method": "POST",
+          "path": "/api/sweeps/preview"
+        },
+        {
+          "method": "GET",
+          "path": "/api/events"
+        },
+        {
+          "method": "GET",
+          "path": "/api/nodes/jetson-worker-01/power"
+        }
+      ]
+    },
+    {
+      "route": "#overview",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#compare",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#nodes",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#sweeps",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#research",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "viewport": "1024x768",
+      "network": [
+        {
+          "method": "GET",
+          "path": "/"
+        },
+        {
+          "method": "GET",
+          "path": "/static/styles.css"
+        },
+        {
+          "method": "GET",
+          "path": "/static/sweeps.css"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/state.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/api.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/events.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/navigation.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/app.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-builder.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-control.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-results.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/utils.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/power.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/console.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/models.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/results.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/research.js"
+        },
+        {
+          "method": "GET",
+          "path": "/api/bootstrap"
+        },
+        {
+          "method": "GET",
+          "path": "/api/controller/status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/sweeps/capabilities"
+        },
+        {
+          "method": "GET",
+          "path": "/api/huggingface/status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/events"
+        },
+        {
+          "method": "GET",
+          "path": "/api/campaigns"
+        },
+        {
+          "method": "GET",
+          "path": "/api/research/compare"
+        },
+        {
+          "method": "GET",
+          "path": "/api/research/readiness"
+        },
+        {
+          "method": "GET",
+          "path": "/api/sweeps"
+        },
+        {
+          "method": "GET",
+          "path": "/api/campaigns/lab-demo-plan"
+        },
+        {
+          "method": "POST",
+          "path": "/api/sweeps/preview"
+        },
+        {
+          "method": "GET",
+          "path": "/api/events"
+        },
+        {
+          "method": "GET",
+          "path": "/api/nodes/jetson-worker-01/power"
+        }
+      ]
+    },
+    {
+      "route": "#overview",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#compare",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#nodes",
+      "scroll": 2,
+      "toasts": ""
+    },
+    {
+      "route": "#sweeps",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "route": "#research",
+      "scroll": 0,
+      "toasts": ""
+    },
+    {
+      "viewport": "390x844",
+      "network": [
+        {
+          "method": "GET",
+          "path": "/"
+        },
+        {
+          "method": "GET",
+          "path": "/static/styles.css"
+        },
+        {
+          "method": "GET",
+          "path": "/static/sweeps.css"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/state.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/api.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/events.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/navigation.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/app.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-builder.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-control.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/sweep-results.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/utils.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/power.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/console.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/models.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/results.js"
+        },
+        {
+          "method": "GET",
+          "path": "/static/js/research.js"
+        },
+        {
+          "method": "GET",
+          "path": "/api/bootstrap"
+        },
+        {
+          "method": "GET",
+          "path": "/api/controller/status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/sweeps/capabilities"
+        },
+        {
+          "method": "GET",
+          "path": "/api/huggingface/status"
+        },
+        {
+          "method": "GET",
+          "path": "/api/events"
+        },
+        {
+          "method": "GET",
+          "path": "/api/campaigns"
+        },
+        {
+          "method": "GET",
+          "path": "/api/research/compare"
+        },
+        {
+          "method": "GET",
+          "path": "/api/research/readiness"
+        },
+        {
+          "method": "GET",
+          "path": "/api/sweeps"
+        },
+        {
+          "method": "GET",
+          "path": "/api/campaigns/lab-demo-plan"
+        },
+        {
+          "method": "GET",
+          "path": "/api/events"
+        },
+        {
+          "method": "POST",
+          "path": "/api/sweeps/preview"
+        },
+        {
+          "method": "GET",
+          "path": "/api/events"
+        },
+        {
+          "method": "GET",
+          "path": "/api/nodes/jetson-worker-01/power"
+        }
+      ]
+    }
+  ]
+}

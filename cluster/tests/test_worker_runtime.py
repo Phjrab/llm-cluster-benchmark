@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import concurrent.futures
 import hashlib
 import importlib
 import sys
@@ -130,6 +131,42 @@ class FakeTelemetry:
 
 
 class WorkerRouteContractTests(unittest.TestCase):
+    def test_inventory_wait_does_not_block_stream_or_health(self) -> None:
+        client, backend, _ = self.make_client()
+        lock = threading.RLock()
+        entered = threading.Event()
+        inventory_entered = threading.Event()
+        release = threading.Event()
+        owners = []
+
+        def stream(**kwargs):
+            with lock:
+                entered.set()
+                for _ in range(24):
+                    owners.append(threading.get_ident())
+                    yield "x"
+                release.wait(3)
+
+        def inventory():
+            inventory_entered.set()
+            with lock:
+                return []
+
+        backend.stream_chat = stream
+        backend.model_inventory = inventory
+        with client, concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            streaming = pool.submit(client.post, "/cluster/chat/stream", json={"message": "test"})
+            self.assertTrue(entered.wait(2))
+            listing = pool.submit(client.get, "/cluster/models")
+            self.assertTrue(inventory_entered.wait(2))
+            try:
+                self.assertEqual(client.get("/cluster/health").status_code, 200)
+            finally:
+                release.set()
+            self.assertEqual(streaming.result(timeout=3).status_code, 200)
+            self.assertEqual(listing.result(timeout=3).status_code, 200)
+        self.assertEqual(len(set(owners)), 1)
+
     def make_client(self, *, auth: bool = False, backend_ready: bool = True, power: Optional[Dict[str, Any]] = None) -> tuple[TestClient, FakeInferenceBackend, FakeTelemetry]:
         backend = FakeInferenceBackend(ready=backend_ready)
         provider = FakeTelemetry(ready=False, degraded=True, power=power)

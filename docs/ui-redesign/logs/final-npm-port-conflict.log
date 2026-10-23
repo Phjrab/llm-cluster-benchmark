@@ -1,0 +1,34 @@
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test
+> npm run test:syntax && npm run test:fixtures && npm run test:publication-png && npm run test:e2e
+
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:syntax
+> node --check cluster/dashboard/static/app.js && node --check cluster/dashboard/static/js/navigation.js && node --check cluster/dashboard/static/js/state.js && node --check cluster/dashboard/static/js/api.js && node --check cluster/dashboard/static/js/events.js && node --check cluster/dashboard/static/js/utils.js && node --check cluster/dashboard/static/js/power.js && node --check cluster/dashboard/static/js/console.js && node --check cluster/dashboard/static/js/models.js && node --check cluster/dashboard/static/js/results.js && node --check cluster/dashboard/static/js/research.js && node --check cluster/dashboard/static/js/sweep-builder.js && node --check cluster/dashboard/static/js/sweep-control.js && node --check cluster/dashboard/static/js/sweep-results.js && node --check cluster/dashboard/static/js/lab.js
+
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:fixtures
+> node cluster/tests/test_dashboard_exports.js && node cluster/tests/test_research_lab.js
+
+dashboard export fixtures: OK
+research lab conditions, zero/null, metric semantics, matrix fixtures: OK
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:publication-png
+> node --check scripts/research/render_publication_png.js && node cluster/tests/test_phase11_publication_png.js
+
+phase11 publication PNG fixtures: OK
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:e2e
+> playwright test
+
+[WebServer] INFO:     Started server process [12879]
+
+[WebServer] INFO:     Waiting for application startup.
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] ERROR:    [Errno 48] error while attempting to bind on address ('127.0.0.1', 4173): [errno 48] address already in use
+[WebServer] INFO:     Waiting for application shutdown.
+
+[WebServer] INFO:     Application shutdown complete.
+
+Error: Process from config.webServer was not able to start. Exit code: 1

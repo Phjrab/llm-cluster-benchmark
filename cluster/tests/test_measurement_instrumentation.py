@@ -67,6 +67,9 @@ class MeasurementNormalizationTests(unittest.TestCase):
                     "power": {"total_w": 12.5},
                     "temperatures_c": {"soc": 51.0},
                     "cpu": {"frequency_mhz": 1728},
+                    "ram_used_mb": 1234.5,
+                    "ram_available_mb": 5678.0,
+                    "swap_used_mb": 0.0,
                     "network": {"bytes_sent": 10, "bytes_received": 20},
                     "telemetry_collection_overhead_s": 0.004,
                 },
@@ -82,6 +85,9 @@ class MeasurementNormalizationTests(unittest.TestCase):
         self.assertEqual(sample["run_id"], "run_01")
         self.assertEqual(sample["scenario_id"], "single")
         self.assertEqual(sample["node"], "jetson-01")
+        self.assertEqual(sample["ram_used_mb"], 1234.5)
+        self.assertEqual(sample["ram_available_mb"], 5678.0)
+        self.assertEqual(sample["swap_used_mb"], 0.0)
         self.assertEqual(sample["monotonic_elapsed_s"], 1.0125)
         self.assertEqual(sample["collection_overhead_s"], 0.025)
         self.assertIsNone(sample["controller_collection_interval_s"])
@@ -430,12 +436,20 @@ class TransportInstrumentationTests(unittest.TestCase):
             host="192.168.0.16",
             api_url="http://192.168.0.16:8000",
         )
-        with mock.patch(
+        with mock.patch.dict("os.environ", {
+            "CLUSTER_RESOURCE_OWNER_ID": "job_smoke",
+            "CLUSTER_RESOURCE_LEASE_ID": "lease_smoke",
+            "CLUSTER_RESOURCE_FENCING_EPOCH": "7",
+        }), mock.patch(
             "cluster.benchmark.transport.urllib.request.urlopen", return_value=Response()
-        ):
+        ) as opener:
             record = stream_worker_request(
                 node, config, RequestTask(1, 1, "single", "pi-02")
             )
+        headers = {key.lower(): value for key, value in opener.call_args.args[0].header_items()}
+        self.assertEqual(headers["x-cluster-resource-owner"], "job_smoke")
+        self.assertEqual(headers["x-cluster-resource-lease"], "lease_smoke")
+        self.assertEqual(headers["x-cluster-fencing-epoch"], "7")
         self.assertTrue(record["ok"])
         self.assertEqual(record["input_tokens"], 4)
         self.assertEqual(record["total_tokens"], 6)

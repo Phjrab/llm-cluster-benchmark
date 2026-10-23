@@ -1,20 +1,22 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
-  <title>MediFlow Cluster Lab</title>
+  <meta name="color-scheme" content="light dark">
+  <title>LLM Cluster Benchmark</title>
   <meta name="description" content="Mac Controller가 Jetson 및 Raspberry Pi 워커를 관리하는 재현 가능한 LLM 벤치마크 대시보드">
-  <link rel="stylesheet" href="/static/styles.css?v=20260928.pages">
-  <link rel="stylesheet" href="/static/sweeps.css?v=20260920.1">
+  <script src="/static/js/theme.js?v=20261007.theme"></script>
+  <link rel="stylesheet" href="/static/fonts/fonts.css?v=20261007.type">
+  <link rel="stylesheet" href="/static/styles.css?v=20261019.model-details">
+  <link rel="stylesheet" href="/static/sweeps.css?v=20261007.type">
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar" aria-label="주요 메뉴">
-      <a class="brand" href="#overview" aria-label="MediFlow Cluster Lab 홈">
-        <span class="brand-mark">M</span>
-        <span><strong>MediFlow</strong><small>CLUSTER LAB</small></span>
+      <a class="brand" href="#overview" aria-label="LLM Cluster Benchmark 홈">
+        <span class="brand-mark">LL</span>
+        <span><strong>LLM Cluster</strong><small>BENCHMARK RESEARCH LAB</small></span>
       </a>
       <nav class="nav-list" aria-label="기능별 페이지">
         <p class="nav-group-label">준비 · 관리</p>
@@ -39,11 +41,12 @@
     <main class="main-content">
       <header class="topbar">
         <div>
-          <p class="eyebrow">CLUSTER LAB <span aria-hidden="true">/</span> <span id="pageGroup">준비 · 관리</span></p>
+          <p class="eyebrow">RESEARCH LAB <span aria-hidden="true">/</span> <span id="pageGroup">준비 · 관리</span></p>
           <h1 id="pageTitle" tabindex="-1">클러스터 개요</h1>
         </div>
         <div class="topbar-actions">
           <span class="timestamp" id="lastUpdated">상태 확인 중</span>
+          <button class="icon-button theme-toggle" id="themeToggle" type="button" aria-label="다크 모드" aria-pressed="false" title="다크 모드로 전환"><span id="themeIcon" aria-hidden="true">☀</span><span id="themeLabel">화이트</span></button>
           <button class="icon-button" id="refreshButton" type="button" title="상태 새로고침" aria-label="상태 새로고침">↻</button>
           <button class="icon-button" id="settingsButton" type="button" title="클러스터 설정" aria-label="클러스터 설정">⚙</button>
           <button class="button secondary" id="addNodeButton" type="button">+ 워커 연결</button>
@@ -58,42 +61,22 @@
           <optgroup label="분석 · 연구"><option value="results">06 · 결과</option><option value="campaign">07 · 캠페인</option><option value="compare">08 · 비교</option><option value="research">09 · 연구 준비</option></optgroup>
         </select>
       </nav>
+      <div id="researchDataState" class="research-data-state" role="status" hidden></div>
+      <div class="lab-context" id="labContext" aria-label="연구 조건 문맥">Model / hash UNKNOWN · Runtime / source UNKNOWN · Platform UNKNOWN · Power UNKNOWN · Strategy UNKNOWN · Provenance UNKNOWN · Phase UNKNOWN</div>
       <noscript><p class="navigation-notice">기능별 페이지와 실시간 상태를 사용하려면 JavaScript를 활성화하세요.</p></noscript>
 
-      <section id="overview" class="section hero-section" data-dashboard-page="overview">
-        <div class="hero-copy">
-          <span class="section-kicker">LIVE TESTBED</span>
-          <h2>작은 엣지 노드를<br><em>하나의 실험실처럼.</em></h2>
-          <p>연결된 Jetson과 Raspberry Pi의 상태를 확인하고, 참여 노드를 골라 동일 모델과 파라미터로 재현 가능한 LLM 부하 실험을 실행합니다.</p>
-          <div class="hero-actions">
-            <a class="button primary" href="#experiment">새 실험 설계</a>
-            <button class="button ghost" id="quickHealthButton" type="button">환경 점검 실행</button>
-          </div>
-          <section class="controller-panel" aria-label="Controller 상태">
-            <div><span>CONTROLLER</span><strong id="controllerName">Mac Control Plane</strong><small id="controllerPlatform">macOS</small></div>
-            <div><span>DASHBOARD</span><strong id="controllerDashboard">ONLINE</strong><small>관리 API</small></div>
-            <div><span>SCHEDULER</span><strong id="controllerScheduler">READY</strong><small>실험 작업</small></div>
-            <div><span>STORAGE</span><strong id="controllerStorage">READY</strong><small>결과·이벤트</small></div>
-          </section>
+      <section id="overview" class="section lab-overview" data-dashboard-page="overview">
+        <div class="section-heading">
+          <div><span class="section-index">01 / EXPERIMENT MATRIX</span><h2>Experiment Matrix</h2><p>저장된 plan의 조건, 반복, 실행 상태와 결과 연결을 확인합니다.</p></div>
+          <div class="hero-actions"><a class="button primary" href="#experiment">새 실험 설계</a><a class="button ghost" href="#compare">조건별 비교 →</a></div>
         </div>
-        <div class="cluster-orbit" aria-label="현재 클러스터 요약">
-          <div class="orbit-ring ring-one"></div>
-          <div class="orbit-ring ring-two"></div>
-          <div class="core-node">
-            <span>CONTROLLER</span>
-            <strong id="controllerStatus">—</strong>
-            <small id="controllerAddress">상태 확인 중</small>
-          </div>
-          <div class="orbit-workers" id="orbitWorkers" aria-label="등록된 워커 상태"></div>
-          <div class="orbit-caption"><span id="onlineCount">0</span> / <span id="workerCount">0</span> ONLINE · <span id="enabledCount">0</span> ENABLED</div>
+        <div class="matrix-toolbar"><label for="overviewCampaignSelect">저장된 campaign</label><select id="overviewCampaignSelect"><option value="">불러오는 중</option></select><span id="overviewGate" class="research-eligibility">GATE UNKNOWN</span><a href="#research">차단 사유 확인</a></div>
+        <div id="overviewMatrix" class="experiment-matrix" aria-live="polite"><div class="research-empty"><strong>Plan을 불러오는 중입니다.</strong></div></div>
+        <div class="lab-operations">
+          <section class="lab-worker-summary"><h3>Inference Workers</h3><p><span id="onlineCount">0</span> / <span id="workerCount">0</span> ONLINE · <span id="enabledCount">0</span> ENABLED</p><div id="orbitWorkers" class="worker-status-list" aria-label="등록된 Worker 상태"></div><a href="#nodes">Worker inventory →</a></section>
+          <section class="lab-management"><h3>Controller · management only</h3><p><strong id="controllerStatus">UNKNOWN</strong> · <span id="controllerAddress">UNKNOWN</span> · 추론에 참여하지 않음</p><div class="controller-panel" aria-label="Controller 관리 상태"><div><span>CONTROLLER</span><strong id="controllerName">Mac Control Plane</strong><small id="controllerPlatform">macOS</small></div><div><span>DASHBOARD</span><strong id="controllerDashboard">UNKNOWN</strong><small>관리 API</small></div><div><span>SCHEDULER</span><strong id="controllerScheduler">UNKNOWN</strong><small>durable jobs</small></div><div><span>STORAGE</span><strong id="controllerStorage">UNKNOWN</strong><small>결과·이벤트</small></div></div><button class="button ghost compact" id="quickHealthButton" type="button">환경 점검 실행</button></section>
         </div>
-      </section>
-
-      <section class="metric-strip" aria-label="클러스터 주요 지표" data-dashboard-page="overview">
-        <article><span>참여 노드</span><strong id="selectedCount">1</strong><small>SELECTED</small></article>
-        <article><span>설치 모델</span><strong id="modelCount">—</strong><small>GGUF · WORKERS</small></article>
-        <article><span>클러스터 전력</span><strong id="averagePower">—</strong><small>SUM · WATTS</small></article>
-        <article><span>최근 처리량</span><strong id="recentThroughput">—</strong><small>TOKENS / SEC</small></article>
+        <section class="metric-strip" aria-label="클러스터 관측 현황" data-dashboard-page="overview"><article><span>선택 Worker</span><strong id="selectedCount">0</strong><small>INFERENCE ONLY</small></article><article><span>설치 모델</span><strong id="modelCount">—</strong><small>GGUF</small></article><article><span>Worker 전력 합계</span><strong id="averagePower">—</strong><small id="powerCoverage">UNKNOWN · W</small></article><article><span>최근 물리 처리량</span><strong id="recentThroughput">—</strong><small>TOK/S · 복제 포함</small></article></section>
       </section>
 
       <section id="nodes" class="section panel-section" data-dashboard-page="nodes" hidden>
@@ -509,6 +492,7 @@
           <div><span class="section-index">07 / CAMPAIGN</span><h2>캠페인 진행 현황</h2><p>재시작 가능한 연구 campaign의 cell, 반복, drift, 결과 연결률을 함께 확인합니다.</p></div>
           <div class="heading-actions"><button class="button ghost compact" id="refreshResearchButton" type="button">연구 현황 새로고침</button></div>
         </div>
+        <div id="campaignMatrix" class="experiment-matrix" aria-live="polite"></div>
         <div id="campaignSummary" class="campaign-summary" aria-live="polite"><div class="research-empty"><strong>캠페인 현황을 불러오는 중입니다.</strong></div></div>
         <div class="campaign-layout">
           <div id="campaignList" class="campaign-list" aria-label="캠페인 목록"></div>
@@ -521,28 +505,34 @@
           <div><span class="section-index">08 / CROSS-RUN COMPARE</span><h2>실행 간 비교</h2><p>같은 의미의 run만 골라 플랫폼·노드 수·전략·실행 환경과 측정 품질을 비교합니다.</p></div>
           <div class="chart-actions"><button type="button" id="researchCompareCsv">CSV <b>↓</b></button><button type="button" data-chart-png="researchCompareChart">PNG <b>↓</b></button><button type="button" data-paper-export="researchCompareChart">논문용 <b>↗</b></button></div>
         </div>
+        <div class="compare-workspace"><aside class="compare-condition-rail" aria-label="조건 필터">
         <div class="compare-filter-grid" id="compareFilters">
           <label><span>CAMPAIGN</span><select data-compare-filter="campaign_id"><option value="all">전체</option></select></label>
           <label><span>MODEL LOCK</span><select data-compare-filter="model_lock"><option value="all">전체</option></select></label>
           <label><span>PLATFORM</span><select data-compare-filter="platform"><option value="all">전체</option></select></label>
           <label><span>NODE COUNT</span><select data-compare-filter="node_count"><option value="all">전체</option></select></label>
           <label><span>STRATEGY</span><select data-compare-filter="strategy"><option value="all">전체</option></select></label>
+        </div>
+        <details><summary>Runtime · Power · Quality</summary><div class="compare-filter-grid">
           <label><span>RUNTIME</span><select data-compare-filter="runtime_fingerprint"><option value="all">전체</option></select></label>
           <label><span>POWER MODE</span><select data-compare-filter="power_mode"><option value="all">전체</option></select></label>
           <label><span>QUALITY</span><select data-compare-filter="measurement_quality"><option value="all">전체</option></select></label>
-        </div>
-        <div class="compare-toolbar">
-          <label><span>비교 지표</span><select id="compareMetric"><option value="throughput_tokens_s">처리량 · tok/s</option><option value="ttft_p50_s">TTFT · p50</option><option value="e2e_p95_s">E2E · p95</option><option value="success_rate">성공률</option></select></label>
-          <label><span>기준 RUN</span><select id="compareBaseline"><option value="">최초 표시 run</option></select></label>
+        </div></details>
           <button class="button ghost compact" id="resetCompareFilters" type="button">필터 초기화</button>
+        </aside><div class="compare-analysis">
+        <div class="compare-toolbar">
+          <label><span>비교 지표</span><select id="compareMetric"><option value="throughput_tokens_s">물리 처리량 · tok/s</option><option value="effective_user_tokens_per_s">유효 사용자 처리량 · tok/s</option><option value="logical_requests_per_s">논리 요청 · req/s</option><option value="generated_tokens_per_j">생성 토큰 · tok/J</option><option value="ttft_p50_s">TTFT · p50</option><option value="e2e_p95_s">E2E · p95</option><option value="success_rate">성공률</option></select></label>
+          <label><span>기준 RUN</span><select id="compareBaseline"><option value="">Baseline 선택 필요</option></select></label>
           <small id="compareCoverage">0 runs</small>
         </div>
+        <div class="comparison-contract"><label for="compareAxis">통제된 비교 축</label><select id="compareAxis"><option value="">동일 조건 반복</option><option value="strategy,node_count">전략 + Worker 수</option><option value="platform,runtime_fingerprint,power_mode">플랫폼 + runtime + 전력</option><option value="node_count">Worker 수</option></select><p id="comparisonNotice" role="status">Baseline을 선택하세요. 미확인 조건은 N/A로 표시합니다.</p></div>
         <article class="chart-card research-chart-card" data-chart-card="researchCompareChart">
           <div class="chart-card-head"><div class="chart-heading"><span>CROSS-RUN METRIC</span><strong id="researchCompareTitle">조건별 처리량</strong></div><span id="compareLegacyNote" class="legacy-note"></span></div>
-          <div class="chart-stage"><canvas id="researchCompareChart" height="330" tabindex="0" role="img" aria-label="필터된 실행 간 성능 비교 그래프" aria-describedby="researchCompareHint"></canvas><div class="chart-tooltip" id="researchCompareChartTooltip" role="status" hidden></div></div>
+          <div class="chart-stage"><canvas id="researchCompareChart" height="240" tabindex="0" role="img" aria-label="필터된 실행 간 성능 비교 그래프" aria-describedby="researchCompareHint"></canvas><div class="chart-tooltip" id="researchCompareChartTooltip" role="status" hidden></div></div>
           <div class="chart-footer"><div class="chart-legend" id="researchCompareChartLegend" aria-label="비교 그래프 범례"></div><small id="researchCompareHint">점을 가리키면 run·모델·플랫폼·품질을 확인할 수 있습니다.</small></div>
         </article>
-        <div class="table-wrap research-table-wrap"><table><thead><tr><th>RUN</th><th>모델</th><th>플랫폼 / 노드</th><th>전략</th><th>환경</th><th>품질 / 상태</th><th id="compareMetricColumn">처리량</th><th>기준 대비</th></tr></thead><tbody id="compareRunsTable"><tr><td colspan="8" class="empty-cell">비교할 실행 없음</td></tr></tbody></table></div>
+        </div></div>
+        <div class="table-wrap research-table-wrap"><table><thead><tr><th>RUN</th><th>모델</th><th>플랫폼 / 노드</th><th>전략</th><th>환경</th><th>품질 / 상태</th><th id="compareMetricColumn">처리량</th><th>Baseline / 조건 차이</th></tr></thead><tbody id="compareRunsTable"><tr><td colspan="8" class="empty-cell">비교할 실행 없음</td></tr></tbody></table></div>
       </section>
 
       <section id="research" class="section research-section readiness-section" data-dashboard-page="research" hidden>
@@ -555,7 +545,7 @@
         <section id="researchBlockers" class="research-blockers"></section>
       </section>
 
-      <footer><span>MediFlow Cluster Lab</span><span>Internal LAN · Reproducible Edge LLM Evaluation</span></footer>
+      <footer><span>LLM Cluster Benchmark</span><span>Internal LAN · Reproducible Edge LLM Evaluation</span></footer>
     </main>
   </div>
 
@@ -699,20 +689,22 @@
     </div>
   </dialog>
 
+  <dialog id="matrixInspectDialog" class="modal matrix-inspector" aria-labelledby="matrixInspectTitle"><div class="matrix-inspector-shell"><div class="modal-head"><div><span class="section-index">PLAN CELL INSPECTION</span><h2 id="matrixInspectTitle">조건과 연결된 실행</h2></div><button type="button" class="close-button" data-close-dialog aria-label="닫기">×</button></div><div id="matrixInspectContent"></div><div class="modal-actions"><a class="button ghost" href="#compare" id="matrixCompareLink">조건별 비교 →</a><button class="button primary" type="button" data-close-dialog>닫기</button></div></div></dialog>
   <div class="toast-stack" id="toastStack" aria-live="polite"></div>
   <script src="/static/js/state.js?v=20260919.1" defer></script>
   <script src="/static/js/api.js?v=20260824.1" defer></script>
   <script src="/static/js/events.js?v=20260824.1" defer></script>
-  <script src="/static/js/navigation.js?v=20260928.1" defer></script>
-  <script src="/static/app.js?v=20260928.pages" defer></script>
+  <script src="/static/js/navigation.js?v=20261007.lab" defer></script>
+  <script src="/static/app.js?v=20261007.type" defer></script>
   <script src="/static/js/sweep-builder.js?v=20260920.2" defer></script>
-  <script src="/static/js/sweep-control.js?v=20260920.1" defer></script>
-  <script src="/static/js/sweep-results.js?v=20260920.1" defer></script>
+  <script src="/static/js/sweep-control.js?v=20261019.studies" defer></script>
+  <script src="/static/js/sweep-results.js?v=20261019.studies" defer></script>
   <script src="/static/js/utils.js?v=20260821.6" defer></script>
   <script src="/static/js/power.js?v=20260920.1" defer></script>
   <script src="/static/js/console.js?v=20260821.6" defer></script>
-  <script src="/static/js/models.js?v=20260920.2" defer></script>
+  <script src="/static/js/models.js?v=20261007.vendor" defer></script>
   <script src="/static/js/results.js?v=20260920.2" defer></script>
-  <script src="/static/js/research.js?v=20260920.1" defer></script>
+  <script src="/static/js/lab.js?v=20261007.1" defer></script>
+  <script src="/static/js/research.js?v=20261007.type" defer></script>
 </body>
 </html>

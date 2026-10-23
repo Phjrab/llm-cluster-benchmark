@@ -1,0 +1,34 @@
+{
+  "fonts": [
+    {
+      "family": "Inter",
+      "weight": "100 900",
+      "status": "loaded"
+    },
+    {
+      "family": "Pretendard Variable",
+      "weight": "45 920",
+      "status": "loaded"
+    },
+    {
+      "family": "IBM Plex Mono",
+      "weight": "400",
+      "status": "loaded"
+    }
+  ],
+  "requests": [
+    {
+      "url": "http://127.0.0.1:46178/static/fonts/inter/InterVariable.woff2",
+      "bytes": 352540
+    },
+    {
+      "url": "http://127.0.0.1:46178/static/fonts/pretendard/PretendardVariable.woff2",
+      "bytes": 2057988
+    },
+    {
+      "url": "http://127.0.0.1:46178/static/fonts/ibm-plex-mono/IBMPlexMono-Regular.woff2",
+      "bytes": 45940
+    }
+  ],
+  "canvasFont": "500 12px Inter, \"Pretendard Variable\", Pretendard, -apple-system, \"system-ui\", \"Apple SD Gothic Neo\", sans-serif"
+}

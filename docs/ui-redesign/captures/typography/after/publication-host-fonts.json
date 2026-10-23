@@ -1,0 +1,18 @@
+{
+  "host": "local macOS Chromium",
+  "fonts": [
+    {
+      "familyName": "Apple SD Gothic Neo",
+      "postScriptName": "AppleSDGothicNeo-Bold",
+      "isCustomFont": false,
+      "glyphCount": 12
+    },
+    {
+      "familyName": "Arial",
+      "postScriptName": "Arial-BoldMT",
+      "isCustomFont": false,
+      "glyphCount": 3
+    }
+  ],
+  "remoteLinuxServer": "not tested; Arial/CJK availability is host-dependent"
+}

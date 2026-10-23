@@ -1,0 +1,23 @@
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:e2e
+> playwright test --grep Research workspace fits
+
+[WebServer] INFO:     Started server process [15174]
+[WebServer] INFO:     Waiting for application startup.
+
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:46174 (Press CTRL+C to quit)
+
+
+Running 4 tests using 1 worker
+
+(node:15187) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/4] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1440x900, with readable labels and native focus
+[2/4] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1366x768, with readable labels and native focus
+[3/4] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1024x768, with readable labels and native focus
+[4/4] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 390x844, with readable labels and native focus
+  4 passed (8.0s)

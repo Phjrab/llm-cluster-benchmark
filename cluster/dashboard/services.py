@@ -1107,12 +1107,14 @@ def _sweep_workers() -> List[WorkerReference]:
             platform = "unknown"
         values: Dict[str, Any] = {
             "worker_id": node.name,
-            "endpoint_identity": f"{node.host}:{node.api_port}",
+            "endpoint_identity": "endpoint-" + hashlib.sha256(
+                f"{node.host}:{node.api_port}".encode("ascii")
+            ).hexdigest(),
             "platform": platform,
             "availability": "valid" if live.get("api") is True else "blocked" if live else "unknown",
             "rpc_layer": "valid" if capabilities.get("rpc_layer_v1") is True else "unknown",
             "rpc_row": "valid" if capabilities.get("rpc_row_v1") is True else "unknown",
-            "load_profile": "valid" if capabilities.get("worker_load_profile_v1") is True else "unknown",
+            "load_profile": "valid" if capabilities.get("load_profile_v1") is True else "unknown",
         }
         if re.fullmatch(r"[0-9a-f]{40}", runtime_commit):
             values["runtime_commit"] = runtime_commit
@@ -2515,6 +2517,7 @@ class DashboardFacade:
         self._sweeps = SweepService(
             drafts=SweepDraftRepository(SWEEP_DRAFTS_DIR),
             runs=sweep_runs,
+            study_directory=JOBS_DIR.parent / "studies",
             resolver=resolve_sweep_request,
             supervisor_factory=lambda prompt_provider, drift_checker: SweepSupervisor(
                 sweep_runs,

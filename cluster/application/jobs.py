@@ -422,6 +422,12 @@ class JobService:
                     continue
                 terminal = self._terminal_from_suite(job)
                 if terminal is not None:
+                    # The suite writes its summary before the child releases
+                    # Worker ownership and the Controller lease. A live child
+                    # remains authoritative throughout cleanup and cooldown.
+                    if self._live_identity_with_retry(job) is not None:
+                        recovered.append(job)
+                        continue
                     reservation = job.get("resource_reservation")
                     unresolved = False
                     if isinstance(reservation, Mapping):

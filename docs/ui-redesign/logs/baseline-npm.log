@@ -1,0 +1,67 @@
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test
+> npm run test:syntax && npm run test:fixtures && npm run test:publication-png && npm run test:e2e
+
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:syntax
+> node --check cluster/dashboard/static/app.js && node --check cluster/dashboard/static/js/navigation.js && node --check cluster/dashboard/static/js/state.js && node --check cluster/dashboard/static/js/api.js && node --check cluster/dashboard/static/js/events.js && node --check cluster/dashboard/static/js/utils.js && node --check cluster/dashboard/static/js/power.js && node --check cluster/dashboard/static/js/console.js && node --check cluster/dashboard/static/js/models.js && node --check cluster/dashboard/static/js/results.js && node --check cluster/dashboard/static/js/research.js && node --check cluster/dashboard/static/js/sweep-builder.js && node --check cluster/dashboard/static/js/sweep-control.js && node --check cluster/dashboard/static/js/sweep-results.js
+
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:fixtures
+> node cluster/tests/test_dashboard_exports.js
+
+dashboard export fixtures: OK
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:publication-png
+> node --check scripts/research/render_publication_png.js && node cluster/tests/test_phase11_publication_png.js
+
+node:assert:95
+  throw new AssertionError(obj);
+  ^
+
+AssertionError [ERR_ASSERTION]: render-publication-png: browserType.launch: Target page, context or browser has been closed
+Browser logs:
+
+<launching> <user-home>/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,Translate,AutoDeElevate,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=<tmp>/playwright_chromiumdev_profile-pF9NKq --remote-debugging-pipe --no-startup-window
+<launched> pid=3210
+[pid=3210][err] [1007/151658.197622:ERROR:base/power_monitor/thermal_state_observer_mac.mm:140] ThermalStateObserverMac unable to register to power notifications. Result: 9
+[pid=3210][err] [1007/151658.224452:ERROR:net/dns/dns_config_service_posix.cc:138] DNS config watch failed to start.
+[pid=3210][err] [1007/151658.227314:WARNING:net/dns/dns_config_service_posix.cc:197] Failed to read DnsConfig.
+[pid=3210][err] [1007/151658.236848:FATAL:base/apple/mach_port_rendezvous_mac.cc:159] Check failed: kr == KERN_SUCCESS. bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.3210: Permission denied (1100)
+Call log:
+  - <launching> <user-home>/Library/Caches/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-mac-arm64/chrome-headless-shell --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-check --disable-default-apps --disable-dev-shm-usage --disable-edgeupdater --disable-extensions --disable-features=AvoidUnnecessaryBeforeUnloadCheckSync,BoundaryEventDispatchTracksNodeRemoval,DestroyProfileOnBrowserClose,DialMediaRouteProvider,GlobalMediaControls,HttpsUpgrades,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,BlockOriginHeaderModificationOnRedirect,Translate,AutoDeElevate,OptimizationHints,msForceBrowserSignIn,msEdgeUpdateLaunchServicesPreferredVersion --enable-features=CDPScreenshotNewSurface --allow-pre-commit-input --disable-hang-monitor --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-updater-scheduler --force-color-profile=srgb --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --no-service-autorun --export-tagged-pdf --disable-search-engine-choice-screen --unsafely-disable-devtools-self-xss-warnings --edge-skip-compat-layer-relaunch --disable-infobars --disable-search-engine-choice-screen --disable-sync --enable-unsafe-swiftshader --headless --hide-scrollbars --mute-audio --blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4 --no-sandbox --user-data-dir=<tmp>/playwright_chromiumdev_profile-pF9NKq --remote-debugging-pipe --no-startup-window
+  - <launched> pid=3210
+  - [pid=3210][err] [1007/151658.197622:ERROR:base/power_monitor/thermal_state_observer_mac.mm:140] ThermalStateObserverMac unable to register to power notifications. Result: 9
+  - [pid=3210][err] [1007/151658.224452:ERROR:net/dns/dns_config_service_posix.cc:138] DNS config watch failed to start.
+  - [pid=3210][err] [1007/151658.227314:WARNING:net/dns/dns_config_service_posix.cc:197] Failed to read DnsConfig.
+  - [pid=3210][err] [1007/151658.236848:FATAL:base/apple/mach_port_rendezvous_mac.cc:159] Check failed: kr == KERN_SUCCESS. bootstrap_check_in org.chromium.Chromium.MachPortRendezvousServer.3210: Permission denied (1100)
+  - [pid=3210] <gracefully close start>
+  - [pid=3210] <kill>
+  - [pid=3210] <will force kill>
+  - [pid=3210] exception while trying to kill process: Error: kill EPERM
+  - [pid=3210] <process did exit: exitCode=null, signal=SIGTRAP>
+  - [pid=3210] starting temporary directories cleanup
+  - [pid=3210] finished temporary directories cleanup
+  - [pid=3210] <gracefully close end>
+
+
+
+2 !== 0
+
+    at Object.<anonymous> (<repo>/cluster/tests/test_phase11_publication_png.js:35:10)
+    at Module._compile (node:internal/modules/cjs/loader:1730:14)
+    at Object..js (node:internal/modules/cjs/loader:1895:10)
+    at Module.load (node:internal/modules/cjs/loader:1465:32)
+    at Function._load (node:internal/modules/cjs/loader:1282:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 2,
+  expected: 0,
+  operator: 'strictEqual'
+}
+
+Node.js v22.17.1

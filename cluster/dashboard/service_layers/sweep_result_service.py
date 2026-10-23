@@ -161,7 +161,7 @@ class SweepResultService:
             "rtt_semantics": "unavailable unless a dedicated RTT source is present",
         }
 
-    def assemble(self, manifest: Mapping[str, Any], plan: Any) -> dict[str, Any]:
+    def assemble(self, manifest: Mapping[str, Any], plan: Any, *, energy_unavailable_reason: str | None = None) -> dict[str, Any]:
         cells = {cell.cell_id: cell for cell in plan.cells}
         trials: list[dict[str, Any]] = []
         completed_rows: list[dict[str, Any]] = []
@@ -189,6 +189,12 @@ class SweepResultService:
                 ]
                 evidence = self._request_evidence(responses)
                 metrics = {name: _metric(summary, name) for name in RUN_METRICS}
+                energy = _energy(summary)
+                if energy_unavailable_reason:
+                    metrics["generated_tokens_per_j"] = None
+                    energy = {"generated_tokens_per_j": None, "available": False,
+                              "quality": "unavailable", "reason": energy_unavailable_reason,
+                              "coverage": {}, "unavailable_nodes": []}
                 attempt.update({
                     "evidence_status": "available" if summary else "unavailable",
                     "summary_status": summary.get("status"),
@@ -197,7 +203,7 @@ class SweepResultService:
                     "condition_mismatch": bool(mismatches),
                     "mismatch_fields": mismatches,
                     "metrics": metrics,
-                    "energy": _energy(summary),
+                    "energy": energy,
                     "request_evidence": evidence,
                     "responses": responses,
                     "measurements": measurements,
