@@ -92,12 +92,12 @@ class CatalogExpansionTests(unittest.TestCase):
         raw = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
         entries = parse_catalog_entries(raw["models"])
         ids = {entry.id for entry in entries}
-        self.assertEqual(len(entries), 34)
+        self.assertEqual(len(entries), 36)
         self.assertIn("qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf", ids)
         self.assertIn("granite-3.3-8b/granite-3.3-8b-instruct-Q4_K_M.gguf", ids)
         families = {entry.family for entry in entries}
         self.assertTrue({"DeepSeek-R1 Distill", "Gemma 3", "Ministral 3", "Magistral", "Llama 3.3"}.issubset(families))
-        self.assertEqual(sum(entry.download_policy is DownloadPolicy.DIRECT for entry in entries), 33)
+        self.assertEqual(sum(entry.download_policy is DownloadPolicy.DIRECT for entry in entries), 35)
         direct = [entry for entry in entries if entry.download_eligibility["eligible"]]
         self.assertGreaterEqual(len(direct), 20)
         self.assertTrue(all(entry.identity_locked for entry in entries if entry.download_policy is DownloadPolicy.DIRECT))

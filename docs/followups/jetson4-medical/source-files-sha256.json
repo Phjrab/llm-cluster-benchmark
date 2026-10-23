@@ -1,0 +1,32 @@
+{
+  "base_commit": "186dc69474610f0436d693dd339da155b83e7ae1",
+  "files": {
+    "cluster/benchmark/instrumentation.py": "8153c129ec450515b9a6caba5a249a408a2c46b753302cb865b1f975f68e8425",
+    "cluster/benchmark/persistence.py": "505acc048a631297dd41c6367f158661e64119cdf6a87b39345be0d726ff8e0c",
+    "cluster/benchmark/transport.py": "e7b0636e8153b3c0a1c45f1fd92dc2ffad4e25dbf6780542e80c3530f69c1501",
+    "cluster/config/model_catalog.json": "bd291518d7f4a1da72d84ab4dbda91f8032b9f3d6a8bc14b4ca4ef3563bf28e2",
+    "cluster/dashboard/static/js/sweep-builder.js": "dc1ab6b2b2fc5765a90e1767d0defc20bb56c4712898ae356c1bef162b12099e",
+    "cluster/dashboard/templates/index.html": "3e08dd83d77198b6672f393a904f8a1d2692dccbd502bb5ea190ed6ad76a6acc",
+    "cluster/medical/__init__.py": "05bf728c2c85ffea338d90a0bd5525422bd76a40c656ac245c0298c6e07dfd14",
+    "cluster/medical/__main__.py": "a8c8b9c1eb06698398b96fab604816d688ce2549c4efedea0279834e2dd68f4d",
+    "cluster/medical/bank.py": "112dac5ee4098e2385eebcc2e2aed5717f3aa5a0674772b794fd059e030072f5",
+    "cluster/medical/data/SOURCES.md": "6d7b8f21b0b8d0161754e26c7f047af1f7bc1d67814f430e80ce6a93115d3ab3",
+    "cluster/medical/data/medical_prompts.en_paired.jsonl": "0c910e2b4a86c8a86aeded52ab12c57660e1e892f9111f03a1e6cc6555262caa",
+    "cluster/medical/data/medical_prompts.ko.jsonl": "2634c976c8e67c6942a0347032f63456b9abc641035d6973dcacd4e0e27fcfc2",
+    "cluster/medical/data/models.json": "d832792ce3cd79d0eacd9ecfc72afc21f558cccb57940390d864f91df1555491",
+    "cluster/medical/data/prompt_profiles.json": "081283de4ff09f6e5d7ec5930d68f8b3a9d3ce542c2dbb35141fd2fa0dcd88f8",
+    "cluster/medical/datasets.py": "e8eff2077ca9b3605ebe6e80154e89db766a2f43313db7fb76b9d694e5c6ec8b",
+    "cluster/medical/evaluation/medical_rubrics.EVALUATOR_ONLY.jsonl": "aea93b2fd5dfdee20cdfaad885aa068a1df1e12362a444a47afffae51e71521b",
+    "cluster/medical/evaluator.py": "38ce283c47fc6658306637d92ab12adf5d175eb51b4ff731a03267a02e8cab42",
+    "cluster/medical/planning.py": "68171043658dc32999c6905d7ce784ac4ebb7fbdcebc440245a46407da1d8116",
+    "cluster/medical/results.py": "ac458d670ca85d13abda9f0696667e853e80a5d2c3d372e01a36f8184d56a007",
+    "cluster/tests/e2e/dashboard.spec.js": "d33829ecdcda70d398d599253d4ee80b1d5893da5ede6737f67e0cb05bfa75ef",
+    "cluster/tests/test_dashboard_exports.js": "f99a8d25b1ca3084b4f9d3f640a703208796a1fc09f239afa8046bbc3e64fe7b",
+    "cluster/tests/test_medical.py": "913078c269cf94881398551505032b545b7331f3038212b91af8d97bcc1ce279",
+    "cluster/tests/test_model_library_followup.py": "1b72c090487606ad709ed976735723aea26bef7964f5e587ad246f77bfa24f20",
+    "cluster/tests/test_packaging.py": "8f0b028676cf44576dc12af301c40fdde8380f0021eb4e98c47bd03ad8573a1b",
+    "cluster/worker/inference.py": "c1f9620ab24787fdf63830f667f49c2255f9e4c8efa8b4891c1f9e5563b4dbfe",
+    "cluster/worker/routes.py": "060ca05ebfeb7aebd9700d63632f8359032ed1c2c535f94589fcae94f5e3472c",
+    "pyproject.toml": "d50e3efee5f28be367760a718026249d57628f901cac7e95c26fbb645bf73a43"
+  }
+}

@@ -158,7 +158,7 @@ def stream_worker_request(
         "template_hash": server_metrics.get("template_hash"),
         "worker_inference_lock_wait_s": server_metrics.get("worker_inference_lock_wait_s"),
         "prompt_eval_s": server_metrics.get("prompt_eval_s"),
-        **{key: server_metrics.get(key) for key in ("finish_reason", "requested_n_ctx", "effective_n_ctx", "requested_max_tokens", "effective_max_tokens", "prompt_sha256", "model_sha256", "preparation_id", "output_tokens_exact")},
+        **{key: server_metrics.get(key) for key in ("finish_reason", "requested_n_ctx", "effective_n_ctx", "requested_max_tokens", "effective_max_tokens", "prompt_sha256", "model_sha256", "preparation_id", "rendered_prompt_sha256", "rendered_prompt_hash_source", "output_tokens_exact")},
         "inference_slots": server_metrics.get("inference_slots", 1),
     }
 

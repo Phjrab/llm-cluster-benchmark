@@ -1,0 +1,13 @@
+{
+  "pack_files": {
+    "CODEX_JETSON4_MEDICAL_BENCHMARK.md": "b72398c5c32a3bb57349fb3095ce484f0632b4c316e8b16fbf8bb28ca7759382",
+    "medical_prompts.ko.jsonl": "2634c976c8e67c6942a0347032f63456b9abc641035d6973dcacd4e0e27fcfc2",
+    "medical_prompts.en_paired.jsonl": "0c910e2b4a86c8a86aeded52ab12c57660e1e892f9111f03a1e6cc6555262caa",
+    "medical_rubrics.EVALUATOR_ONLY.jsonl": "aea93b2fd5dfdee20cdfaad885aa068a1df1e12362a444a47afffae51e71521b",
+    "prompt_profiles.json": "081283de4ff09f6e5d7ec5930d68f8b3a9d3ce542c2dbb35141fd2fa0dcd88f8",
+    "model_candidates.template.json": "9f644c21ffde4d2c373cba15ba183a14b0ec4728d3a9e017c95a3698c21c746e",
+    "experiment_plan.DESIGN_ONLY.json": "d620131f3af50abd76b3f7fe9512ab7d9535d8f32fd0f98b24130ee5c2254505",
+    "SOURCES.md": "6d7b8f21b0b8d0161754e26c7f047af1f7bc1d67814f430e80ce6a93115d3ab3"
+  },
+  "policy": "User PREPARE_ONLY instructions govern; design documents are not executable authorization."
+}

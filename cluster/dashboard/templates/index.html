@@ -332,6 +332,14 @@
               <button class="button ghost compact" id="sweepResetButton" type="button">초기화</button>
             </header>
 
+            <div class="field full-field">
+              <label for="sweepPresetFile">준비된 Sweep preset JSON</label>
+              <input id="sweepPresetFile" type="file" accept=".json,application/json">
+              <button class="button secondary compact" id="sweepImportPresetButton" type="button">Preset 파일 미리보기</button>
+              <small>.request.json을 읽어 cached preview만 요청합니다. 설치와 실행은 시작하지 않습니다. 양식 조건을 편집하면 imported preset 검토가 취소됩니다.</small>
+              <details id="sweepImportedPreset" hidden><summary>가져온 실제 조건 · 아래 양식 대신 이 JSON을 저장합니다</summary><pre id="sweepImportedPayload" style="max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere"></pre></details>
+            </div>
+
             <div class="sweep-form-grid">
               <div class="field full-field">
                 <label for="sweepIdInput">Sweep ID</label>
@@ -696,7 +704,7 @@
   <script src="/static/js/events.js?v=20260824.1" defer></script>
   <script src="/static/js/navigation.js?v=20261007.lab" defer></script>
   <script src="/static/app.js?v=20261007.type" defer></script>
-  <script src="/static/js/sweep-builder.js?v=20260920.2" defer></script>
+  <script src="/static/js/sweep-builder.js?v=20261023.1" defer></script>
   <script src="/static/js/sweep-control.js?v=20261023.f03" defer></script>
   <script src="/static/js/sweep-results.js?v=20261019.studies" defer></script>
   <script src="/static/js/utils.js?v=20261023.f03" defer></script>

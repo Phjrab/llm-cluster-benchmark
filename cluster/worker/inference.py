@@ -947,6 +947,8 @@ class LlamaCppInferenceBackend:
             public = dict(preparation_id=preparation_id, prompt_sha256=prompt_sha256,
                           model_sha256=model_sha256, template_hash=template_hash,
                           input_tokens=len(tokens), input_tokens_exact=True,
+                          rendered_prompt_sha256=hashlib.sha256(json.dumps(tokens, separators=(",", ":")).encode("utf-8")).hexdigest(),
+                          rendered_prompt_hash_source="chat_template_token_ids_v1",
                           input_token_source="prepared_chat_template", effective_n_ctx=ctx,
                           output_reserve_tokens=max_tokens)
             if len(self._prepared_inputs) >= 32:

@@ -305,7 +305,7 @@ def mount_worker_routes(
                             "prompt_eval_s": inference_trace.get("prompt_eval_s"),
                             **{key: inference_trace.get(key) for key in (
                                 "finish_reason", "requested_n_ctx", "effective_n_ctx", "requested_max_tokens",
-                                "effective_max_tokens", "prompt_sha256", "model_sha256", "preparation_id")},
+                                "effective_max_tokens", "prompt_sha256", "model_sha256", "preparation_id", "rendered_prompt_sha256", "rendered_prompt_hash_source")},
                             "prompt_sha256": hashlib.sha256(payload.message.encode()).hexdigest(),
                             "output_tokens_exact": False,
                             "inference_slots": 1,

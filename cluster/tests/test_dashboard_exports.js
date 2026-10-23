@@ -143,7 +143,7 @@ assert.match(template, /PUBLIC KEY · 실행 명령 아님/);
 assert.match(template, /styles\.css\?v=20261023\.f03[\s\S]*sweeps\.css\?v=20261007\.type/);
 assert.match(template, /models\.js\?v=20261007\.vendor/);
 assert.match(template, /power\.js\?v=20260920\.1/);
-assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*navigation\.js\?v=20261007\.lab[\s\S]*app\.js\?v=20261007\.type[\s\S]*sweep-builder\.js\?v=20260920\.2[\s\S]*sweep-control\.js\?v=20261023\.f03[\s\S]*sweep-results\.js\?v=20261019\.studies/);
+assert.match(template, /state\.js\?v=20260919\.1[\s\S]*api\.js\?v=20260824\.1[\s\S]*events\.js\?v=20260824\.1[\s\S]*navigation\.js\?v=20261007\.lab[\s\S]*app\.js\?v=20261007\.type[\s\S]*sweep-builder\.js\?v=20261023\.1[\s\S]*sweep-control\.js\?v=20261023\.f03[\s\S]*sweep-results\.js\?v=20261019\.studies/);
 assert.match(template, /results\.js\?v=20261023\.f03/);
 assert.match(template, /research\.js\?v=20261023\.f03/);
 const researchSource = fs.readFileSync(path.join(dashboardRoot, "static/js/research.js"), "utf8");

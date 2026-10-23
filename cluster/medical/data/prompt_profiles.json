@@ -1,0 +1,10 @@
+{
+  "artifact_type": "medical_prompt_profiles_template",
+  "directly_executable": false,
+  "version": 1,
+  "medical_common_ko_v1": "한국어로 답하라. 제공되지 않은 병력·검사 결과·문헌을 지어내지 말고, 판단에 필요한 정보가 부족하면 밝혀라. 응급 가능성이 있는 증상에는 우선 필요한 행동을 안내하되 개인별 진단이나 처방을 확정하지 마라. 질문에서 지정한 형식을 우선하며, 그 외에는 핵심 답변과 짧은 근거를 3~6문장으로 적어라. 상세한 내부 추론은 출력하지 마라.",
+  "medical_common_en_v1": "Answer in English. Do not invent history, test results, or references. State when information is insufficient. For potentially urgent symptoms, prioritize appropriate action without claiming a definitive personal diagnosis or prescription. Follow the requested format; otherwise give the answer with a brief justification in 3–6 sentences. Do not output a detailed internal reasoning trace.",
+  "dispatch_policy": "네이티브 template가 지원하는 user 메시지에 공통 지시와 task text를 결합. 임의 system role 생성 금지. exact rendered prompt hash와 tokens 기록.",
+  "public_mcqa": "원문 질문과 선택지를 유지한다. 선택지 레이블 한 개만 answer 필드에 넣은 JSON을 출력한다. 정답 키와 해설은 입력하지 않는다.",
+  "pubmedqa": "Answer yes, no, or maybe based only on the supplied question and permitted abstract context. Return only JSON with one key: answer. Do not use a provided conclusion or reference answer."
+}

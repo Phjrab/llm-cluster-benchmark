@@ -1,0 +1,248 @@
+[
+  {
+    "block": "B0",
+    "models": [
+      "M01"
+    ],
+    "counts": {
+      "cells": 4,
+      "runs": 4,
+      "scenarios": 4,
+      "logical_requests": 4,
+      "physical_requests": 4,
+      "warmup_calls": 4,
+      "model_loads": 4
+    },
+    "packages": 1,
+    "status": "PREPARED_NOT_EXECUTED"
+  },
+  {
+    "block": "B1",
+    "models": [
+      "M01",
+      "M03",
+      "M04",
+      "M05"
+    ],
+    "counts": {
+      "cells": 640,
+      "runs": 640,
+      "scenarios": 640,
+      "logical_requests": 640,
+      "physical_requests": 640,
+      "warmup_calls": 640,
+      "model_loads": 640
+    },
+    "packages": 4,
+    "status": "PREPARED_NOT_EXECUTED"
+  },
+  {
+    "block": "B2",
+    "models": [],
+    "counts": {
+      "cells": 0,
+      "runs": 0,
+      "logical_requests": 0,
+      "physical_requests": 0,
+      "warmup_calls": 0,
+      "model_loads": 0
+    },
+    "packages": 0,
+    "status": "BLOCKED_LOCAL_DATASET_SUBSET_REQUIRED"
+  },
+  {
+    "block": "B3",
+    "models": [
+      "M03",
+      "M05"
+    ],
+    "counts": {
+      "cells": 32,
+      "runs": 96,
+      "scenarios": 96,
+      "logical_requests": 1920,
+      "physical_requests": 1920,
+      "warmup_calls": 240,
+      "model_loads": 240
+    },
+    "packages": 2,
+    "status": "PREPARED_NOT_EXECUTED"
+  },
+  {
+    "block": "B4a",
+    "models": [
+      "M03",
+      "M05"
+    ],
+    "counts": {
+      "cells": 6,
+      "runs": 18,
+      "scenarios": 18,
+      "logical_requests": 18,
+      "physical_requests": 18,
+      "warmup_calls": 18,
+      "model_loads": 18
+    },
+    "packages": 2,
+    "status": "PREPARED_NOT_EXECUTED"
+  },
+  {
+    "block": "B4b",
+    "models": [
+      "M03",
+      "M05"
+    ],
+    "counts": {
+      "cells": 18,
+      "runs": 54,
+      "scenarios": 54,
+      "logical_requests": 54,
+      "physical_requests": 54,
+      "warmup_calls": 54,
+      "model_loads": 54
+    },
+    "packages": 2,
+    "status": "PREPARED_NOT_EXECUTED"
+  },
+  {
+    "block": "B5",
+    "models": [
+      "M03",
+      "M05"
+    ],
+    "counts": {
+      "cells": 24,
+      "runs": 72,
+      "scenarios": 72,
+      "logical_requests": 72,
+      "physical_requests": 72,
+      "warmup_calls": 72,
+      "model_loads": 72
+    },
+    "packages": 2,
+    "status": "PREPARED_NOT_EXECUTED"
+  },
+  {
+    "block": "B6-smoke",
+    "models": [
+      "R01"
+    ],
+    "counts": {
+      "cells": 1,
+      "runs": 1,
+      "scenarios": 1,
+      "logical_requests": 1,
+      "physical_requests": 1,
+      "warmup_calls": 1,
+      "model_loads": 1
+    },
+    "packages": 1,
+    "status": "PREPARED_NOT_EXECUTED"
+  },
+  {
+    "block": "B6",
+    "models": [
+      "R01"
+    ],
+    "counts": {
+      "cells": 6,
+      "runs": 12,
+      "scenarios": 12,
+      "logical_requests": 12,
+      "physical_requests": 12,
+      "warmup_calls": 12,
+      "model_loads": 12
+    },
+    "packages": 1,
+    "status": "PREPARED_NOT_EXECUTED"
+  },
+  {
+    "block": "B7-language",
+    "models": [
+      "M03",
+      "M05"
+    ],
+    "counts": {
+      "cells": 32,
+      "runs": 32,
+      "scenarios": 32,
+      "logical_requests": 32,
+      "physical_requests": 32,
+      "warmup_calls": 32,
+      "model_loads": 32
+    },
+    "packages": 2,
+    "status": "PREPARED_NOT_EXECUTED"
+  },
+  {
+    "block": "B7-reasoning",
+    "models": [
+      "M07"
+    ],
+    "counts": {
+      "cells": 1,
+      "runs": 1,
+      "scenarios": 1,
+      "logical_requests": 1,
+      "physical_requests": 1,
+      "warmup_calls": 1,
+      "model_loads": 1
+    },
+    "packages": 1,
+    "status": "PREPARED_NOT_EXECUTED"
+  },
+  {
+    "block": "B7-quantization",
+    "models": [],
+    "counts": {
+      "cells": 0,
+      "runs": 0,
+      "logical_requests": 0,
+      "physical_requests": 0,
+      "warmup_calls": 0,
+      "model_loads": 0
+    },
+    "packages": 0,
+    "status": "BLOCKED_SAME_BASE_MODEL_SECOND_QUANT_IDENTITY_REQUIRED"
+  },
+  {
+    "block": "B1-all-six",
+    "models": [
+      "M01",
+      "M02",
+      "M03",
+      "M04",
+      "M05",
+      "M06"
+    ],
+    "counts": {
+      "cells": 960,
+      "runs": 960,
+      "scenarios": 960,
+      "logical_requests": 960,
+      "physical_requests": 960,
+      "warmup_calls": 960,
+      "model_loads": 960
+    },
+    "packages": 6,
+    "status": "OPTIONAL_PREVIEW_ONLY"
+  },
+  {
+    "block": "B3-with-stress",
+    "models": [
+      "M03",
+      "M05"
+    ],
+    "counts": {
+      "cells": 64,
+      "runs": 192,
+      "scenarios": 192,
+      "logical_requests": 3840,
+      "physical_requests": 3840,
+      "warmup_calls": 480,
+      "model_loads": 480
+    },
+    "packages": 2,
+    "status": "OPTIONAL_PREVIEW_ONLY"
+  }
+]

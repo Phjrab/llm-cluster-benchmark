@@ -673,3 +673,29 @@ test("Sweep Builder previews 108 trials and controls disjoint durable runs witho
   expect(variantRequest.prompts).toHaveLength(2);
   expect(variantRequest.spec.axes.find(axis => axis.name === "prompt_ref").values).toEqual(["prompt_main", "prompt_2"]);
 });
+
+test("Medical preset file preview and save preserve explicit prompts without starting work", async ({ page }) => {
+  const fixture = fixtureState(); installSweepApi(fixture); await installApiFixture(page, fixture);
+  const mutations = [];
+  page.on("request", req => { if (req.method() === "POST") mutations.push(new URL(req.url()).pathname); });
+  await page.goto("/#sweeps");
+  const condition = { model_ref: "M01", prompt_ref: "DOC02", worker_ids: ["jetson-worker-01"], execution_strategy: "single_node", n_ctx: 2048, max_tokens: 128, requests: 1, concurrency: 1 };
+  const payload = { spec: { base: condition, combination: "explicit", explicit: [condition], axes: [], rpc_profiles: [], repeat_count: 1, revision: 1 }, model_selections: { M01: MODEL_ID }, prompts: [{ ref: "DOC02", model_ref: "M01", text: "synthetic medical question", mode: "same_text" }] };
+  await page.locator("#sweepPresetFile").setInputFiles({ name: "medical-B0.request.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(payload)) });
+  await page.locator("#sweepImportPresetButton").click();
+  await expect(page.locator("#sweepImportedPreset")).toBeVisible();
+  expect(fixture.sweepPreviewPayload).toEqual(payload);
+  expect(mutations).toEqual(["/api/sweeps/preview"]);
+  await page.locator("#sweepApprovalCheck").check(); await page.locator("#sweepSaveButton").click();
+  await expect.poll(() => fixture.savedSweepPayload?.sweep_id).toBe("medical-B0");
+  expect(fixture.savedSweepPayload.prompts).toEqual(payload.prompts);
+  expect(fixture.savedSweepPayload.spec.explicit).toEqual(payload.spec.explicit);
+  expect(mutations).toEqual(["/api/sweeps/preview", "/api/sweeps/drafts"]);
+  await page.locator("#sweepContextInput").fill("4096");
+  await expect(page.locator("#sweepSaveButton")).toBeDisabled();
+  await expect(page.locator("#sweepImportedPreset")).toBeHidden();
+  await page.locator("#sweepPresetFile").setInputFiles({ name: "wrong.json", mimeType: "application/json", buffer: Buffer.from('{"evaluation_only":true}') });
+  await page.locator("#sweepImportPresetButton").click();
+  await expect(page.locator("#sweepBuilderStatus")).toHaveText("Preset preview 실패");
+  expect(mutations).toHaveLength(2);
+});

@@ -172,7 +172,13 @@
     }).join("") : `<div class="empty-result"><strong>RPC profile이 없습니다.</strong><span>선택 Worker 2대 이상으로 profile을 추가하세요.</span></div>`;
   }
 
+  let previewGeneration = 0;
+
   function dirty(message = "입력 변경 · preview 필요") {
+    previewGeneration += 1;
+    builder.importedRequest = null;
+    const imported = byId("sweepImportedPreset");
+    if (imported) imported.hidden = true;
     if (!builder.dirty && builder.savedHash && builder.preview?.plan?.plan_sha256 === builder.savedHash) {
       builder.revision = Math.max(builder.revision + 1, Number(builder.preview.plan.spec?.revision || 1) + 1);
       message = "저장 후 변경 · 새 revision과 새 Sweep ID가 필요합니다";
@@ -350,13 +356,23 @@
       return `<article class="sweep-cell-row ${dashboard.escapeHtml(cell.status || "unknown")}" data-preview-cell="${dashboard.escapeHtml(cell.cell_id)}"><label><input type="checkbox" data-exclude-cell="${dashboard.escapeHtml(cell.cell_id)}" ${cell.exclusion_reason ? "checked" : ""}><span><strong>${dashboard.escapeHtml(cell.condition?.model_ref || "model")} · ctx ${dashboard.escapeHtml(cell.condition?.n_ctx)} · c${dashboard.escapeHtml(cell.condition?.concurrency)}${cell.condition?.rpc_profile_ref ? ` · ${dashboard.escapeHtml(cell.condition.rpc_profile_ref)}` : ""}</strong><small>${dashboard.escapeHtml(cell.status || "unknown")} · workers ${(cell.condition?.worker_ids || []).map(dashboard.escapeHtml).join(", ") || "profile-bound"}</small></span></label><input data-exclusion-reason="${dashboard.escapeHtml(cell.cell_id)}" maxlength="512" value="${dashboard.escapeHtml(cell.exclusion_reason || "")}" placeholder="제외 사유를 기록하세요" ${cell.exclusion_reason ? "" : "disabled"}><p>${reasons.length ? reasons.map(dashboard.escapeHtml).join(" · ") : "capability valid"}</p></article>`;
     }).join("");
     byId("sweepCellReview").innerHTML = review || `<div class="empty-result"><strong>계산된 cell 없음</strong></div>`;
-    byId("sweepApplyExclusionsButton").hidden = !cells.length;
+    byId("sweepApplyExclusionsButton").hidden = !cells.length || Boolean(builder.importedRequest);
     byId("sweepBuilderStatus").textContent = `${counts.trials || 0} trials · ${plan.executable ? "실행 가능" : "blocker 있음"}`;
   }
 
   async function preview(refresh = false) {
-    const request = buildRequest();
+    const request = builder.importedRequest || buildRequest();
+    return previewRequest(request, refresh);
+  }
+
+  async function previewRequest(request, refresh = false) {
+    const generation = ++previewGeneration;
+    builder.dirty = true;
+    builder.approvedHash = "";
+    byId("sweepApprovalCheck").checked = false;
+    byId("sweepSaveButton").disabled = true;
     const result = await dashboard.api(refresh ? "/api/sweeps/readiness/refresh" : "/api/sweeps/preview", { method: "POST", body: request });
+    if (generation !== previewGeneration) return result;
     builder.request = request;
     builder.preview = result;
     builder.dirty = false;
@@ -367,7 +383,29 @@
     return result;
   }
 
+  async function importPreset() {
+    const file = byId("sweepPresetFile").files?.[0];
+    if (!file || file.size > 1048576) throw new Error("1 MiB 이하의 .request.json 파일을 선택하세요.");
+    dirty("Preset 검토 중 · 실행하지 않습니다");
+    const fileGeneration = previewGeneration;
+    const content = await file.text();
+    if (fileGeneration !== previewGeneration) return;
+    const request = JSON.parse(content);
+    if (!request || !request.spec || !request.model_selections || !Array.isArray(request.prompts)
+        || Object.keys(request).some(key => !["spec", "model_selections", "prompts"].includes(key))) {
+      throw new Error("manifest나 정답 파일 대신 .request.json을 선택하세요.");
+    }
+    builder.importedRequest = request;
+    byId("sweepIdInput").value = file.name.replace(/\.request\.json$/, "").replace(/[^A-Za-z0-9_.-]/g, "-").slice(0, 100);
+    await previewRequest(request);
+    if (builder.importedRequest !== request || builder.dirty) return;
+    byId("sweepImportedPreset").hidden = false;
+    byId("sweepImportedPayload").textContent = JSON.stringify(request, null, 2);
+    byId("sweepApplyExclusionsButton").hidden = true;
+  }
+
   function applyExclusions() {
+    if (builder.importedRequest) throw new Error("Preset 제외 조건은 원본 파일을 수정하고 다시 preview하세요.");
     const exclusions = [];
     document.querySelectorAll("[data-exclude-cell]:checked").forEach(input => {
       const cellId = input.dataset.excludeCell;
@@ -411,6 +449,9 @@
   function bind() {
     const form = byId("sweepBuilderForm");
     if (!form) return;
+    byId("sweepImportPresetButton").addEventListener("click", async () => {
+      try { await importPreset(); } catch (error) { dirty("Preset preview 실패"); dashboard.toast?.("Preset 가져오기 실패", error.message, "error"); }
+    });
     form.addEventListener("submit", async event => {
       event.preventDefault();
       try { await preview(false); }

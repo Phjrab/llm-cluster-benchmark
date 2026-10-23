@@ -1,0 +1,12 @@
+{
+  "M01": "qwen2.5-1.5b/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+  "M02": "granite-3.3-2b/granite-3.3-2b-instruct-Q4_K_M.gguf",
+  "M03": "qwen3-4b/Qwen3-4B-Q4_K_M.gguf",
+  "M04": "gemma3-4b-qat/catalog.gguf",
+  "M05": "medgemma-1.5-4b/medgemma-1.5-4b-it-Q4_K_M.gguf",
+  "M06": "qwen3-8b/Qwen3-8B-Q4_K_M.gguf",
+  "M07": "deepseek-r1-distill-qwen-7b/catalog.gguf",
+  "R01": "qwen3-14b/catalog.gguf",
+  "R02": "medgemma-27b-text/medgemma-27b-text-it-Q4_K_M.gguf",
+  "R03": "qwen3-32b/catalog.gguf"
+}

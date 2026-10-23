@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "status": "NOT_RUN",
+  "runs": [],
+  "requests": [],
+  "model_quality_ranking": null,
+  "energy": null,
+  "clinical_review": "clinical_review_pending",
+  "formal_approval": "PENDING",
+  "note": "Preparation artifact only. Never a benchmark result."
+}
