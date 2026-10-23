@@ -9,7 +9,8 @@
 - F01 integration: `e4ffb2cee254fab14f424914eb73f350cafbfdec`
 - F01 report: `0a17c9d7afe5ece53a3faf31180927bcae82f9bd`
 - F02: `99fe4e47a8f5eda44c589539193e62bda34683c4`
-- F03: 이 문서와 F03-validation.md를 포함하는 delivery commit; 실제 SHA와 CI는 최종 인계에 기록.
+- F03 구현: `237000f35e1addf54e36fad5138fc6029b52b1ad` (검증 snapshot의 222개 source 파일과 일치).
+- 후속 문서 delivery commit의 SHA와 exact-commit CI는 최종 인계에 기록.
 
 ## Summary
 

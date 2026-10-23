@@ -11,8 +11,9 @@
 - F01 integration: `e4ffb2cee254fab14f424914eb73f350cafbfdec`
 - F01 report: `0a17c9d7afe5ece53a3faf31180927bcae82f9bd`
 - F02 / F03 base: `99fe4e47a8f5eda44c589539193e62bda34683c4`
-- 검증 소스: 위 base + 이 F03 commit의 코드/테스트. 테스트 시 HEAD는 base이고 미커밋
-  snapshot을 실행했다. 최종 commit과 일치 여부는 로컬 source manifest로 확인한다.
+- F03 구현 commit: `237000f35e1addf54e36fad5138fc6029b52b1ad`. 테스트 시 HEAD는 base이고 미커밋
+  snapshot을 실행했다. commit 후 코드/테스트 등 222개 파일의 Git blob SHA-256이 검증 소스
+  manifest와 모두 일치함을 확인했다. 후속 보고서 commit은 문서만 변경한다.
 - `.artifacts/f03/source-manifest.json`: code/test/CI/package 파일 222개 SHA-256;
   manifest SHA-256 `dde6291593cc96fc4b396bbb524d7e67f1bf00a93b226870989afa6227655964`.
 - 실제 delivery commit과 exact-commit CI 상태는 최종 응답 및 로컬 delivery 기록에 남긴다.
