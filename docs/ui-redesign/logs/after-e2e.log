@@ -1,0 +1,41 @@
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:e2e
+> playwright test
+
+[WebServer] INFO:     Started server process [9956]
+[WebServer] INFO:     Waiting for application startup.
+
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:4173 (Press CTRL+C to quit)
+
+
+Running 22 tests using 1 worker
+
+(node:9960) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/22] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 390px
+[2/22] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 768px
+[3/22] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 1440px
+[4/22] cluster/tests/e2e/dashboard.spec.js:171:1 › Page navigation preserves edits, supports history and redraws result charts
+[5/22] cluster/tests/e2e/dashboard.spec.js:204:1 › Deep links, invalid routes, keyboard links and model-pack handoff select the right page
+[6/22] cluster/tests/e2e/dashboard.spec.js:229:1 › Dashboard core flow renders workers, models, power warning, creates and recovers an experiment
+[7/22] cluster/tests/e2e/dashboard.spec.js:294:1 › Result responses, private trash deletion, and safe worker disconnect remain interactive
+[8/22] cluster/tests/e2e/dashboard.spec.js:346:1 › Node detail presents a running runtime preparation as a structured operation card
+[9/22] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 390px
+[10/22] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 768px
+[11/22] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 1440px
+[12/22] cluster/tests/e2e/dashboard.spec.js:569:1 › Sweep API unavailable is explained without displaying an empty success state
+[13/22] cluster/tests/e2e/dashboard.spec.js:582:1 › Sweep Builder previews 108 trials and controls disjoint durable runs without hidden authority
+[14/22] cluster/tests/e2e/research-lab.spec.js:4:1 › Saved plan Matrix inspects repeat/status/quality without starting work
+[15/22] cluster/tests/e2e/research-lab.spec.js:25:1 › Explicit baseline and controlled axes synchronize chart, table, CSV and filter removal
+[16/22] cluster/tests/e2e/research-lab.spec.js:50:1 › Empty campaigns and failed research requests remain explicit
+[17/22] cluster/tests/e2e/research-lab.spec.js:61:1 › Offline Worker, long escaped identity, 200% zoom and protected trash stay usable
+[18/22] cluster/tests/e2e/research-lab.spec.js:80:1 › Pending experiment submission sends one mocked request and formal controls send none
+[19/22] cluster/tests/e2e/research-lab.spec.js:99:3 › Research workspace fits 1440x900, with readable labels and native focus
+[20/22] cluster/tests/e2e/research-lab.spec.js:99:3 › Research workspace fits 1366x768, with readable labels and native focus
+[21/22] cluster/tests/e2e/research-lab.spec.js:99:3 › Research workspace fits 1024x768, with readable labels and native focus
+[22/22] cluster/tests/e2e/research-lab.spec.js:99:3 › Research workspace fits 390x844, with readable labels and native focus
+  22 passed (31.1s)

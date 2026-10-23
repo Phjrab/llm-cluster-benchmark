@@ -1,0 +1,14 @@
+{
+  "fonts": [
+    {
+      "familyName": "Inter Variable",
+      "postScriptName": "InterVariable",
+      "isCustomFont": true,
+      "glyphCount": 4
+    }
+  ],
+  "sizes": {
+    "visible": 13,
+    "scroll": true
+  }
+}

@@ -19,7 +19,9 @@ from cluster.domain.sweep import ResolvedPlan
 from cluster.infrastructure.storage import atomic_write_text, read_json_object
 
 from .errors import DashboardServiceError
+from .progress_observation import ProgressObservation
 from .sweep_result_service import SweepResultService
+from .study_sweeps import StudySweeps
 
 
 Resolver = Callable[[Mapping[str, Any], bool], Any]
@@ -167,6 +169,8 @@ class SweepService:
         supervisor_factory: SupervisorFactory,
         run_repository: Any | None = None,
         drive_interval_s: float = 0.25,
+        observation: ProgressObservation | None = None,
+        study_directory: Path | None = None,
     ) -> None:
         self.drafts = drafts
         self.runs = runs
@@ -177,6 +181,23 @@ class SweepService:
         self._workers: dict[str, threading.Thread] = {}
         self._worker_lock = threading.Lock()
         self._stop = threading.Event()
+        self.observation = observation or ProgressObservation()
+        self.study_sweeps = StudySweeps(study_directory) if study_directory is not None else None
+
+    def _study(self, sweep_id: str):
+        SweepDraftRepository.validate_id(sweep_id)
+        entry = self.study_sweeps.registrations().get(sweep_id) if self.study_sweeps else None
+        if entry and (self.drafts._path(sweep_id).exists() or (self.runs.directory / sweep_id).exists()):
+            raise DashboardServiceError(409, "Sweep ID conflicts with a study registration")
+        return entry
+
+    def _require_dashboard_owner(self, sweep_id: str) -> None:
+        if self._study(sweep_id):
+            raise DashboardServiceError(409, "Study sweeps are managed by their study runner")
+
+    def _read_sweep(self, sweep_id: str) -> dict[str, Any]:
+        entry = self._study(sweep_id)
+        return entry[1] if entry else self.runs.read(sweep_id)
 
     @staticmethod
     def _request(payload: Any) -> dict[str, Any]:
@@ -238,6 +259,7 @@ class SweepService:
 
     def save(self, payload: Any) -> dict[str, Any]:
         sweep_id = str(payload.sweep_id)
+        self._require_dashboard_owner(sweep_id)
         request = self._request(payload)
         plan, candidates = self._resolve(request, refresh=False)
         prompts = {
@@ -298,6 +320,7 @@ class SweepService:
             raise DashboardServiceError(409, "Saved sweep plan failed integrity verification") from exc
 
     def _claim_operation(self, sweep_id: str, operation: str, payload: Any) -> tuple[dict[str, Any], bool]:
+        self._require_dashboard_owner(sweep_id)
         raw = payload.model_dump() if hasattr(payload, "model_dump") else dict(payload)
         fingerprint = _fingerprint(raw)
         key = f"{operation}:{raw['idempotency_key']}"
@@ -374,11 +397,14 @@ class SweepService:
     def _drive(self, sweep_id: str) -> None:
         try:
             while not self._stop.is_set():
+                self.observation.tick(("sweep", sweep_id))
                 value = self._tick(sweep_id)
+                self.observation.success(("sweep", sweep_id))
                 if value.get("status") in TERMINAL | {"paused"}:
                     return
                 self._stop.wait(self._drive_interval_s)
         except Exception as exc:
+            self.observation.failed(("sweep", sweep_id))
             try:
                 self.runs.append_event(
                     sweep_id,
@@ -391,6 +417,7 @@ class SweepService:
             except Exception:
                 pass
         finally:
+            self.observation.stopped(("sweep", sweep_id))
             with self._worker_lock:
                 current = self._workers.get(sweep_id)
                 if current is threading.current_thread():
@@ -408,6 +435,7 @@ class SweepService:
                 daemon=True,
             )
             self._workers[sweep_id] = worker
+            self.observation.started(("sweep", sweep_id))
             worker.start()
 
     def recover_active_sweeps(self) -> dict[str, Any]:
@@ -504,6 +532,7 @@ class SweepService:
         return self._lifecycle(sweep_id, "pause", payload, lambda runner: runner.pause(sweep_id, reason=payload.reason))
 
     def resume(self, sweep_id: str, payload: Any) -> dict[str, Any]:
+        self._require_dashboard_owner(sweep_id)
         draft = self.drafts.read(sweep_id)
         self._check_plan(draft, payload)
         fresh, _ = self._resolve(self._input_request(draft), refresh=True)
@@ -515,6 +544,7 @@ class SweepService:
         return self._lifecycle(sweep_id, "cancel", payload, lambda runner: runner.cancel(sweep_id, reason=payload.reason))
 
     def retry(self, sweep_id: str, trial_id: str, payload: Any) -> dict[str, Any]:
+        self._require_dashboard_owner(sweep_id)
         draft = self.drafts.read(sweep_id)
         self._check_plan(draft, payload)
         fresh, _ = self._resolve(self._input_request(draft), refresh=True)
@@ -526,6 +556,11 @@ class SweepService:
         )
 
     def get(self, sweep_id: str) -> dict[str, Any]:
+        entry = self._study(sweep_id)
+        if entry:
+            _, manifest, study = entry
+            return {"draft": StudySweeps.public(manifest, study), "sweep": manifest,
+                    "progress_observation": self.observation.snapshot(("sweep", sweep_id), manifest, external=True)}
         draft = self.drafts.read(sweep_id)
         try:
             sweep = self.runs.read(sweep_id)
@@ -533,19 +568,34 @@ class SweepService:
             if draft.get("status") != "draft":
                 raise DashboardServiceError(409, "Sweep durable state is unavailable") from exc
             sweep = None
-        return {"draft": self._public_draft(draft), "sweep": sweep}
+        return {"draft": self._public_draft(draft), "sweep": sweep,
+                "progress_observation": self.observation.snapshot(("sweep", sweep_id), sweep)}
 
     def list(self, *, offset: int = 0, limit: int = 100) -> dict[str, Any]:
         if offset < 0 or limit < 1 or limit > 100:
             raise DashboardServiceError(400, "Invalid sweep page bounds")
-        values = self.drafts.list(offset=offset, limit=limit)
-        return {"sweeps": [self._public_draft(item) for item in values], "offset": offset, "limit": min(limit, 100)}
+        values = []
+        position = 0
+        while True:
+            page = self.drafts.list(offset=position, limit=100)
+            values.extend(self._public_draft(item) for item in page)
+            if len(page) < 100:
+                break
+            position += 100
+        if self.study_sweeps:
+            for sweep_id in self.study_sweeps.registrations():
+                _, manifest, study = self._study(sweep_id)
+                values.append(StudySweeps.public(manifest, study))
+        values.sort(key=lambda value: (value.get("updated_at_unix") or 0, value["sweep_id"]), reverse=True)
+        return {"sweeps": values[offset:offset + limit], "offset": offset, "limit": limit}
 
     def events(self, sweep_id: str, *, cursor: int = 0, limit: int = 100) -> dict[str, Any]:
-        self.drafts.read(sweep_id)
+        entry = self._study(sweep_id)
+        if not entry:
+            self.drafts.read(sweep_id)
         if cursor < 0 or limit < 1 or limit > 200:
             raise DashboardServiceError(400, "Invalid event cursor or page size")
-        values = self.runs.read_events(sweep_id)
+        values = (entry[0] if entry else self.runs).read_events(sweep_id)
         if cursor > len(values):
             raise DashboardServiceError(
                 409,
@@ -555,7 +605,7 @@ class SweepService:
         return {"sweep_id": sweep_id, "events": page, "cursor": cursor, "next_cursor": cursor + len(page), "has_more": cursor + len(page) < len(values)}
 
     def event_stream(self, sweep_id: str, *, cursor: int = 0) -> Iterator[str]:
-        self.drafts.read(sweep_id)
+        self.get(sweep_id)
         position = max(0, cursor)
         while True:
             page = self.events(sweep_id, cursor=position, limit=100)
@@ -569,12 +619,14 @@ class SweepService:
 
     def results(self, sweep_id: str) -> dict[str, Any]:
         try:
-            value = self.runs.read(sweep_id)
+            value = self._read_sweep(sweep_id)
         except SweepStateError as exc:
             raise DashboardServiceError(409, "Sweep has not started") from exc
         plan = verify_plan(json.dumps(value["plan_snapshot"], ensure_ascii=False))
         if self.result_reader is not None:
-            return self.result_reader.assemble(value, plan)
+            entry = self._study(sweep_id)
+            reason = StudySweeps.energy_policy(entry[0]) if entry else None
+            return self.result_reader.assemble(value, plan, energy_unavailable_reason=reason)
         cells = {cell.cell_id: cell for cell in plan.cells}
         trials = []
         for trial in value.get("trials") or []:
@@ -627,6 +679,7 @@ class SweepService:
         """Create a fresh one-condition draft; never start or alter the source."""
         from cluster.dashboard.schemas import SweepSaveDraftPayload
 
+        self._require_dashboard_owner(sweep_id)
         draft = self.drafts.read(sweep_id)
         plan = self._saved_plan(draft)
         try:
@@ -659,6 +712,9 @@ class SweepService:
         return {"draft": cloned, "source": {"sweep_id": sweep_id, "trial_id": trial_id, "cell_id": cell.cell_id}, "started": False}
 
     def export_plan(self, sweep_id: str) -> dict[str, Any]:
+        entry = self._study(sweep_id)
+        if entry:
+            return verify_plan(json.dumps(entry[1]["plan_snapshot"], ensure_ascii=False)).to_dict()
         draft = self.drafts.read(sweep_id)
         return self._saved_plan(draft).to_dict()
 

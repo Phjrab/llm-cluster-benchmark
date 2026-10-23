@@ -420,7 +420,8 @@ class PinnedPreparationAdapterTests(unittest.TestCase):
             args,sha=capture_chat_input(llm,[dict(role='user',content='text')])
             self.assertEqual(args['prompt'],[1,2,3]);self.assertEqual(args['repeat_penalty'],1.0)
             self.assertEqual(calls,[dict(add_bos=False,special=True)])
-            self.assertEqual(sha,hashlib.sha256(b'synthetic-template').hexdigest())
+            from cluster.infrastructure.gguf import canonical_metadata_sha256
+            self.assertEqual(sha,canonical_metadata_sha256({'tokenizer.chat_template':'synthetic-template'}))
             module.__version__='unverified'
             with self.assertRaisesRegex(PreparationError,'VERSION'):capture_chat_input(llm,[])
             module.__version__='0.3.20';llm.chat_handler=lambda **kw:None

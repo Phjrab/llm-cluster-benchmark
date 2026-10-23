@@ -61,23 +61,29 @@
     const meta = statusMeta(status);
     const p = progress(detail);
     const cell = currentCell(detail);
+    const cells = planFor(detail)?.cells || [];
     const condition = cell?.condition || {};
-    const model = cell?.model?.model_id || condition.model_ref || "대기";
-    const workers = condition.worker_ids?.length ? condition.worker_ids : (cell?.rpc_profile?.worker_ids || []);
+    const model = cell?.model?.model_id || condition.model_ref || [...new Set(cells.map(row => row.condition?.model_ref).filter(Boolean))].join(", ") || "대기";
+    const workers = condition.worker_ids?.length ? condition.worker_ids : [...new Set(cells.flatMap(row => row.condition?.worker_ids || []))];
+    const contexts = condition.n_ctx || [...new Set(cells.map(row => row.condition?.n_ctx).filter(Boolean))].join(", ") || "—";
     const reason = waitingReason(detail);
     const startAllowed = !sweep && approvalValid(draft);
     const error = detail.controlError;
     const actions = [];
+    if (!draft.read_only) {
     if (!sweep) actions.push(`<button type="button" class="button primary compact" data-sweep-action="start" ${startAllowed ? "" : "disabled title=\"현재 plan hash를 Builder에서 다시 승인하세요\""}>Start</button>`);
     if (["running", "queued"].includes(status)) actions.push(`<button type="button" class="button ghost compact" data-sweep-action="pause">Pause</button>`);
     if (status === "paused") actions.push(`<button type="button" class="button primary compact" data-sweep-action="resume">Resume</button>`);
     if (!terminalStates.has(status) && sweep) actions.push(`<button type="button" class="button ghost compact danger-text" data-sweep-action="cancel">Cancel</button>`);
+    }
     actions.push(`<button type="button" class="button ghost compact" data-sweep-select>상세</button>`);
     return `<article class="active-sweep-card ${meta[2]} ${state.selectedSweepId === draft.sweep_id ? "selected" : ""}" data-sweep-card="${dashboard.escapeHtml(draft.sweep_id)}" tabindex="0">
       <header><div><span class="sweep-status-icon" aria-hidden="true">${meta[0]}</span><div><strong>${dashboard.escapeHtml(draft.sweep_id)}</strong><small>revision ${dashboard.escapeHtml(draft.plan_revision)} · ${dashboard.escapeHtml(String(draft.plan_sha256 || "").slice(0, 12))}</small></div></div><span class="sweep-status-text ${meta[2]}">${meta[1]}</span></header>
       <div class="sweep-progress"><div><span>${p.done} / ${p.total} trials</span><strong>${p.pct}%</strong></div><i><b style="width:${p.pct}%"></b></i></div>
-      <dl><div><dt>MODEL</dt><dd>${dashboard.escapeHtml(model)}</dd></div><div><dt>CONTEXT</dt><dd>${condition.n_ctx || "—"}</dd></div><div><dt>RPC PROFILE</dt><dd>${dashboard.escapeHtml(condition.rpc_profile_ref || "—")}</dd></div><div><dt>WORKERS</dt><dd>${workers.length ? workers.map(dashboard.escapeHtml).join(", ") : "대기"}</dd></div></dl>
+      <dl><div><dt>MODEL</dt><dd>${dashboard.escapeHtml(model)}</dd></div><div><dt>CONTEXT</dt><dd>${dashboard.escapeHtml(contexts)}</dd></div><div><dt>RPC PROFILE</dt><dd>${dashboard.escapeHtml(condition.rpc_profile_ref || "—")}</dd></div><div><dt>WORKERS</dt><dd>${workers.length ? workers.map(dashboard.escapeHtml).join(", ") : "대기"}</dd></div></dl>
+      ${dashboard.utils?.progressHtml?.(detail.progress_observation) || ""}
       ${reason ? `<p class="sweep-waiting"><strong>대기/실패 이유</strong>${dashboard.escapeHtml(reason)}</p>` : ""}
+      ${draft.read_only ? `<p class="sweep-waiting">Study: ${dashboard.escapeHtml(draft.study_id)} · 전용 runner에서 관리 · 결과 조회</p>` : ""}
       ${error ? `<p class="sweep-control-error"><strong>최근 제어 실패</strong>${dashboard.escapeHtml(error)}</p>` : ""}
       ${!sweep && !startAllowed ? `<p class="sweep-start-disabled">Start 비활성 · Builder에서 동일 preview hash를 다시 확인하세요.</p>` : ""}
       <div class="sweep-card-actions">${actions.join("")}</div>

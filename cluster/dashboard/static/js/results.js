@@ -1,7 +1,7 @@
 /* Durable result inspection reads the Phase 12 response endpoint; it never reconstructs answers. */
 (() => {
   const dashboard = window.ClusterDashboard || (window.ClusterDashboard = {});
-  const selected = { runId: "", responses: [] };
+  const selected = { runId: "", responses: [], version: 0 };
 
   function responseGroups(responses) {
     const groups = new Map();
@@ -76,7 +76,40 @@
     return `<section class="participant-environment" aria-label="실험 참여 노드 정보"><div class="participant-environment-head"><div><span>PARTICIPANT NODE SNAPSHOT</span><h4>실험 참여 노드 · ${participants.length}대</h4></div><small>실험 시작 시점 기준</small></div><p>결과 재현을 위해 저장된 하드웨어와 런타임 정보입니다. SSH 키와 인증 정보는 포함하지 않습니다.</p><div class="participant-grid">${cards}</div></section>`;
   }
 
-  function renderResponses(run, responses, overallStorageStatus = "") {
+  function diagnosticHtml(payload) {
+    const value = payload || {};
+    const esc = v => dashboard.escapeHtml(String(v ?? "UNKNOWN"));
+    const requests = value.requests || [];
+    return `<section class="request-diagnostics" aria-label="요청 실패 진단"><h4>요청 단계 · 자원 진단</h4>
+      <p>저장된 로컬 기록 · ${esc(value.availability || "NO_DIAGNOSTIC_RECORD")} · 원본 결과와 성능 수치는 유지됩니다.</p>
+      ${!requests.length ? `<p>진단 기록 없음 / 미확보. Worker 미실행을 의미하지 않습니다.</p>` : ""}
+      ${requests.slice(0, 20).map(r => {
+        const id = r.identity || {}, res = r.resources || {};
+        return `<article class="diagnostic-request" data-diagnostic-id="${esc(id.diagnostic_id)}">
+          <strong>${esc(id.node)} · logical ${esc(id.logical_request_id)} / physical ${esc(id.request_id)} / replica ${esc(id.replica_index)}</strong>
+          <p>Controller ${esc(r.controller?.terminal_stage)} · 실패 코드 ${esc(r.controller?.failure_code || "N/A")} · 마지막 단계 ${esc(r.controller?.last_stage)} (${esc(r.controller?.last_observed_at)})</p>
+          <p>Worker ${esc(r.worker?.last_stage)} (${esc(r.worker?.last_observed_at)}) · 종료 관측 ${esc(r.worker?.observed_outcome)} · ${esc(r.worker?.record_status)}</p>
+          <p>메모리 ${Object.values(res.values || {}).some(m => m.available === true) ? "관측 있음" : "UNKNOWN"} · Worker process ${res.process?.available === true ? "관측 있음" : "UNKNOWN"} · cleanup ${esc(r.cleanup?.status)}</p>
+          ${r.worker_completion_found_after_controller_failure ? "<p>Controller 실패 후 Worker 완료 근거가 확보되었습니다. 원래 실패 결과는 유지됩니다.</p>" : ""}
+          <details><summary>요청 진단 근거</summary><dl>
+            <dt>run / job / attempt</dt><dd>${esc(id.run_id)} / ${esc(id.job_id)} / ${esc(id.attempt_id)}</dd>
+            <dt>diagnostic ID</dt><dd>${esc(id.diagnostic_id)}</dd>
+            <dt>자원 관측 시각 / source</dt><dd>${esc(res.sampled_at)} / ${esc(res.source)}</dd>
+            ${Object.entries(res.values || {}).map(([k,m]) => `<dt>${esc(k)}</dt><dd>${m.available === true && m.value != null ? `${esc(m.value)} bytes` : "UNKNOWN"}</dd>`).join("")}
+            <dt>Worker process PID / start (Unix s)</dt><dd>${esc(res.process?.pid)} / ${esc(res.process?.started_at_unix)}</dd>
+            ${Object.entries(r.durations || {}).map(([k,d]) => `<dt>${esc(k)}</dt><dd>${d.available === true && d.seconds != null ? `${esc(d.seconds)} s` : "UNKNOWN"}</dd>`).join("")}
+            <dt>원인 판단</dt><dd>${esc(r.cause?.classification)} · ${esc(r.cause?.code)}</dd>
+          </dl></details>
+          <p>추가 근거 / 누락: ${(r.missing_evidence || []).map(esc).join(", ") || "N/A"}</p>
+        </article>`;
+      }).join("")}
+      <p>수집 공백: ${(value.gaps || []).map(esc).join(", ") || "N/A"}</p>
+      <p>Worker 기록 회수는 job 종료 후 문서의 명시적 CLI로 수행합니다. 이 화면은 Worker에 접속하지 않습니다.</p>
+      ${Number.isInteger(value.next_offset) ? `<button type="button" class="button ghost compact" data-diagnostic-page="${value.next_offset}">다음 진단 ${value.limit || 20}개</button>` : ""}
+    </section>`;
+  }
+
+  function renderResponses(run, responses, overallStorageStatus = "", diagnostics = null) {
     const inspector = dashboard.$?.("#resultInspector");
     const label = dashboard.$?.("#resultInspectorStatus");
     if (!inspector || !label) return;
@@ -121,10 +154,11 @@
       }).join("")}</div></article>`;
     }).join("") : `<div class="empty-result"><strong>${overallStorageStatus === "not_persisted" ? "응답을 저장하지 않도록 설정한 실행입니다." : "응답 기록이 없습니다."}</strong><span>${overallStorageStatus === "not_persisted" ? "성능 결과는 유지되며 원문·길이·SHA-256은 저장되지 않습니다." : "이전 형식의 결과이거나 완료된 요청이 없는 실행일 수 있습니다."}</span></div>`;
     const environment = dashboard.power?.resultEnvironmentHtml?.(run) || "";
-    inspector.innerHTML = `${renderParticipantNodes(run)}${environment}${content}${renderFailureCards(run, responses)}`;
+    inspector.innerHTML = `${renderParticipantNodes(run)}${environment}${diagnosticHtml(diagnostics)}${content}${renderFailureCards(run, responses)}`;
   }
 
   function clear() {
+    selected.version += 1;
     selected.runId = "";
     selected.responses = [];
     const inspector = dashboard.$?.("#resultInspector");
@@ -144,20 +178,39 @@
     const label = dashboard.$?.("#resultInspectorStatus");
     if (!run || !inspector || !label) return;
     selected.runId = runId;
+    const version = ++selected.version;
     label.className = "inspector-status running";
     label.textContent = "● LOADING RESPONSES";
     inspector.innerHTML = `<div class="empty-result"><strong>저장된 응답을 읽는 중입니다.</strong><span>결과 파일을 변경하지 않고 조회만 수행합니다.</span></div>`;
     try {
       const payload = await dashboard.api(`/api/runs/${encodeURIComponent(runId)}/responses`);
+      if (selected.version !== version || (payload.run_id && payload.run_id !== runId)) return;
       selected.responses = payload.responses || [];
-      renderResponses(run, selected.responses, payload.response_storage_status || "");
+      renderResponses(run, selected.responses, payload.response_storage_status || "", payload.diagnostics?.run_id === runId ? payload.diagnostics : null);
       inspector.closest(".result-inspector")?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
+      if (selected.version !== version) return;
       label.className = "inspector-status failed";
       label.textContent = "× RESPONSE LOAD FAILED";
       inspector.innerHTML = `<div class="empty-result"><strong>응답을 불러오지 못했습니다.</strong><span>${dashboard.escapeHtml(error.message)}</span>${renderFailureCards(run, [])}</div>`;
     }
   }
+
+  document.addEventListener("click", async event => {
+    const button = event.target.closest?.("[data-diagnostic-page]");
+    if (!button) return;
+    const runId = selected.runId, version = selected.version;
+    const root = button.closest(".request-diagnostics");
+    button.disabled = true;
+    try {
+      const payload = await dashboard.api(`/api/runs/${encodeURIComponent(runId)}/diagnostics?offset=${Number(button.dataset.diagnosticPage)}&limit=20`);
+      if (version !== selected.version || payload.run_id !== runId) return;
+      root.outerHTML = diagnosticHtml(payload);
+    } catch (_) {
+      if (version !== selected.version) return;
+      button.textContent = "진단 조회 실패 · 다시 조회"; button.disabled = false;
+    }
+  });
 
   async function remove(runId) {
     const run = dashboard.state.runs.find(item => item.run_id === runId);
@@ -242,7 +295,7 @@
     }
   }
 
-  dashboard.results = { show, clear, remove, renderResponses, responseGroups, errorRecords, participantNodes, renderParticipantNodes, renderTrash, loadTrash, restore };
+  dashboard.results = { show, clear, remove, renderResponses, diagnosticHtml, responseGroups, errorRecords, participantNodes, renderParticipantNodes, renderTrash, loadTrash, restore };
 
   document.addEventListener("DOMContentLoaded", () => {
     document.addEventListener("click", event => {

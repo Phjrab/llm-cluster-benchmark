@@ -672,6 +672,13 @@ def register_routers(app: Any, templates: Jinja2Templates) -> None:
         except ValueError as exc:
             return _error_response(exc)
 
+    @results_router.get("/api/runs/{run_id}/diagnostics")
+    async def get_run_diagnostics(
+        run_id: str, offset: int = 0, limit: int = 20,
+        dashboard: DashboardFacade = Depends(get_dashboard_services),
+    ) -> Dict[str, Any]:
+        return dashboard.diagnostics(run_id, offset=offset, limit=limit)
+
     @results_router.get("/api/runs/{run_id}/measurements")
     async def get_run_measurements(
         run_id: str, dashboard: DashboardFacade = Depends(get_dashboard_services)

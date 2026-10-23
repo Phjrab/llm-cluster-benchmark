@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import hashlib
 import time
+import asyncio
+import queue
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Optional
 
@@ -28,6 +31,7 @@ from .schemas import (
 )
 from .telemetry import TelemetryService
 from .ownership import WorkerOwnershipError, WorkerOwnershipRegistry
+from cluster.infrastructure.request_diagnostics import DiagnosticJournal, identity, HEADER
 
 
 def as_sse(event_type: str, payload: Dict[str, object]) -> str:
@@ -54,6 +58,7 @@ def mount_worker_routes(
     runtime: WorkerRuntimeInfo,
     deployment_provider: Optional[Callable[[], Dict[str, Any]]] = None,
     ownership: Optional[WorkerOwnershipRegistry] = None,
+    diagnostics: Optional[DiagnosticJournal] = None,
 ) -> None:
     """Register legacy and cluster API routes without exposing backend internals."""
 
@@ -118,7 +123,7 @@ def mount_worker_routes(
         return {"ok": True, "status": current["status"], "fencing_epoch": current["fencing_epoch"]}
 
     @app.post("/api/select-model")
-    async def select_model(payload: SelectModelRequest, request: Request) -> Dict[str, object]:
+    def select_model(payload: SelectModelRequest, request: Request) -> Dict[str, object]:
         require_owner(request)
         try:
             if runtime.platform_kind == "raspberry-pi" and payload.n_gpu_layers > 0:
@@ -138,13 +143,13 @@ def mount_worker_routes(
         return {"ok": True, "current": current}
 
     @app.post("/api/unload-model")
-    async def unload_model(request: Request) -> Dict[str, object]:
+    def unload_model(request: Request) -> Dict[str, object]:
         require_owner(request)
         backend.unload_model()
         return {"ok": True, "current": backend.current_model_info()}
 
     @app.post("/cluster/input/prepare")
-    async def prepare_input(payload: PrepareInputRequest, request: Request) -> Dict[str, object]:
+    def prepare_input(payload: PrepareInputRequest, request: Request) -> Dict[str, object]:
         require_owner(request)
         from .prompt_preparation import PreparationError
         prepare = getattr(backend, "prepare_input", None)
@@ -157,7 +162,46 @@ def mount_worker_routes(
         except Exception:
             raise HTTPException(status_code=409, detail="EXACT_INPUT_UNAVAILABLE") from None
 
-    def stream_response(payload: ChatStreamRequest, *, seed: Optional[int] = None) -> StreamingResponse:
+    def diagnostic_identity(request):
+        raw = request.headers.get(HEADER)
+        if not raw or diagnostics is None:
+            return None
+        try:
+            if len(raw) > 2048:
+                raise ValueError()
+            value = identity(json.loads(raw))
+            if value['node'] != runtime.node_name:
+                raise ValueError()
+            if value['job_id'] != (owner_context(request) or {}).get('owner_id', ''):
+                raise ValueError()
+            return value
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="DIAGNOSTIC_IDENTITY_INVALID") from None
+
+    @app.get("/cluster/diagnostics/{diagnostic_id}")
+    def request_diagnostics(diagnostic_id: str, request: Request):
+        value = diagnostic_identity(request)
+        if value is None or value['diagnostic_id'] != diagnostic_id:
+            raise HTTPException(status_code=404, detail="DIAGNOSTIC_REQUEST_NOT_KNOWN")
+        try:
+            # Historical ownership proof is compared to the journal, even after
+            # lease release/restart; this grants no execution authority.
+            return diagnostics.read(value, owner=owner_context(request))
+        except ValueError:
+            raise HTTPException(status_code=403, detail="DIAGNOSTIC_IDENTITY_MISMATCH") from None
+
+    def stream_response(payload: ChatStreamRequest, *, seed: Optional[int] = None, request: Optional[Request] = None) -> StreamingResponse:
+        diag_identity = diagnostic_identity(request) if request is not None else None
+        diag_owner = owner_context(request) if request is not None else None
+        def note(stage):
+            if diag_identity is not None:
+                try:
+                    cached = getattr(telemetry, "cached_snapshot", None)
+                    resources = cached() if callable(cached) else {}
+                except Exception:
+                    resources = {}
+                diagnostics.emit(diag_identity, stage, owner=diag_owner, resources=resources)
+        note("received")
         prepared_id = getattr(payload, "prepared_input_id", None)
         message = payload.message if prepared_id is not None else payload.message.strip()
         if not message:
@@ -168,8 +212,9 @@ def mount_worker_routes(
             first_token_at: Optional[float] = None
             pieces: list[str] = []
             chunks = 0
-            inference_trace: Dict[str, object] = {}
+            inference_trace: Dict[str, object] = {"_diagnostic_emit": note}
             try:
+                note("input_preparation_started")
                 input_counter = None if prepared_id is not None else getattr(backend, "count_input_tokens", None)
                 try:
                     input_measurement = (
@@ -183,6 +228,7 @@ def mount_worker_routes(
                         "source": "tokenizer_failed",
                         "exact": False,
                     }
+                note("input_preparation_completed")
                 started = time.perf_counter()  # preparation/counting is outside server timing
                 options = {"prepared_input_id": prepared_id} if prepared_id is not None else {}
                 for token in backend.stream_chat(
@@ -196,11 +242,14 @@ def mount_worker_routes(
                     **options,
                 ):
                     now = time.perf_counter()
+                    if first_token_at is None:
+                        note("first_token_generated")
                     first_token_at = first_token_at or now
                     pieces.append(token)
                     chunks += 1
                     yield as_sse("token", {"text": token})
                 finished = time.perf_counter()
+                note("generation_completed")
                 text = "".join(pieces)
                 tokenizer_count = backend.tokenize(text) if text else 0
                 token_count = tokenizer_count or chunks
@@ -264,6 +313,7 @@ def mount_worker_routes(
                     },
                 )
             except Exception as exc:
+                note("exception")
                 failure = failure_from_exception(exc, stage="inference")
                 public_failure = failure.to_dict()
                 public_failure["message"] = "Worker inference failed"
@@ -275,8 +325,55 @@ def mount_worker_routes(
                     {"message": "Worker inference failed", "failure": public_failure},
                 )
 
+        async def buffered_events():
+            # One producer owns the entire backend generator. Starlette may
+            # advance a sync iterator on different pool threads; the backend's
+            # reentrant inference lock must be released by its owning thread.
+            pending = queue.Queue(maxsize=16)
+            stopped = threading.Event()
+            stream_finished = False
+
+            def produce():
+                iterator = iter(events())
+                try:
+                    for event in iterator:
+                        while not stopped.is_set():
+                            try:
+                                pending.put(event, timeout=0.1)
+                                break
+                            except queue.Full:
+                                pass
+                        if stopped.is_set():
+                            break
+                finally:
+                    iterator.close()
+                    note("stream_closed")
+                    while True:
+                        try:
+                            pending.put(None, timeout=0.1)
+                            break
+                        except queue.Full:
+                            if stopped.is_set():
+                                try:
+                                    pending.get_nowait()
+                                except queue.Empty:
+                                    pass
+
+            threading.Thread(target=produce, name="worker-inference-stream", daemon=True).start()
+            try:
+                while True:
+                    event = await asyncio.to_thread(pending.get)
+                    if event is None:
+                        stream_finished = True
+                        break
+                    yield event
+            finally:
+                if not stream_finished:
+                    note("disconnect_observed")
+                stopped.set()
+
         return StreamingResponse(
-            events(),
+            buffered_events(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
@@ -284,7 +381,7 @@ def mount_worker_routes(
     @app.post("/api/chat/stream")
     async def chat_stream(payload: ChatStreamRequest, request: Request) -> StreamingResponse:
         require_owner(request)
-        return stream_response(payload)
+        return stream_response(payload, request=request)
 
     @app.get("/cluster/health")
     async def cluster_health() -> Dict[str, Any]:
@@ -323,6 +420,7 @@ def mount_worker_routes(
                 "deployment_verified": deployment.get("verified") is True,
                 "inference_slots": 1,
                 "resource_ownership_v1": ownership is not None,
+                "request_diagnostics_v1": diagnostics is not None,
             },
             "worker_api_auth": runtime.worker_api_auth,
             "telemetry_version": 2,
@@ -332,6 +430,7 @@ def mount_worker_routes(
             "metrics": telemetry.snapshot(),
             "deployment": deployment,
         }
+        response["request_diagnostics"] = diagnostics.status() if diagnostics is not None else {"mode": "off"}
         current_owner = ownership.status() if ownership is not None else None
         response["resource_ownership"] = {
             "supported": ownership is not None,
@@ -348,7 +447,7 @@ def mount_worker_routes(
         return response
 
     @app.get("/cluster/models")
-    async def cluster_models() -> Dict[str, Any]:
+    def cluster_models() -> Dict[str, Any]:
         return {"ok": True, "node": runtime.node_name, "models": backend.model_inventory()}
 
     @app.post("/cluster/models/verify")
@@ -450,7 +549,7 @@ def mount_worker_routes(
     @app.post("/cluster/chat/stream")
     async def cluster_chat_stream(payload: ClusterChatRequest, request: Request) -> StreamingResponse:
         require_owner(request)
-        return stream_response(payload, seed=payload.seed)
+        return stream_response(payload, seed=payload.seed, request=request)
 
 
 __all__ = ["WorkerRuntimeInfo", "as_sse", "mount_worker_routes"]

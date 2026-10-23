@@ -1,0 +1,5 @@
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 capture:ui
+> node scripts/ui-redesign/capture.js after
+
+after: captured 30 real browser PNGs; observations: []

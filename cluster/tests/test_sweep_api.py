@@ -9,6 +9,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from fastapi import FastAPI
@@ -16,7 +17,7 @@ from fastapi.testclient import TestClient
 from fastapi.templating import Jinja2Templates
 
 from cluster.application.sweep_models import preview_catalog_sweep
-from cluster.application.sweep_runner import SweepRepository, SweepSupervisor
+from cluster.application.sweep_runner import SweepRepository, SweepSupervisor, build_sweep_manifest
 from cluster.dashboard.schemas import (
     SweepLifecyclePayload,
     SweepReasonPayload,
@@ -24,6 +25,7 @@ from cluster.dashboard.schemas import (
 )
 from cluster.dashboard.service_layers.errors import DashboardServiceError
 from cluster.dashboard.service_layers.sweep_service import SweepDraftRepository, SweepService
+from cluster.dashboard.service_layers.study_sweeps import StudySweeps
 from cluster.domain.sweep import SweepSpec
 from cluster.infrastructure.storage import FilesystemRunRepository
 from cluster.tests.test_sweep_models import TEXT, fixtures
@@ -101,6 +103,63 @@ def request_data(*, persist_prompt=True, response_storage_mode="full"):
 
 
 class SweepServiceTests(unittest.TestCase):
+    def register_study(self, study="study-one", sweep_id="external-one"):
+        directory = self.root / "studies"
+        self.service.study_sweeps = StudySweeps(directory)
+        repository = SweepRepository(directory / study / "sweeps")
+        plan = self.resolver(request_data(), False).plan
+        repository.create(build_sweep_manifest(sweep_id, plan))
+        return repository
+
+    def test_study_registration_is_live_and_does_not_copy_or_mutate_evidence(self):
+        self.assertEqual(self.service.list()["sweeps"], [])
+        repository = self.register_study()
+        path = repository.directory / "external-one" / "manifest.json"
+        original = path.read_bytes()
+        self.assertTrue(self.service.list()["sweeps"][0]["read_only"])
+        detail = self.service.get("external-one")
+        self.assertEqual(detail["draft"]["study_id"], "study-one")
+        self.assertEqual(self.service.export_plan("external-one")["plan_sha256"], detail["sweep"]["plan_sha256"])
+        self.assertEqual(self.service.results("external-one")["coverage"], detail["sweep"]["coverage"])
+        (repository.directory.parent / "execution_policy.json").write_text('{"energy":"N/A; no external sensor"}')
+        with mock.patch.object(self.service.result_reader, "assemble", wraps=self.service.result_reader.assemble) as assemble:
+            self.service.results("external-one")
+            self.assertEqual(assemble.call_args.kwargs["energy_unavailable_reason"], "N/A; no external sensor")
+        repository.append_event("external-one", {"type": "study_event"})
+        self.assertEqual(self.service.events("external-one")["events"][-1]["type"], "study_event")
+        self.assertEqual(path.read_bytes(), original)
+        self.assertFalse((self.runs.directory / "external-one").exists())
+        repository.update("external-one", lambda value: value.update(status="paused", phase="paused", pause_requested=True))
+        self.assertEqual(self.service.get("external-one")["sweep"]["status"], "paused")
+
+    def test_study_discovery_never_recovers_or_controls_hardware_jobs(self):
+        self.register_study()
+        self.assertEqual(self.service.recover_active_sweeps(), {"recovered": []})
+        payload = SimpleNamespace(idempotency_key="test", plan_revision=1, plan_sha256="test", reason="test")
+        operations = [
+            lambda: self.service.start("external-one", payload),
+            lambda: self.service.pause("external-one", payload),
+            lambda: self.service.resume("external-one", payload),
+            lambda: self.service.cancel("external-one", payload),
+            lambda: self.service.retry("external-one", "trial", payload),
+            lambda: self.service.clone_condition("external-one", "trial", "new-one"),
+        ]
+        for operation in operations:
+            with self.assertRaises(DashboardServiceError) as raised:
+                operation()
+            self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(self.backend.starts, [])
+        self.assertEqual(self.backend.cancels, [])
+
+    def test_study_discovery_rejects_ambiguous_ids_and_ignores_symlinks(self):
+        self.register_study()
+        (self.root / "studies" / "linked").symlink_to(self.root / "studies" / "study-one", target_is_directory=True)
+        self.assertEqual(len(self.service.list()["sweeps"]), 1)
+        self.register_study(study="study-two")
+        with self.assertRaises(DashboardServiceError) as raised:
+            self.service.list()
+        self.assertEqual(raised.exception.status_code, 409)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -345,6 +404,19 @@ class SweepServiceTests(unittest.TestCase):
             self.service.get("read_only_running")
         self.assertEqual(paused["status"], "paused")
         self.assertEqual(len(self.backend.starts), 1)
+
+    def test_loop_error_is_retained_without_get_restarting_it(self):
+        saved = self.save("loop_error")
+        with mock.patch.object(self.service, "_tick", side_effect=RuntimeError("PRIVATE_FAILURE")):
+            self.service.start("loop_error", self.lifecycle(saved, "start-error"))
+            self.wait_for(lambda: self.service.get("loop_error")["progress_observation"]["loop_state"] == "ERROR")
+            for _ in range(5):
+                detail = self.service.get("loop_error")
+                self.assertEqual(detail["progress_observation"]["display_state"], "LOOP_ERROR")
+                self.assertEqual(detail["sweep"]["status"], "running")
+                self.assertNotIn("PRIVATE_FAILURE", json.dumps(detail["progress_observation"]))
+        self.assertEqual(len(self.backend.starts), 1)
+        self.assertEqual(self.backend.cancels, [])
 
     def test_dashboard_restart_recovers_attempt_without_relaunching_completed_trial(self):
         request = request_data()
@@ -726,6 +798,29 @@ class SweepRouteTests(SweepServiceTests):
                 self.facade.sweep_event_stream = original
             self.assertEqual(streamed.status_code, 200)
             self.assertEqual(observed, {"sweep_id": "route_lifecycle", "cursor": 2})
+
+
+class LiveWorkerReferenceTests(unittest.TestCase):
+    def test_real_lan_endpoints_remain_distinct_and_load_profile_is_detected(self):
+        from cluster.dashboard import services
+
+        nodes = [
+            SimpleNamespace(name="pi-worker-01", role="worker", host="192.168.50.101", api_port=8000, platform="raspberry-pi"),
+            SimpleNamespace(name="pi-worker-02", role="worker", host="192.168.50.102", api_port=8000, platform="raspberry-pi"),
+        ]
+        status = [
+            {"name": node.name, "api": True, "profile": {"platform_kind": "raspberry-pi"},
+             "capabilities": {"load_profile_v1": True}}
+            for node in nodes
+        ]
+        with mock.patch.object(services, "read_enabled_nodes", return_value=nodes), mock.patch.object(
+            services.status_monitor, "snapshot", return_value=status
+        ):
+            workers = services._sweep_workers()
+
+        self.assertEqual([worker.worker_id for worker in workers], [node.name for node in nodes])
+        self.assertEqual(len({worker.endpoint_identity for worker in workers}), 2)
+        self.assertTrue(all(worker.load_profile == "valid" for worker in workers))
 
 
 if __name__ == "__main__":

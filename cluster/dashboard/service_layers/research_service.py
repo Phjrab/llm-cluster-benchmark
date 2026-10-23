@@ -14,6 +14,7 @@ from cluster.dashboard.research_views import (
     research_readiness,
 )
 from cluster.dashboard.service_layers.errors import DashboardServiceError
+from cluster.dashboard.service_layers.progress_observation import ProgressObservation
 from cluster.research.campaign import CampaignRepository, CampaignRunner, CampaignStateError
 
 
@@ -32,6 +33,7 @@ class ResearchService:
         repository_factory: Callable[[Path], CampaignRepository] = CampaignRepository,
         runner_factory: Callable[[str], CampaignRunner] | None = None,
         drive_interval_s: float = 0.25,
+        observation: ProgressObservation | None = None,
     ) -> None:
         self._campaigns_dir = campaigns_dir
         self._read_runs = read_runs
@@ -45,6 +47,7 @@ class ResearchService:
         self._workers: dict[str, threading.Thread] = {}
         self._worker_lock = threading.Lock()
         self._stop = threading.Event()
+        self.observation = observation or ProgressObservation()
 
     def _repository(self) -> CampaignRepository:
         return self._repository_factory(self._campaigns_dir)
@@ -82,6 +85,7 @@ class ResearchService:
         gate_blocked = False
         try:
             while not self._stop.is_set():
+                self.observation.tick(("campaign", campaign_id))
                 manifest = self._manifest(campaign_id)
                 active = any(
                     isinstance(cell, Mapping) and cell.get("status") == "running"
@@ -106,15 +110,18 @@ class ResearchService:
                                     ),
                                 },
                             )
+                        self.observation.success(("campaign", campaign_id), gate_blocked=True)
                         gate_blocked = True
                         self._stop.wait(self._drive_interval_s)
                         continue
                     gate_blocked = False
                 state = runner.tick(campaign_id)
+                self.observation.success(("campaign", campaign_id))
                 if state.get("status") in {"paused", "completed", "failed", "cancelled"}:
                     return
                 self._stop.wait(self._drive_interval_s)
         except Exception as exc:
+            self.observation.failed(("campaign", campaign_id))
             try:
                 self._repository().append_event(
                     campaign_id,
@@ -127,6 +134,7 @@ class ResearchService:
             except Exception:
                 pass
         finally:
+            self.observation.stopped(("campaign", campaign_id))
             with self._worker_lock:
                 current = self._workers.get(campaign_id)
                 if current is threading.current_thread():
@@ -145,6 +153,7 @@ class ResearchService:
                 daemon=True,
             )
             self._workers[campaign_id] = worker
+            self.observation.started(("campaign", campaign_id))
             worker.start()
 
     def recover_active_campaigns(self) -> dict[str, Any]:
@@ -185,7 +194,8 @@ class ResearchService:
             events = repository.read_events(campaign_id)
         except (CampaignStateError, ValueError) as exc:
             raise DashboardServiceError(404, "Campaign not found") from exc
-        return campaign_detail(manifest, events)
+        return {**campaign_detail(manifest, events),
+                "progress_observation": self.observation.snapshot(("campaign", campaign_id), manifest, events=events)}
 
     def start_campaign(self, campaign_id: str) -> dict[str, Any]:
         self._assert_execution_gate()

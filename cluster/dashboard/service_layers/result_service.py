@@ -6,6 +6,7 @@ from typing import Any, Callable, Mapping
 
 from cluster.application.jobs import NONTERMINAL_JOB_STATES
 from cluster.dashboard.service_layers.errors import DashboardServiceError
+from cluster.dashboard.service_layers.diagnostic_views import run_diagnostics
 from cluster.domain.events import EventChannel
 from cluster.infrastructure.storage import StorageCorruptionError
 
@@ -50,6 +51,7 @@ class ResultService:
         active_experiment: Callable[[], dict[str, Any] | None],
         publish_event: Callable[..., None],
         utc_now: Callable[[], str],
+        read_job: Callable[[str], dict[str, Any]] | None = None,
     ) -> None:
         self._run_repository = run_repository
         self._suite_repository = suite_repository
@@ -58,6 +60,7 @@ class ResultService:
         self._active_experiment = active_experiment
         self._publish_event = publish_event
         self._utc_now = utc_now
+        self._read_job = read_job
 
     @staticmethod
     def _check_id(run_id: str) -> None:
@@ -103,7 +106,22 @@ class ResultService:
             "response_storage_mode": mode or None,
             "response_storage_status": overall_status,
             "responses": responses,
+            "diagnostics": self.diagnostics(run_id),
         }
+
+    def diagnostics(self, run_id: str, *, offset: int = 0, limit: int = 20) -> dict[str, Any]:
+        self._check_id(run_id)
+        repository = self._run_repository()
+        if not hasattr(repository, "_run_dir"):
+            return {"schema_version": 1, "run_id": run_id, "availability": "NO_DIAGNOSTIC_RECORD", "requests": []}
+        directory = repository._run_dir(run_id)
+        # A config may exist before the final summary/response: support interrupted runs.
+        if not directory.is_dir():
+            raise DashboardServiceError(404, "Run not found")
+        try:
+            return run_diagnostics(directory, read_job=self._read_job, offset=offset, limit=limit)
+        except ValueError as exc:
+            raise DashboardServiceError(400, "Invalid diagnostic page bounds") from exc
 
     def measurements(self, run_id: str) -> dict[str, Any]:
         self._check_id(run_id)

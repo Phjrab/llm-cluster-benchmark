@@ -30,6 +30,7 @@ from .inference import InferenceBackend, LlamaCppInferenceBackend
 from .routes import WorkerRuntimeInfo, mount_worker_routes
 from .telemetry import TelemetryService, read_text
 from .ownership import WorkerOwnershipRegistry
+from cluster.infrastructure.request_diagnostics import DiagnosticJournal
 
 
 PROJECT_ROOT = default_project_layout().root
@@ -187,6 +188,10 @@ def create_app(
     ownership = WorkerOwnershipRegistry(
         resolved_root / ".run" / "cluster" / "worker-resource-owner.json"
     )
+    diagnostics = (
+        DiagnosticJournal(resolved_root / ".run" / "cluster" / "diagnostics")
+        if values.get("CLUSTER_DIAGNOSTICS_MODE", "lifecycle") == "lifecycle" else None
+    )
     telemetry_running = False
     if telemetry is not None:
         # Preserve the injectable service contract used by existing callers;
@@ -200,9 +205,13 @@ def create_app(
         if not telemetry_running:
             selected_telemetry.start()
             telemetry_running = True
+        if diagnostics is not None:
+            diagnostics.start()
         try:
             yield
         finally:
+            if diagnostics is not None:
+                diagnostics.close()
             if telemetry_running:
                 selected_telemetry.stop()
                 telemetry_running = False
@@ -229,11 +238,13 @@ def create_app(
         runtime=runtime,
         deployment_provider=lambda: deployment_status(resolved_root),
         ownership=ownership,
+        diagnostics=diagnostics,
     )
     app.state.inference_backend = selected_backend
     app.state.telemetry = selected_telemetry
     app.state.worker_runtime = runtime
     app.state.resource_ownership = ownership
+    app.state.request_diagnostics = diagnostics
     return app
 
 

@@ -1,0 +1,125 @@
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test
+> npm run test:syntax && npm run test:fixtures && npm run test:publication-png && npm run test:e2e
+
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:syntax
+> node --check cluster/dashboard/static/app.js && node --check cluster/dashboard/static/js/navigation.js && node --check cluster/dashboard/static/js/state.js && node --check cluster/dashboard/static/js/api.js && node --check cluster/dashboard/static/js/events.js && node --check cluster/dashboard/static/js/utils.js && node --check cluster/dashboard/static/js/power.js && node --check cluster/dashboard/static/js/console.js && node --check cluster/dashboard/static/js/models.js && node --check cluster/dashboard/static/js/results.js && node --check cluster/dashboard/static/js/research.js && node --check cluster/dashboard/static/js/sweep-builder.js && node --check cluster/dashboard/static/js/sweep-control.js && node --check cluster/dashboard/static/js/sweep-results.js && node --check cluster/dashboard/static/js/lab.js && node --check cluster/dashboard/static/js/theme.js
+
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:fixtures
+> node cluster/tests/test_dashboard_exports.js && node cluster/tests/test_research_lab.js
+
+dashboard export fixtures: OK
+research lab conditions, zero/null, metric semantics, matrix fixtures: OK
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:publication-png
+> node --check scripts/research/render_publication_png.js && node cluster/tests/test_phase11_publication_png.js
+
+phase11 publication PNG fixtures: OK
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:e2e
+> playwright test
+
+[WebServer] INFO:     Started server process [19942]
+[WebServer] INFO:     Waiting for application startup.
+
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:46178 (Press CTRL+C to quit)
+
+
+Running 39 tests using 1 worker
+
+(node:19946) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/39] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 390px
+[2/39] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 768px
+[3/39] cluster/tests/e2e/dashboard.spec.js:133:3 › Feature pages show only the selected part at 1440px
+[4/39] cluster/tests/e2e/dashboard.spec.js:171:1 › Page navigation preserves edits, supports history and redraws result charts
+[5/39] cluster/tests/e2e/dashboard.spec.js:204:1 › Deep links, invalid routes, keyboard links and model-pack handoff select the right page
+[6/39] cluster/tests/e2e/dashboard.spec.js:229:1 › Dashboard core flow renders workers, models, power warning, creates and recovers an experiment
+[7/39] cluster/tests/e2e/dashboard.spec.js:294:1 › Result responses, private trash deletion, and safe worker disconnect remain interactive
+[8/39] cluster/tests/e2e/dashboard.spec.js:346:1 › Node detail presents a running runtime preparation as a structured operation card
+[9/39] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 390px
+[10/39] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 768px
+[11/39] cluster/tests/e2e/dashboard.spec.js:486:3 › Sweep light theme and controls remain readable at 1440px
+[12/39] cluster/tests/e2e/dashboard.spec.js:569:1 › Sweep API unavailable is explained without displaying an empty success state
+[13/39] cluster/tests/e2e/dashboard.spec.js:582:1 › Sweep Builder previews 108 trials and controls disjoint durable runs without hidden authority
+[14/39] cluster/tests/e2e/research-lab.spec.js:4:1 › Saved plan Matrix inspects repeat/status/quality without starting work
+[15/39] cluster/tests/e2e/research-lab.spec.js:25:1 › Explicit baseline and controlled axes synchronize chart, table, CSV and filter removal
+[16/39] cluster/tests/e2e/research-lab.spec.js:50:1 › Empty campaigns and failed research requests remain explicit
+[17/39] cluster/tests/e2e/research-lab.spec.js:61:1 › Offline Worker, long escaped identity, 200% equivalent reflow and protected trash stay usable
+[18/39] cluster/tests/e2e/research-lab.spec.js:80:1 › Pending experiment submission sends one mocked request and formal controls send none
+[19/39] cluster/tests/e2e/research-lab.spec.js:98:1 › Late campaign read cannot replace the latest selection
+[20/39] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1440x900, with readable labels and native focus
+[21/39] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1366x768, with readable labels and native focus
+[22/39] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1024x768, with readable labels and native focus
+[23/39] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 390x844, with readable labels and native focus
+[24/39] cluster/tests/e2e/research-lab.spec.js:146:1 › Worker dialog close glyph and model selection have visible contrast
+[25/39] cluster/tests/e2e/theme.spec.js:8:1 › System default, manual persistence and cross-tab changes follow one preference
+[26/39] cluster/tests/e2e/theme.spec.js:28:3 › Theme remains usable with invalid storage
+[27/39] cluster/tests/e2e/theme.spec.js:28:3 › Theme remains usable with blocked storage
+[28/39] cluster/tests/e2e/theme.spec.js:39:1 › Theme preserves forms, baseline, chart visibility and sweep hash approval
+[29/39] cluster/tests/e2e/theme.spec.js:89:3 › Both themes fit all nine routes and maintain contrast at 1440px
+[30/39] cluster/tests/e2e/theme.spec.js:89:3 › Both themes fit all nine routes and maintain contrast at 390px
+[31/39] cluster/tests/e2e/theme.spec.js:135:1 › Dark dialogs retain keyboard focus and publication export stays white
+[32/39] cluster/tests/e2e/typography.spec.js:26:3 › Typography same-fixture captures and rendered fonts 1920x1080
+[33/39] cluster/tests/e2e/typography.spec.js:26:3 › Typography same-fixture captures and rendered fonts 1440x900
+[34/39] cluster/tests/e2e/typography.spec.js:26:3 › Typography same-fixture captures and rendered fonts 1280x800
+[35/39] cluster/tests/e2e/typography.spec.js:26:3 › Typography same-fixture captures and rendered fonts 390x844
+[36/39] cluster/tests/e2e/typography.spec.js:113:1 › Typography empty and failed-request warnings remain visible
+[37/39] cluster/tests/e2e/typography.spec.js:121:1 › Late local fonts repaint Canvas while baseline and hidden series remain selected
+[38/39] cluster/tests/e2e/typography.spec.js:155:1 › Sweep SVG axes use loaded UI faces at readable size on mobile
+  1) cluster/tests/e2e/typography.spec.js:155:1 › Sweep SVG axes use loaded UI faces at readable size on mobile
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: locator('.sweep-chart svg')
+    Expected: visible
+    Timeout: 7000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 7000ms
+      - waiting for locator('.sweep-chart svg')
+
+
+      159 |   await page.setViewportSize({width:390,height:844}); await page.goto('/#sweeps');
+      160 |   await page.evaluate(async()=> {ClusterDashboard.state.selectedSweepId='type-demo';ClusterDashboard.state.sweepDetails.set('type-demo',{sweep:{sweep_id:'type-demo',status:'completed'}});await ClusterDashboard.sweepResults.load('type-demo');});
+    > 161 |   await expect(page.locator('.sweep-chart svg')).toBeVisible();
+          |                                                  ^
+      162 |   await page.evaluate(()=>document.fonts.ready);
+      163 |   await page.locator('.sweep-chart').scrollIntoViewIfNeeded(); await capture(page,'sweep-svg-390');
+      164 |   if(stage==='after') {
+        at /Users/hajoonpark/자율설계/llm-cluster-benchmark/cluster/tests/e2e/typography.spec.js:161:50
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    .artifacts/playwright/test-results/typography-Sweep-SVG-axes--e8a0b--at-readable-size-on-mobile/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    .artifacts/playwright/test-results/typography-Sweep-SVG-axes--e8a0b--at-readable-size-on-mobile/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: .artifacts/playwright/test-results/typography-Sweep-SVG-axes--e8a0b--at-readable-size-on-mobile/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    .artifacts/playwright/test-results/typography-Sweep-SVG-axes--e8a0b--at-readable-size-on-mobile/trace.zip
+    Usage:
+
+        npx playwright show-trace .artifacts/playwright/test-results/typography-Sweep-SVG-axes--e8a0b--at-readable-size-on-mobile/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+(node:20646) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[39/39] cluster/tests/e2e/typography.spec.js:174:1 › Publication SVG keeps academic fonts and renders on the local export host
+  1 failed
+    cluster/tests/e2e/typography.spec.js:155:1 › Sweep SVG axes use loaded UI faces at readable size on mobile
+  38 passed (1.0m)

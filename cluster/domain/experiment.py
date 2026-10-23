@@ -85,6 +85,7 @@ class ExperimentConfig:
     n_batch: Optional[int] = None
     sweep: Optional[Dict[str, Any]] = None
     rpc_gpu_layers: Union[str, int] = "all"
+    diagnostics_mode: str = "lifecycle"
 
     @classmethod
     def from_dict(
@@ -109,6 +110,8 @@ class ExperimentConfig:
         return cls(**values)
 
     def validate(self) -> None:
+        if self.diagnostics_mode not in {"off", "lifecycle"}:
+            raise DomainValidationError("diagnostics_mode must be off or lifecycle")
         if not isinstance(self.name, str) or not self.name.strip():
             raise DomainValidationError("Experiment name cannot be empty")
         if self.experiment_id:

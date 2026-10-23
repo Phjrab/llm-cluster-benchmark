@@ -1,0 +1,30 @@
+
+> llm-cluster-benchmark-dashboard-tests@1.0.0 test:e2e
+> playwright test cluster/tests/e2e/research-lab.spec.js
+
+[WebServer] INFO:     Started server process [16456]
+[WebServer] INFO:     Waiting for application startup.
+
+[WebServer] INFO:     Application startup complete.
+
+[WebServer] INFO:     Uvicorn running on http://127.0.0.1:46175 (Press CTRL+C to quit)
+
+
+Running 11 tests using 1 worker
+
+(node:16462) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+
+[1/11] cluster/tests/e2e/research-lab.spec.js:4:1 › Saved plan Matrix inspects repeat/status/quality without starting work
+[2/11] cluster/tests/e2e/research-lab.spec.js:25:1 › Explicit baseline and controlled axes synchronize chart, table, CSV and filter removal
+[3/11] cluster/tests/e2e/research-lab.spec.js:50:1 › Empty campaigns and failed research requests remain explicit
+[4/11] cluster/tests/e2e/research-lab.spec.js:61:1 › Offline Worker, long escaped identity, 200% equivalent reflow and protected trash stay usable
+[5/11] cluster/tests/e2e/research-lab.spec.js:80:1 › Pending experiment submission sends one mocked request and formal controls send none
+[6/11] cluster/tests/e2e/research-lab.spec.js:98:1 › Late campaign read cannot replace the latest selection
+[7/11] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1440x900, with readable labels and native focus
+[8/11] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1366x768, with readable labels and native focus
+[9/11] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 1024x768, with readable labels and native focus
+[10/11] cluster/tests/e2e/research-lab.spec.js:115:3 › Research workspace fits 390x844, with readable labels and native focus
+[11/11] cluster/tests/e2e/research-lab.spec.js:146:1 › Worker dialog close glyph and model selection have visible contrast
+  11 passed (8.4s)

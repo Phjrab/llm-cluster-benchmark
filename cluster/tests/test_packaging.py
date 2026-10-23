@@ -190,6 +190,8 @@ class WheelInstallationTests(unittest.TestCase):
                 expected_package_files = {
                     "cluster/__init__.py",
                     "cluster/domain/errors.py",
+                    "cluster/benchmark/diagnostics.py",
+                    "cluster/infrastructure/request_diagnostics.py",
                     "cluster/config/experiment_defaults.json",
                     "cluster/config/model_catalog.json",
                     "cluster/config/nodes.example.csv",
@@ -206,6 +208,11 @@ class WheelInstallationTests(unittest.TestCase):
                     "cluster/worker/stop.sh",
                     "cluster/worker_setup.sh",
                 }
+                expected_package_files.update(
+                    path.relative_to(ROOT).as_posix()
+                    for path in (ROOT / "cluster/dashboard/static/fonts").rglob("*")
+                    if path.is_file()
+                )
                 self.assertTrue(expected_package_files.issubset(names), sorted(expected_package_files - names))
                 self.assertFalse(any(name.startswith("cluster/tests/") for name in names))
                 self.assertFalse(any(".run/" in name or name.endswith(".gguf") for name in names))

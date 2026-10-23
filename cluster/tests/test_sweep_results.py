@@ -34,6 +34,25 @@ def simple_plan(*, execution_strategy="single_node", repeat_count=2):
 
 
 class SweepResultTests(unittest.TestCase):
+    def test_study_policy_suppresses_energy_in_view_aggregates_and_exports(self):
+        plan = simple_plan(repeat_count=1)
+        manifest = build_sweep_manifest("energy_policy", plan)
+        trial = manifest["trials"][0]
+        trial.update(status="completed", official_attempt_id="a1")
+        trial["attempts"] = [{"attempt_id": "a1", "status": "completed", "run_id": "run_policy"}]
+        self.write_run("run_policy", 12, "2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z")
+        summary = self.repository.read_summary("run_policy")
+        summary["measurement_instrumentation"]["overall"] = {"generated_tokens_per_j": 99.0}
+        self.repository.write_summary("run_policy", summary)
+        service = SweepResultService(self.repository, bootstrap_resamples=100)
+        result = service.assemble(manifest, plan, energy_unavailable_reason="N/A; no external sensor")
+        attempt = result["trials"][0]["attempts"][0]
+        self.assertIsNone(attempt["metrics"]["generated_tokens_per_j"])
+        self.assertFalse(attempt["energy"]["available"])
+        self.assertEqual(result["aggregates"][0]["metrics"]["generated_tokens_per_j"]["count"], 0)
+        self.assertNotIn("99.0", service.export_csv(result))
+        self.assertEqual(self.repository.read_summary("run_policy"), summary)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

@@ -31,6 +31,8 @@ from typing import Any, Dict, Generator, List, Mapping, Optional, Sequence
 
 import psutil
 
+from cluster.dashboard.service_layers.progress_observation import ProgressObservation
+from cluster.infrastructure.storage import FilesystemJobRepository
 from cluster.dashboard.schemas import ActionPayload, ExperimentPayload, NodePayload
 from cluster.dashboard.service_layers import (
     DashboardServiceError,
@@ -1107,12 +1109,14 @@ def _sweep_workers() -> List[WorkerReference]:
             platform = "unknown"
         values: Dict[str, Any] = {
             "worker_id": node.name,
-            "endpoint_identity": f"{node.host}:{node.api_port}",
+            "endpoint_identity": "endpoint-" + hashlib.sha256(
+                f"{node.host}:{node.api_port}".encode("ascii")
+            ).hexdigest(),
             "platform": platform,
             "availability": "valid" if live.get("api") is True else "blocked" if live else "unknown",
             "rpc_layer": "valid" if capabilities.get("rpc_layer_v1") is True else "unknown",
             "rpc_row": "valid" if capabilities.get("rpc_row_v1") is True else "unknown",
-            "load_profile": "valid" if capabilities.get("worker_load_profile_v1") is True else "unknown",
+            "load_profile": "valid" if capabilities.get("load_profile_v1") is True else "unknown",
         }
         if re.fullmatch(r"[0-9a-f]{40}", runtime_commit):
             values["runtime_commit"] = runtime_commit
@@ -1475,6 +1479,8 @@ class StatusMonitor:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._snapshot: List[Dict[str, Any]] = []
+        self._sample_monotonic = None
+        self._sample_at = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._power_signatures: Dict[str, tuple[object, ...]] = {}
@@ -1493,11 +1499,15 @@ class StatusMonitor:
     def refresh_now(self) -> None:
         try:
             nodes = read_all_nodes()
+            sample_started_mono = time.monotonic()
+            sample_started_at = utc_now()
             with concurrent.futures.ThreadPoolExecutor(max_workers=min(32, max(1, len(nodes)))) as executor:
                 snapshot = list(executor.map(probe_node, nodes))
             with self._lock:
                 changed = snapshot != self._snapshot
                 self._snapshot = snapshot
+                self._sample_monotonic = sample_started_mono
+                self._sample_at = sample_started_at
                 power_changes = []
                 observed_names = set()
                 for item in snapshot:
@@ -1545,6 +1555,19 @@ class StatusMonitor:
     def snapshot(self) -> List[Dict[str, Any]]:
         with self._lock:
             return json.loads(json.dumps(self._snapshot))
+
+    def observation(self) -> Dict[str, Any]:
+        """Closed cache projection; never starts a probe or refresh."""
+        with self._lock:
+            age = time.monotonic() - self._sample_monotonic if self._sample_monotonic is not None else None
+            fresh = age is not None and age <= 15.0
+            return {"source": "existing_status_cache", "observed_at": self._sample_at,
+                    "age_s": age, "collection_interval_s": 5.0,
+                    "freshness": "FRESH" if fresh else "STALE" if age is not None else "UNKNOWN",
+                    "nodes": [{"name": n.get("name"),
+                               "response": "RESPONDING" if fresh and n.get("api") is True else
+                               "NO_RESPONSE_OBSERVED" if fresh and n.get("api") is False else "UNKNOWN"}
+                              for n in self._snapshot]}
 
 
 status_monitor = StatusMonitor()
@@ -2483,7 +2506,12 @@ class DashboardFacade:
     """
 
     def __init__(self) -> None:
+        self._progress = ProgressObservation(
+            read_job=lambda job_id: FilesystemJobRepository(JOBS_DIR).read(job_id),
+            cached_workers=status_monitor.observation,
+        )
         self._research = ResearchService(
+            observation=self._progress,
             campaigns_dir=CAMPAIGNS_DIR,
             read_runs=read_run_summaries,
             read_research_document=_read_research_document,
@@ -2493,6 +2521,7 @@ class DashboardFacade:
             runner_factory=_campaign_runner,
         )
         self._results = ResultService(
+            read_job=lambda job_id: FilesystemJobRepository(JOBS_DIR).read(job_id),
             run_repository=_run_repository,
             suite_repository=_suite_repository,
             read_suites=read_suite_summaries,
@@ -2513,8 +2542,10 @@ class DashboardFacade:
         )
         sweep_runs = SweepRepository(SWEEPS_DIR / "runs")
         self._sweeps = SweepService(
+            observation=self._progress,
             drafts=SweepDraftRepository(SWEEP_DRAFTS_DIR),
             runs=sweep_runs,
+            study_directory=JOBS_DIR.parent / "studies",
             resolver=resolve_sweep_request,
             supervisor_factory=lambda prompt_provider, drift_checker: SweepSupervisor(
                 sweep_runs,
@@ -2555,7 +2586,9 @@ class DashboardFacade:
             "inference_enabled": False,
             "runtime_dir": str(PROJECT_LAYOUT.controller_runtime_dir),
             "results_dir": str(RESULTS_DIR),
-            "dashboard": {"service": "cluster-dashboard", "healthy": True},
+            "dashboard": {"service": "cluster-dashboard", "healthy": True,
+                          "serving_instance_id": self._progress.instance_id,
+                          "serving_started_at": self._progress.started_at},
             "at": utc_now(),
         }
 
@@ -3283,6 +3316,9 @@ class DashboardFacade:
 
     def responses(self, run_id: str) -> Dict[str, Any]:
         return self._results.responses(run_id)
+
+    def diagnostics(self, run_id: str, *, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
+        return self._results.diagnostics(run_id, offset=offset, limit=limit)
 
     def measurements(self, run_id: str) -> Dict[str, Any]:
         return self._results.measurements(run_id)

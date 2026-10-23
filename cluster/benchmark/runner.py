@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import threading
+import urllib.error
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
@@ -99,8 +100,14 @@ def _load_model(node: Node, config: ExperimentConfig) -> Dict[str, Any]:
                        "PREPARATION_TEMPLATE_MISMATCH", "EFFECTIVE_CONTEXT_UNKNOWN",
                        "TOKENIZER_VERSION_UNVERIFIED", "CHAT_HANDLER_UNVERIFIED",
                        "CHAT_TEMPLATE_IDENTITY_UNAVAILABLE", "EXACT_INPUT_UNAVAILABLE")
+            detail = str(exc)
+            if isinstance(exc, urllib.error.HTTPError):
+                try:
+                    detail = exc.read(4096).decode("utf-8", errors="replace")
+                except Exception:
+                    pass
             current["input_preparation_error"] = next(
-                (code for code in reasons if code in str(exc)), "SWEEP_INPUT_PREPARATION_FAILED")
+                (code for code in reasons if code in detail), "SWEEP_INPUT_PREPARATION_FAILED")
             return {"node": node.name, **current}
     health = request_json(f"{node.api_url}/cluster/health", timeout=10.0)
     profile = health.get("profile") or {}

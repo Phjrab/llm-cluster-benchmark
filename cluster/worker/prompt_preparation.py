@@ -1,6 +1,6 @@
 """Pinned text-only preparation; no evaluator exposed to the formatter."""
-import hashlib
 import inspect
+from cluster.infrastructure.gguf import canonical_metadata_sha256
 
 
 class PreparationError(ValueError):
@@ -40,5 +40,6 @@ def capture_chat_input(llm, messages):
         handler(llama=_TokenizerOnly(llm.tokenize), messages=messages,
                 max_tokens=1, stream=False, repeat_penalty=1.0)
     except _Captured as captured:
-        return captured.kwargs, hashlib.sha256(template.encode("utf-8")).hexdigest()
+        # Match the GGUF metadata identity used by model admission and locks.
+        return captured.kwargs, canonical_metadata_sha256({"tokenizer.chat_template": template})
     raise PreparationError("EXACT_INPUT_UNAVAILABLE")

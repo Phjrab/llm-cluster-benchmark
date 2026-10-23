@@ -48,7 +48,7 @@ def create_app() -> FastAPI:
             application.state.dashboard_services.shutdown()
 
     application = FastAPI(
-        title="MediFlow LLM Cluster Lab",
+        title="LLM Cluster Benchmark",
         version="1.0.0",
         lifespan=dashboard_lifespan,
     )
