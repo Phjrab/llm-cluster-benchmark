@@ -786,3 +786,17 @@ code, .identifier { white-space: normal; }
 /* Natural-language prompts/responses are prose; structured failure traces stay mono. */
 .prompt-block pre, .response-card pre { font-family: var(--font-ui); font-size: 14px; line-height: 1.55; }
 #compareBaseline { font-family: var(--font-mono); font-size: 13px; font-weight: 400; font-synthesis: none; }
+
+/* F03: bounded observations reuse the existing theme and typography. */
+.execution-observation, .request-diagnostics {
+  border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 12px 0;
+  min-width: 0; overflow-wrap: anywhere; text-align: left;
+}
+.execution-observation p, .request-diagnostics p { margin: 6px 0; font-size: .85rem; }
+.execution-observation[data-progress-state="LOOP_ERROR"] { border-color: var(--red); }
+.execution-observation details, .request-diagnostics details { margin-top: 8px; }
+.execution-observation summary, .request-diagnostics summary { cursor: pointer; }
+.execution-observation dl, .request-diagnostics dl { display: block; margin: 8px 0; }
+.execution-observation dt, .request-diagnostics dt { font-weight: 600; margin-top: 6px; }
+.execution-observation dd, .request-diagnostics dd { margin: 0; overflow-wrap: anywhere; }
+.diagnostic-request, .observed-child { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }

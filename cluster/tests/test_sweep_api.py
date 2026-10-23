@@ -405,6 +405,19 @@ class SweepServiceTests(unittest.TestCase):
         self.assertEqual(paused["status"], "paused")
         self.assertEqual(len(self.backend.starts), 1)
 
+    def test_loop_error_is_retained_without_get_restarting_it(self):
+        saved = self.save("loop_error")
+        with mock.patch.object(self.service, "_tick", side_effect=RuntimeError("PRIVATE_FAILURE")):
+            self.service.start("loop_error", self.lifecycle(saved, "start-error"))
+            self.wait_for(lambda: self.service.get("loop_error")["progress_observation"]["loop_state"] == "ERROR")
+            for _ in range(5):
+                detail = self.service.get("loop_error")
+                self.assertEqual(detail["progress_observation"]["display_state"], "LOOP_ERROR")
+                self.assertEqual(detail["sweep"]["status"], "running")
+                self.assertNotIn("PRIVATE_FAILURE", json.dumps(detail["progress_observation"]))
+        self.assertEqual(len(self.backend.starts), 1)
+        self.assertEqual(self.backend.cancels, [])
+
     def test_dashboard_restart_recovers_attempt_without_relaunching_completed_trial(self):
         request = request_data()
         request["spec"]["repeat_count"] = 3

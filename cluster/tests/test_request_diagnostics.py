@@ -336,13 +336,13 @@ class DiagnosticTests(unittest.TestCase):
         wanted = request_identity(sweep_id='sweep_1', trial_id='trial_1', cell_id='cell_1')
         config = {'suite_id': 'suite_1', 'sweep': {'sweep_id': 'sweep_1', 'trial_id': 'trial_1',
                   'cell_id': 'cell_1', 'attempt_id': 'attempt_1'}}
-        job = {'id': 'job_test', 'suite_id': 'suite_1', 'nodes': [NODE.name],
+        job = {'id': 'suite_1', 'job_id': 'job_test', 'suite_id': 'suite_1', 'nodes': [NODE.name],
                'resource_reservation': {'owner_job_id': 'job_test', 'lease_id': OWNER['lease_id'],
                  'fencing_epoch': 7, 'status': 'quarantined', 'cleanup_verified': False}}
         headers, cleanup = job_context(wanted, config, job)
         self.assertEqual(headers, HEADERS)
         self.assertEqual(cleanup['status'], 'UNCERTAIN')
-        for changed in ({**job, 'id': 'other'}, {**job, 'suite_id': 'other'}, {**job, 'nodes': ['other']}):
+        for changed in ({**job, 'job_id': 'other'}, {**job, 'suite_id': 'other'}, {**job, 'nodes': ['other']}):
             with self.assertRaises(ValueError):
                 job_context(wanted, config, changed)
         with self.assertRaises(ValueError):

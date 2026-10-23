@@ -32,10 +32,18 @@ Controller의 Dashboard 프로세스 내부 진행 loop가 기존 `SweepSupervis
 | runtime execution verified | Model compatibility 또는 결과의 verified execution evidence | exact artifact가 관측된 runtime/backend에서 실행됨 | 다른 Worker/context의 보장 또는 formal 승인 |
 | formal approved | lock, fresh identity, protocol, gate가 모두 충족된 formal 상태 | 승인된 Campaign 범위에서만 사용 가능 | 일반 Sweep 결과의 자동 승격 |
 
-현재 UI는 process-local 진행 loop를 독립적인 전역 liveness 배지로 제공하지 않는다. 따라서
-오래된 결과나 `running` 문자열만 보고 loop가 살아 있다고 판정하지 않는다. 인수 중에는
-시작 시각 이후의 새 event와 다음 attempt claim을 함께 증거로 보존한다. 상태가 움직이지 않으면
-Dashboard log, child identity와 durable manifest를 확인할 때까지 `UNKNOWN`으로 둔다.
+F03 UI의 Sweep/Campaign 상세에는 **실행 진행 관측**이 있다. 서버 응답, serving/loop
+instance, 마지막 tick/정상 tick/dispatch, 루프 오류, 저장된 child 상태와 기존 Worker cache를
+따로 표시한다. 표시값은 화면에 적힌 **조회 시점**의 관측이다. 기존 event에 따른 갱신 또는
+새로고침으로 다시 조회한다. heartbeat가 최신이어도 요청 진행은 UNKNOWN일 수 있다.
+프로세스 생존은 durable `running`만으로 판정하지 않으며 `process live UNKNOWN`으로 표시한다.
+
+이전 instance의 heartbeat는 복원하지 않는다. 로컬 루프를 관측하지 못했거나 stale이면
+`확인 불가`이며, 외부 Study runner나 다른 서버 instance의 실제 상태는 UNKNOWN이다.
+`진행 루프 오류`는 저장된 manifest의 `running`과 함께 보일 수 있다. 이것은 자동 실패 처리나
+취소·lease 해제 명령이 아니다. 마지막 관측 시간과 child/job 기록을 확인한다. 정상적인 긴
+추론은 결과 간격만으로 장애로 분류하지 않는다. Worker cache의 freshness는 기존 5초 수집
+batch 시작 시각을 기준으로 보수적으로 계산하며, 새 조회 때문에 Worker probe를 시작하지 않는다.
 
 ## 인수 전 증거 봉투
 
@@ -338,6 +346,58 @@ export SHA-256, 포함 run IDs, response storage mode, 누락 reason과 clone된
 
 실패 attempt가 사라지거나 성공 retry만 선택되거나, 결측치를 0으로 바꾸거나, privacy 밖 원문이
 노출되면 결과 인수를 중단한다.
+
+## F03 사용자 수동 인수 순서 (작성만 완료, 실제 실행 NOT RUN)
+
+아래는 이번 패키지의 권장 인수 순서다. 위의 세부 절차를 재사용하며, 각 단계는 별도 승인된
+운영 창에서 수행한다. Dashboard 서버와 Mac–Worker 네트워크는 유지한다. 기존 8–9절의 서버
+중지/재시작 검사는 정상 인수의 필수 단계가 아니며 별도 운영 창에서만 수행한다.
+
+| 순서 / 연결 절차 | 전제 조건 | 사용자 조작 | 기대 결과 | 보존할 로그 / ID | 중단 기준 |
+| --- | --- | --- | --- | --- | --- |
+| 1 / §1 | active job·lease·quarantine 확인, 배포 승인 | Controller/Worker source 및 capability 조회 | exact source 구분, Worker `request_diagnostics_v1` 지원 여부 명시 | source tree/commit, serving instance, Worker capability 시각 | source mismatch·확인 불가이면 실행 보류 |
+| 2 / §2 | 검증된 작은 모델이 해당 Worker에 이미 설치됨 | Worker 1대, concurrency 1, 작은 일반 exploratory 실행 | 실제 요청과 cleanup 기록 확보, diagnostic 설정 기록 | job/run/attempt/diagnostic ID, config, CSV, events | 전원 저하·OOM 증거·checksum drift·cleanup 불확실 |
+| 3 / §3 | 2 통과, 작은 두 context의 preview 승인 | 같은 모델로 작은 context Sweep | requested/effective context 일치, 각 Trial 분리 | sweep ID, plan SHA, trial/cell/attempt/job/run | drift·실제 적용값 불일치 |
+| 4 / §7 | 3 진행 중, 서버·네트워크 유지 | 브라우저를 닫고 다시 열기 | 브라우저 없이 후속 Trial 진행, 조회만으로 추가 claim 없음 | 닫기 전후 event cursor·attempt ID·loop instance | 중복 실행 또는 loop error |
+| 5 / §6 및 lifecycle controls | 취소 영향이 승인된 작은 Sweep | Pause → 경계 정지 확인 → Resume → Cancel | 기존 정책대로 child/cleanup 처리, 원래 attempt 보존 | 각 제어 event·job/lease·cleanup 상태 | 정리 불확실·lease 조기 해제·후속 중복 실행 |
+| 6 / §5–6 | 서로 다른 물리 Worker 그룹, 명시적 최대 2 job | 두 그룹의 작업과 한쪽 취소 확인 | 대상 job만 취소, 다른 job/진단 유지 | 두 job/run/attempt ID 및 resource key | 물리 Worker 중복·진단 혼입 |
+| 7 / §10, 필요 시만 | 작은 RPC가 별도로 승인됨 | 기존 RPC profile의 작은 실행 및 cleanup 확인 | 기존 RPC 정책 유지, 지원하지 않는 Worker 단계 UNKNOWN | profile hash, coordinator/devices, run, cleanup | RPC 잔여 프로세스·cleanup 불확실 |
+| 8 / §11 및 아래 | 실제 실패 또는 자연 발생 timeout, 해당 job 종료 확인 | 로컬 요약 확인 후 필요한 요청만 명시적 기록 회수 | 원래 실패 유지, 마지막 Worker 단계·공백 확인 | original request ID + collection slot·UTC·job ownership | 다른 attempt의 기록·credential 노출·재시도 발생 |
+
+실패 재현을 위해 실제 장비의 OOM·전원 저하·과부하를 고의로 유발하지 않는다. concurrency 1과
+4의 비교가 필요하면 별도 일반 exploratory 실험으로 만든다. 기존 H01 계획/결과는 수정하지 않는다.
+
+### F02 기록을 F03 화면에서 확인하기
+
+결과 → 상세 보기 → **요청 단계 · 자원 진단**에서 Controller 실패, Worker 마지막 단계/시각,
+메모리·프로세스 관측, cleanup, 누락 근거를 확인한다. 첫 페이지는 최근 보존 요청 최대 20개이며
+다음 진단 버튼으로 다음 페이지를 읽는다. 상세 보기를 다시 열면 첫 페이지로 돌아간다.
+
+`GET /api/runs/{run_id}/diagnostics?offset=0&limit=20`는 기존 Dashboard 인증 아래의 로컬 조회다.
+최종 summary/response가 없는 중단 run도 알려진 run ID와 config가 있으면 조회할 수 있다.
+임의 파일·로그 경로는 받지 않는다. 기록 없음은 Worker 미실행의 증거가 아니다. timeout 뒤
+Worker 완료 근거를 회수해도 CSV/summary/성공률은 바뀌지 않으며 자동 retry는 하지 않는다.
+
+실제 Worker 조회를 승인한 뒤, 종료된 durable job의 한 diagnostic ID만 아래 CLI로 회수한다.
+변수는 **해당 운영 프로젝트의 실제 경로**로 설정한다. credential을 명령에 넣지 않는다.
+
+```bash
+# 로컬 자료만 요약: Worker에 연결하지 않음
+.venv/bin/python -m cluster.benchmark.diagnostics \
+  --results-root "$RESULTS_ROOT" --run-id "$RUN_ID" --diagnostic-id "$DIAGNOSTIC_ID" \
+  --jobs-dir "$JOBS_DIR" --inventory "$INVENTORY" --summary-only
+
+# 별도 승인된 실제 조회: 종료 job의 기존 인증/ownership으로 한 번 회수
+.venv/bin/python -m cluster.benchmark.diagnostics \
+  --results-root "$RESULTS_ROOT" --run-id "$RUN_ID" --diagnostic-id "$DIAGNOSTIC_ID" \
+  --jobs-dir "$JOBS_DIR" --inventory "$INVENTORY"
+```
+
+결과는 `results/<run_id>/diagnostics/collections/000.json`부터 최대 256개 고정 slot에 추가된다.
+Controller journal은 같은 run의 `diagnostics/controller/events*.jsonl`, Worker journal은 해당
+Worker runtime의 기존 진단 경로에 있다([F02 저장 정책](../followups/operational-hardening/F02-diagnostics.md)).
+회수 후 화면을 다시 열면 저장된 추가 근거를 표시한다. 측정 중 polling, 자동 회수, 모델 조작,
+cleanup 또는 Worker shell을 호출하는 경로는 없다. 진단 파일·운영 로그·결과·credential은 Git에 넣지 않는다.
 
 ## 판정 기록
 

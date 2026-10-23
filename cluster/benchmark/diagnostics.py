@@ -296,7 +296,7 @@ def job_context(wanted, config, job):
     """Validate a saved run/job/attempt link before deriving historical ownership."""
     sweep = mapping(config.get('sweep'))
     if (not config.get('suite_id') or config['suite_id'] != job.get('suite_id')
-            or wanted['job_id'] != job.get('id') or wanted['node'] not in job.get('nodes', [])):
+            or wanted['job_id'] != job.get('job_id') or wanted['node'] not in job.get('nodes', [])):
         raise ValueError('DIAGNOSTIC_JOB_MISMATCH')
     expected = {'sweep_id': sweep.get('sweep_id', ''), 'trial_id': sweep.get('trial_id', ''),
                 'cell_id': sweep.get('cell_id', '') or config.get('campaign_cell_id', ''),

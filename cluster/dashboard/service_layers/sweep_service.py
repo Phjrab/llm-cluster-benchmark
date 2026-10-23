@@ -19,6 +19,7 @@ from cluster.domain.sweep import ResolvedPlan
 from cluster.infrastructure.storage import atomic_write_text, read_json_object
 
 from .errors import DashboardServiceError
+from .progress_observation import ProgressObservation
 from .sweep_result_service import SweepResultService
 from .study_sweeps import StudySweeps
 
@@ -168,6 +169,7 @@ class SweepService:
         supervisor_factory: SupervisorFactory,
         run_repository: Any | None = None,
         drive_interval_s: float = 0.25,
+        observation: ProgressObservation | None = None,
         study_directory: Path | None = None,
     ) -> None:
         self.drafts = drafts
@@ -179,6 +181,7 @@ class SweepService:
         self._workers: dict[str, threading.Thread] = {}
         self._worker_lock = threading.Lock()
         self._stop = threading.Event()
+        self.observation = observation or ProgressObservation()
         self.study_sweeps = StudySweeps(study_directory) if study_directory is not None else None
 
     def _study(self, sweep_id: str):
@@ -394,11 +397,14 @@ class SweepService:
     def _drive(self, sweep_id: str) -> None:
         try:
             while not self._stop.is_set():
+                self.observation.tick(("sweep", sweep_id))
                 value = self._tick(sweep_id)
+                self.observation.success(("sweep", sweep_id))
                 if value.get("status") in TERMINAL | {"paused"}:
                     return
                 self._stop.wait(self._drive_interval_s)
         except Exception as exc:
+            self.observation.failed(("sweep", sweep_id))
             try:
                 self.runs.append_event(
                     sweep_id,
@@ -411,6 +417,7 @@ class SweepService:
             except Exception:
                 pass
         finally:
+            self.observation.stopped(("sweep", sweep_id))
             with self._worker_lock:
                 current = self._workers.get(sweep_id)
                 if current is threading.current_thread():
@@ -428,6 +435,7 @@ class SweepService:
                 daemon=True,
             )
             self._workers[sweep_id] = worker
+            self.observation.started(("sweep", sweep_id))
             worker.start()
 
     def recover_active_sweeps(self) -> dict[str, Any]:
@@ -551,7 +559,8 @@ class SweepService:
         entry = self._study(sweep_id)
         if entry:
             _, manifest, study = entry
-            return {"draft": StudySweeps.public(manifest, study), "sweep": manifest}
+            return {"draft": StudySweeps.public(manifest, study), "sweep": manifest,
+                    "progress_observation": self.observation.snapshot(("sweep", sweep_id), manifest, external=True)}
         draft = self.drafts.read(sweep_id)
         try:
             sweep = self.runs.read(sweep_id)
@@ -559,7 +568,8 @@ class SweepService:
             if draft.get("status") != "draft":
                 raise DashboardServiceError(409, "Sweep durable state is unavailable") from exc
             sweep = None
-        return {"draft": self._public_draft(draft), "sweep": sweep}
+        return {"draft": self._public_draft(draft), "sweep": sweep,
+                "progress_observation": self.observation.snapshot(("sweep", sweep_id), sweep)}
 
     def list(self, *, offset: int = 0, limit: int = 100) -> dict[str, Any]:
         if offset < 0 or limit < 1 or limit > 100:
