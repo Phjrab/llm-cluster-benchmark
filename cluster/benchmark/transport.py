@@ -16,6 +16,7 @@ from cluster.domain.errors import ErrorCode
 from cluster.domain.failures import failure_from_message
 from cluster.infrastructure.sse import parse_sse_events
 
+from .diagnostics import begin
 from .models import RequestTask
 
 
@@ -42,6 +43,8 @@ def utc_now() -> str:
 def stream_worker_request(
     node: Any, config: ExperimentConfig, task: RequestTask, warmup: bool = False
 ) -> Dict[str, Any]:
+    resource_headers = worker_resource_headers()
+    trace = begin(config, node, task, warmup, resource_headers)
     payload = {
         "message": config.prompt,
         "history": [],
@@ -56,7 +59,7 @@ def stream_worker_request(
     request = urllib.request.Request(
         f"{node.api_url}/cluster/chat/stream",
         data=request_body,
-        headers={"Content-Type": "application/json", "Accept": "text/event-stream", **worker_auth_headers(), **worker_resource_headers()},
+        headers={"Content-Type": "application/json", "Accept": "text/event-stream", **worker_auth_headers(), **resource_headers, **trace.headers()},
         method="POST",
     )
     started_wall = utc_now()
@@ -68,8 +71,11 @@ def stream_worker_request(
     server_metrics: Dict[str, Any] = {}
     error = ""
     ok = False
+    terminal_stage = None
+    trace.emit("transport_started")
     try:
         with urllib.request.urlopen(request, timeout=config.request_timeout_s) as response:
+            trace.emit("response_started")
             connection_setup_s = time.perf_counter() - started
             counted = _CountingIterator(response)
             for event in parse_sse_events(counted):
@@ -77,6 +83,7 @@ def stream_worker_request(
                 if event_type == "token":
                     if first_token_at is None:
                         first_token_at = time.perf_counter()
+                        trace.emit("first_token_received")
                     output_parts.append(str(event.get("text", "")))
                 elif event_type == "done":
                     server_metrics = event.get("metrics") or {}
@@ -86,6 +93,8 @@ def stream_worker_request(
             bytes_received = counted.bytes_read
     except (OSError, ValueError, urllib.error.URLError) as exc:
         error = str(exc)
+        cause = getattr(exc, "reason", exc)
+        terminal_stage = "timeout" if isinstance(cause, TimeoutError) else "transport_error"
     finished = time.perf_counter()
     ttft_s = (first_token_at - started) if first_token_at else None
     e2e_s = finished - started
@@ -98,7 +107,10 @@ def stream_worker_request(
         (len(request_body) + bytes_received) / e2e_s if e2e_s > 0 else None
     )
     failure = failure_from_message(error, stage="inference", node=node.name, model_id=config.model_id) if error else None
+    trace.emit(terminal_stage or ("completed" if ok else "worker_error" if error else "stream_incomplete"),
+               error_code=failure.code.value if failure else None)
     return {
+        "diagnostic_identity": trace.identity,
         "request_id": task.request_id,
         "logical_request_id": task.logical_request_id,
         "scenario_id": task.scenario_id,
@@ -154,6 +166,7 @@ def stream_worker_request(
 def stream_rpc_request(
     coordinator: Any, coordinator_url: str, config: ExperimentConfig, task: RequestTask
 ) -> Dict[str, Any]:
+    trace = begin(config, coordinator, task, task.scenario_id == "warmup", worker_resource_headers())
     payload = {
         "messages": [{"role": "user", "content": config.prompt}],
         "max_tokens": config.max_tokens,
@@ -183,8 +196,11 @@ def stream_rpc_request(
     error = ""
     error_code = ""
     ok = False
+    terminal_stage = None
+    trace.emit("transport_started")
     try:
         with urllib.request.urlopen(request, timeout=config.request_timeout_s) as response:
+            trace.emit("response_started")
             connection_setup_s = time.perf_counter() - started
             for raw_line in response:
                 bytes_received += len(raw_line)
@@ -209,6 +225,7 @@ def stream_rpc_request(
                     if token:
                         if first_token_at is None:
                             first_token_at = time.perf_counter()
+                            trace.emit("first_token_received")
                         output_parts.append(token)
                     if choices[0].get("finish_reason") is not None:
                         reason = choices[0]["finish_reason"]
@@ -217,6 +234,7 @@ def stream_rpc_request(
     except (OSError, ValueError, urllib.error.URLError) as exc:
         error = str(exc)
         error_code = ErrorCode.RPC_CONNECTION_FAILED.value
+        terminal_stage = "timeout" if isinstance(getattr(exc, "reason", exc), TimeoutError) else "transport_error"
     finished = time.perf_counter()
     output = "".join(output_parts)
     if ok and generated_tokens <= 0:
@@ -230,7 +248,10 @@ def stream_rpc_request(
         (len(request_body) + bytes_received) / e2e_s if e2e_s > 0 else None
     )
     failure = failure_from_message(error, stage="rpc_inference", node=coordinator.name, model_id=config.model_id, fallback=ErrorCode.RPC_CONNECTION_FAILED) if error else None
+    trace.emit(terminal_stage or ("completed" if ok else "stream_incomplete"),
+               error_code=failure.code.value if failure else error_code or None)
     return {
+        "diagnostic_identity": trace.identity,
         "request_id": task.request_id,
         "logical_request_id": task.logical_request_id,
         "scenario_id": task.scenario_id,

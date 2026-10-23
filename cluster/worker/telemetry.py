@@ -108,6 +108,12 @@ class GenericPsutilTelemetry:
         return {}
 
     def snapshot(self) -> Dict[str, Any]:
+        try:
+            proc = psutil.Process()
+            process = {"pid": proc.pid, "started_at_unix": proc.create_time(),
+                       "rss_bytes": proc.memory_info().rss, "source": "psutil"}
+        except (psutil.Error, OSError):
+            process = {"pid": None, "started_at_unix": None, "rss_bytes": None, "source": "psutil"}
         memory = psutil.virtual_memory()
         try:
             swap = psutil.swap_memory()
@@ -139,6 +145,7 @@ class GenericPsutilTelemetry:
         return {
             "sampled_at": datetime.now(timezone.utc).isoformat(),
             "platform_kind": self.platform_kind,
+            "worker_process": process,
             "cpu_pct": cpu_pct,
             "ram_pct": round(memory.percent, 2),
             "swap_pct": round(swap.percent, 2) if swap else None,
@@ -378,6 +385,7 @@ class TelemetryService:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._snapshot_monotonic = None
         self._snapshot_cache: Optional[Dict[str, Any]] = None
         self._power_cache: Optional[Dict[str, Any]] = None
         self._power_observed = False
@@ -426,6 +434,7 @@ class TelemetryService:
                 with self._lock:
                     if snapshot is not None:
                         self._snapshot_cache = copy.deepcopy(snapshot)
+                        self._snapshot_monotonic = collection_started
                     if power_observed:
                         self._power_cache = copy.deepcopy(power)
                         self._power_observed = True
@@ -447,10 +456,23 @@ class TelemetryService:
             self._thread = None
         self.provider.stop()
 
-    def snapshot(self) -> Dict[str, Any]:
+    def cached_snapshot(self) -> Dict[str, Any]:
         with self._lock:
-            cached = copy.deepcopy(self._snapshot_cache)
-        snapshot = cached if cached is not None else self.provider.snapshot()
+            snapshot = copy.deepcopy(self._snapshot_cache) or {}
+            snapshot["telemetry_cache_age_s"] = (
+                max(0.0, time.perf_counter() - self._snapshot_monotonic)
+                if self._snapshot_monotonic is not None else None
+            )
+            return snapshot
+
+    def snapshot(self) -> Dict[str, Any]:
+        cached = self.cached_snapshot()
+        if any(key != "telemetry_cache_age_s" for key in cached):
+            snapshot = cached
+        else:
+            started = time.perf_counter()
+            snapshot = self.provider.snapshot()
+            snapshot["telemetry_cache_age_s"] = max(0.0, time.perf_counter() - started)
         status = self.provider.status()
         snapshot.setdefault("telemetry_collection_interval_s", self.collection_interval_s)
         snapshot["telemetry_provider"] = status.get("provider")

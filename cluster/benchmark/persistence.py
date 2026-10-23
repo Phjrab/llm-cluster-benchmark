@@ -30,6 +30,17 @@ class RunPersistence:
         self.progress = progress
         self.repository = FilesystemRunRepository(results_root)
         persisted_config = asdict(config)
+        persisted_config["diagnostics"] = {
+            "schema_version": 1,
+            "mode": config.diagnostics_mode,
+            "max_event_bytes": 4096,
+            "queue_capacity": 256,
+            "max_journal_bytes": 4194304,
+            "resource_collection": "existing_worker_telemetry_interval",
+            "per_token_logging": False,
+            "worker_mode": "requires_worker_capability_evidence",
+            "rpc_worker_stages": "unsupported",
+        }
         persisted_config["config_fingerprint_sha256"] = config_fingerprint(config)
         if not config.persist_prompt:
             persisted_config.pop("prompt", None)
@@ -106,6 +117,7 @@ class RunPersistence:
         }[mode]
         value: Dict[str, Any] = {
             "schema_version": 2,
+            "diagnostic_identity": record.get("diagnostic_identity"),
             "request_id": record.get("request_id"),
             "logical_request_id": record.get("logical_request_id"),
             "scenario_id": record.get("scenario_id"),

@@ -263,6 +263,7 @@ class BenchmarkRunner:
         progress: Optional[ProgressCallback] = None,
         cancel_event: Optional[threading.Event] = None,
     ) -> Dict[str, Any]:
+        config = replace(config)
         config.validate()
         cancel_event = cancel_event or threading.Event()
         validate_strategy(nodes, config)
@@ -307,7 +308,12 @@ class BenchmarkRunner:
         power = RunPowerIntegrityTracker(persistence.emit)
         records: List[Dict[str, Any]] = []
         postflight_recorded = False
+        from .diagnostics import RunDiagnostics
+        diagnostics = None
         try:
+            if config.diagnostics_mode == "lifecycle":
+                diagnostics = RunDiagnostics(persistence.run_dir, run_id, config, cancel_event)
+            config._diagnostic_run = diagnostics
             self._observe_power(power, nodes, "preflight")
             warnings.extend(power.human_warning_messages())
             if strategy.execution_backend == "rpc":
@@ -638,6 +644,9 @@ class BenchmarkRunner:
             exc.args = tuple(persistence.safe_artifact(item) for item in exc.args)
             raise
         finally:
+            if diagnostics is not None:
+                diagnostics.observe_cancel()
+                diagnostics.journal.close()
             instrumentation.stop_scenario()
             if rpc_session is not None:
                 persistence.emit(

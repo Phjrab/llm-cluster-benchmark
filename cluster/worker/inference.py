@@ -1065,9 +1065,18 @@ class LlamaCppInferenceBackend:
             "chat_template_hash": self.current_model_info().get("chat_template_hash", ""),
         })
         trace["template_hash"] = trace["chat_template_hash"] or None
+        def observed(stage):
+            callback = trace.get("_diagnostic_emit")
+            if callable(callback):
+                try:
+                    callback(stage)
+                except Exception:
+                    pass
+        observed("lock_wait")
         lock_started = time.perf_counter()
         self.lock.acquire()
         lock_acquired = time.perf_counter()
+        observed("lock_acquired")
         trace["worker_inference_lock_wait_s"] = round(lock_acquired - lock_started, 9)
         try:
             if self.llm is None:
@@ -1077,6 +1086,7 @@ class LlamaCppInferenceBackend:
             messages = self._sanitize_history(history)
             messages.append({"role": "user", "content": message.strip()})
             emitted = 0
+            observed("inference_started")
             trace.update(requested_max_tokens=max_tokens, effective_max_tokens=None,
                          requested_n_ctx=self.requested_n_ctx,
                          effective_n_ctx=self._load_metadata.get("effective_config", {}).get("n_ctx"),
@@ -1143,6 +1153,7 @@ class LlamaCppInferenceBackend:
                 trace["prompt_eval_s"] = round(time.perf_counter() - lock_acquired, 9)
         finally:
             self.lock.release()
+            observed("lock_released")
 
 
 class LegacyWebInferenceBackend(LlamaCppInferenceBackend):

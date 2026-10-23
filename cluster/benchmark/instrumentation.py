@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from statistics import mean
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
+from cluster.infrastructure.request_diagnostics import resource_observation
+
 
 MEASUREMENT_SCHEMA_VERSION = 4
 STEADY_STATE_POLICY = "phase09-pilot-window-v1"
@@ -251,6 +253,7 @@ def normalize_telemetry_sample(
             metrics.get("telemetry_collection_interval_s")
         ),
         "worker_collection_sequence": metrics.get("telemetry_collection_sequence"),
+        "resource_diagnostics": resource_observation(metrics),
         "power_w": power_w,
         "power_provider": power_provider,
         "telemetry_provider": telemetry_provider,

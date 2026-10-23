@@ -352,6 +352,7 @@ class WorkerTelemetryTests(unittest.TestCase):
         first_power = service.power_integrity()
         second_power = service.power_integrity()
         service.stop()
+        self.assertGreaterEqual(second.pop("telemetry_cache_age_s"), first.pop("telemetry_cache_age_s"))
         self.assertEqual(first, second)
         self.assertEqual(first["telemetry_provider"], "fake")
         self.assertFalse(first["telemetry_degraded"])
