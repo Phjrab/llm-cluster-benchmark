@@ -2,8 +2,10 @@
 
 ## Scope and baseline
 
-Software integration only. The user subsequently authorized continuing through F03,
-with separate phase evidence and commits. No operational Dashboard requests/restart,
+Software integration only. The final user scope is **F01 only**. An intermediate
+authorization to continue through F03 was withdrawn; the uncommitted F02 prototype
+was removed from this branch and retained only in ignored local scratch storage.
+F02/F03 are not implemented or delivered by this F01 branch. No operational Dashboard requests/restart,
 Worker SSH/API, model operation, inference, RPC, hardware workflow or formal approval
 was performed. Existing P00–P04 are retained and regression-tested, not reimplemented.
 No applicable AGENTS.md was found; CONTRIBUTING.md and the requested operational,
@@ -29,7 +31,11 @@ The app worktree helper could not resolve origin/main in the parent workspace, s
 Git created the explicitly authorized isolated sibling `llm-cluster-benchmark-f01`
 on `codex/operational-observability-hardening`, based on fetched main. The isolated
 merge includes the UI ancestry and operating source e81e2b5 without conflicts.
-The exact merge commit is recorded below after commit creation.
+Integration merge commit: `e4ffb2cee254fab14f424914eb73f350cafbfdec`
+(parents: fetched main `49bda2e` and operating source `e81e2b5`).
+That exact merge commit was successfully pushed non-force to
+`origin/codex/operational-observability-hardening`; upstream was verified equal.
+A subsequent documentation-only commit records this immutable integration SHA.
 
 ## Preserved integration
 
@@ -88,8 +94,8 @@ Initial npm exit 1 was an actual fixture integration mismatch against old cache
 versions, fixed and rerun. Initial staged whitespace check flagged imported CRLF
 license text/trailing spaces, fixed without changing wording. No failure is counted
 as a pass. Ignored `.artifacts/f01/` retains the original and successful logs.
-Full Python/packaging/shell and final combined UI validation are required in F03;
-F01 does not claim them. No hardware pass or timeout root-cause fix is claimed.
+Full Python/packaging/shell and any future F03 validation are outside this
+final F01-only delivery; F01 does not claim them. No hardware pass or timeout root-cause fix is claimed.
 
 ## Operating version and next deployment
 
@@ -113,7 +119,8 @@ No production restart/deployment, main push, PR merge or hardware acceptance occ
 ## Delivery status
 
 Software integration: PASS. Automated F01 validation: PASS as scoped above.
-Git delivery: feature branch only; exact commit/push outcome recorded below.
+Git delivery: integration commit e4ffb2cee254fab14f424914eb73f350cafbfdec
+pushed successfully to the feature branch; no main push or PR merge.
 CI: no pass claimed before exact-commit workflow verification.
 Deployment: NOT_PERFORMED. Hardware acceptance: NOT_PERFORMED.
 Formal eligibility: UNCHANGED / gate closed; no lock regeneration.
